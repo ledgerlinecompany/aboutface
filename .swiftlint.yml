@@ -1,6 +1,7 @@
 included:
   - Sources
   - Tests
+  - App
 
 disabled_rules:
   - todo

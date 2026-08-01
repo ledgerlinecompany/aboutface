@@ -15,9 +15,17 @@ swift build                                   # build core package + CLI harness
 swift test                                    # run unit + corpus regression tests
 swift format lint --strict --recursive Sources Tests   # formatting check (CI-enforced)
 swiftlint                                     # lint (config: .swiftlint.yml)
+xcodegen generate                             # (re)generate AboutFace.xcodeproj from project.yml
+xcodebuild -project AboutFace.xcodeproj -scheme AboutFaceApp build  # build the app shell
 ```
 
-Requires Xcode 16+ / Swift 6 toolchain, macOS 15 SDK.
+Requires Xcode 16+ / Swift 6 toolchain, macOS 15 SDK; `brew install xcodegen`
+for the app target.
+
+The `.xcodeproj` is **generated and gitignored** — never hand-edit it or add
+files/settings through Xcode's UI; edit `project.yml` (and `App/`) and rerun
+`xcodegen generate`. App entitlements live in `App/AboutFace.entitlements`
+(committed plain text; CI fails if a network entitlement appears — §2).
 
 ## Repository layout
 
@@ -29,8 +37,10 @@ Fixtures/corpus/           Test clip manifest (clips themselves are not committe
 docs/spec.md               The spec. Section references (§N) throughout the code refer to it.
 ```
 
-The Mac App Store app target does not exist yet; it arrives in Phase 2 as a thin
-SwiftUI shell over `AboutFaceCore`.
+The app shell (`App/` + `project.yml`) is a thin SwiftUI layer over
+`AboutFaceCore`; Phase 2 builds the real Setup window and debug panel inside it.
+`App/` is compiled by the Xcode project, not SwiftPM (lint/format still cover
+it); `swift test` does not — keep logic in `AboutFaceCore`, keep `App/` thin.
 
 ## Non-negotiable rules
 

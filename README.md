@@ -21,8 +21,16 @@ About Face is in early development. Phase 1 (headless core library) is currently
 Requires Xcode 16+ and Swift 6.
 
 ```sh
-swift build
+swift build          # core library + CLI harness
 swift test
+```
+
+The Mac app shell is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+(`brew install xcodegen`); the `.xcodeproj` is not checked in:
+
+```sh
+xcodegen generate
+xcodebuild -project AboutFace.xcodeproj -scheme AboutFaceApp build
 ```
 
 ## Contributing
