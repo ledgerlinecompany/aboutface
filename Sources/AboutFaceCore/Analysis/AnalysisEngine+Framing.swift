@@ -50,10 +50,16 @@ extension AnalysisEngine {
 
     let inDeadZone = updatedDeadZoneLatch(error: newSmoothedError)
 
+    // Deviation from the captured neutral pose (§4 extension), not
+    // absolute camera-ray angles: a laptop camera views the face from off
+    // the natural eyeline, so absolute pose is offset for every user (a
+    // natural position read ~+30° chin-up in field testing). With no
+    // captured baseline (defaults of 0) this degrades to the absolute
+    // behavior.
     let gaze = config.gaze
     let gazeOnCamera =
-      abs(geometry.yaw) <= Float(gaze.maxYawDegrees)
-      && abs(geometry.pitch) <= Float(gaze.maxPitchDegrees)
+      abs(geometry.yaw - Float(target.neutralYawDegrees)) <= Float(gaze.maxYawDegrees)
+      && abs(geometry.pitch - Float(target.neutralPitchDegrees)) <= Float(gaze.maxPitchDegrees)
 
     return FramingState(
       error: newSmoothedError,

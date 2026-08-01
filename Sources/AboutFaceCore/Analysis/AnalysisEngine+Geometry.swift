@@ -82,43 +82,39 @@ extension AnalysisEngine {
   ///
   /// ## Empirical basis
   ///
-  /// Yaw/roll measured 2026-07-31 against real Vision output on
-  /// ground-truth (known head orientation) images; pitch CORRECTED
-  /// 2026-08-01 by a controlled live test — see
-  /// `Fixtures/corpus/stills/ATTRIBUTION.md` for the full writeup and
-  /// correction history. Summary:
+  /// ALL THREE raw sign conventions are now established by controlled
+  /// live-camera tests (deliberate head movement watched against raw
+  /// values) — the only ground-truth method that has survived contact with
+  /// reality. Two earlier photo-derived readings were both wrong: pitch
+  /// (corrected 2026-08-01: the reference image conflated eye gaze with
+  /// head pitch) and then yaw (corrected later the same day: masked
+  /// three-quarter faces were misread; the live test "nose toward right
+  /// shoulder" read as own-left under the photo-derived mapping while
+  /// horizontal position remained correct, isolating the error to the
+  /// convention, not the capture path). See
+  /// `Fixtures/corpus/stills/ATTRIBUTION.md` for the full correction
+  /// history. Current findings:
   ///
   /// - Vision yaw: positive = the subject's head turned toward THEIR OWN
-  ///   RIGHT (face turns toward image-left in an unmirrored image).
-  /// - Vision pitch: positive = **chin DOWN**. The 2026-07-31 photo-based
-  ///   reading ("positive = chin up") was wrong: its ground truth image
-  ///   (a masked subject *looking* upward) conflated eye gaze with head
-  ///   pitch. The correction comes from a controlled live-camera test —
-  ///   the maintainer deliberately tilting their chin up and watching the
-  ///   raw value fall — which is direct head movement with no gaze
-  ///   confound, and therefore supersedes the photo inference.
-  /// - Vision roll: positive = tilt toward the subject's own right.
+  ///   LEFT (in an unmirrored image).
+  /// - Vision pitch: positive = chin DOWN.
+  /// - Vision roll: assumed positive = tilt toward the subject's own LEFT,
+  ///   by the same in-image-plane logic as yaw. UNVERIFIED by a controlled
+  ///   live tilt — flagged for the maintainer's ear-to-shoulder check and
+  ///   the §14 head-tilt corpus clip.
   /// - A horizontal flip of the image negates yaw and roll, and leaves
-  ///   pitch unchanged (checked via a synthetic flip-consistency test, not
-  ///   assumed; unaffected by the pitch-sign correction).
-  ///
-  /// Remaining caveats: yaw n=2 (masked subjects); roll verified only via
-  /// synthetic flip (no real tilted-head sample yet). A solid working
-  /// default, not a fully closed question — re-verify against
-  /// purpose-recorded corpus clips (§14).
+  ///   pitch unchanged (synthetic flip-consistency test; robust across all
+  ///   the sign corrections, since it is a relative property).
   ///
   /// ## Consequence for this mapping
   ///
-  /// §3.3 wants "+pitch = chin up," and Vision's raw positive is chin
-  /// DOWN, so **pitch is negated in BOTH mirror states** (a horizontal
-  /// flip does not affect pitch, so the negation is mirror-independent).
-  /// For `.notMirrored` frames, Vision's raw yaw/roll already match
-  /// `FaceGeometry`'s egocentric convention and pass through unchanged.
-  /// For `.mirrored` frames, the pixels handed to Vision were already
-  /// flipped before inference ran (see `FileCaptureSource`'s
-  /// `simulateMirrored` / `CameraCaptureSource`'s mirror handling), so per
-  /// the flip-consistency finding above, yaw and roll must be NEGATED to
-  /// undo that and recover the egocentric sense.
+  /// §3.3 wants "+ = own right / chin up / tilt right." Vision's raw
+  /// positives are own-left / chin-down / tilt-left, so for `.notMirrored`
+  /// frames ALL THREE axes are negated. For `.mirrored` frames the pixels
+  /// handed to Vision were already flipped before inference ran (see
+  /// `FileCaptureSource.simulateMirrored`), which negates raw yaw and roll
+  /// once already — so yaw/roll pass through unchanged there, while pitch
+  /// (mirror-invariant) is negated in both states.
   ///
   /// `nil` fields (a backend without `.headPose`, or a best-effort
   /// per-field failure) default to 0 — `FaceGeometry.yaw/pitch/roll` are
@@ -132,9 +128,9 @@ extension AnalysisEngine {
     let rawRoll = raw.roll ?? 0
     switch mirror {
     case .notMirrored:
-      return EgocentricPose(yaw: rawYaw, pitch: -rawPitch, roll: rawRoll)
-    case .mirrored:
       return EgocentricPose(yaw: -rawYaw, pitch: -rawPitch, roll: -rawRoll)
+    case .mirrored:
+      return EgocentricPose(yaw: rawYaw, pitch: -rawPitch, roll: rawRoll)
     }
   }
 }

@@ -29,14 +29,13 @@ import Testing
 ///
 /// Same physical head turn both times: the subject turned toward their own
 /// right. Per `AnalysisEngine.egocentricPose(raw:mirror:)`'s doc comment
-/// (empirically measured, not assumed): for `.notMirrored`, Vision's raw
-/// yaw already matches egocentric sense directly, so a physical turn
-/// toward the subject's own right reports raw yaw = +20°. For `.mirrored`,
-/// Vision ran on already-flipped pixels for the SAME physical turn, and a
-/// horizontal flip negates yaw, so the raw yaw for that mirrored capture of
-/// the identical physical moment is -20° — which `egocentricPose` then
-/// negates back to +20°. Both configs must therefore agree on egocentric
-/// yaw = +20°.
+/// (established by controlled live movement, 2026-08-01): Vision raw yaw
+/// positive = own LEFT, so a physical turn toward the subject's own right
+/// reports raw yaw = -20° on `.notMirrored` frames, which the boundary
+/// negates to egocentric +20°. For `.mirrored`, Vision ran on
+/// already-flipped pixels for the SAME physical turn — the flip negates
+/// yaw, so raw = +20°, passed through unchanged. Both configs must agree
+/// on egocentric yaw = +20°.
 struct AnalysisEngineEgocentricBoundaryTests {
 
   private static let tolerance: Float = 1e-4
@@ -69,7 +68,7 @@ struct AnalysisEngineEgocentricBoundaryTests {
 
   @Test("Subject to own left, unmirrored: error.x < 0 and egocentric yaw passes through")
   func ownLeft_notMirrored() async throws {
-    let raw = rawObservation(rawCenterX: 0.8, rawYaw: 20)
+    let raw = rawObservation(rawCenterX: 0.8, rawYaw: -20)
     let backend = ScriptedBackend([raw])
     let engine = AnalysisEngine(backend: backend)
 
@@ -84,7 +83,7 @@ struct AnalysisEngineEgocentricBoundaryTests {
 
   @Test("Subject to own left, mirrored: error.x < 0 and yaw is negated back to egocentric")
   func ownLeft_mirrored() async throws {
-    let raw = rawObservation(rawCenterX: 0.2, rawYaw: -20)
+    let raw = rawObservation(rawCenterX: 0.2, rawYaw: 20)
     let backend = ScriptedBackend([raw])
     let engine = AnalysisEngine(backend: backend)
 
@@ -107,7 +106,7 @@ struct AnalysisEngineEgocentricBoundaryTests {
     // so unlike yaw/roll the negation is mirror-independent.
     for mirror in [MirrorState.notMirrored, .mirrored] {
       let rawX: CGFloat = mirror == .notMirrored ? 0.8 : 0.2
-      let rawYaw: Float = mirror == .notMirrored ? 20 : -20
+      let rawYaw: Float = mirror == .notMirrored ? -20 : 20
       let engine = AnalysisEngine(
         backend: ScriptedBackend([rawObservation(rawCenterX: rawX, rawYaw: rawYaw, rawPitch: 10)]))
       let output = try await engine.process(
@@ -120,9 +119,9 @@ struct AnalysisEngineEgocentricBoundaryTests {
   @Test("Both mirror configs agree on error.x and yaw for the same physical scene")
   func agreesAcrossMirrorStates() async throws {
     let notMirroredEngine = AnalysisEngine(
-      backend: ScriptedBackend([rawObservation(rawCenterX: 0.8, rawYaw: 20)]))
+      backend: ScriptedBackend([rawObservation(rawCenterX: 0.8, rawYaw: -20)]))
     let mirroredEngine = AnalysisEngine(
-      backend: ScriptedBackend([rawObservation(rawCenterX: 0.2, rawYaw: -20)]))
+      backend: ScriptedBackend([rawObservation(rawCenterX: 0.2, rawYaw: 20)]))
 
     let notMirroredOutput = try await notMirroredEngine.process(
       testFrame(pixelBuffer: gradientPixelBuffer(), mirror: .notMirrored))

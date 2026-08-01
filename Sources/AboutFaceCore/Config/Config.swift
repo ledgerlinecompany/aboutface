@@ -67,10 +67,32 @@ public struct Config: Codable, Sendable, Equatable {
     /// close-up").
     public var interocularWidth: Double
 
-    public init(eyeMidpointY: Double, eyeMidpointX: Double, interocularWidth: Double) {
+    /// Neutral-pose baseline, degrees, egocentric (§3.3 signs). Captured by
+    /// "capture current position as target" (§4 extension, 2026-08-01
+    /// field finding): pose is measured relative to the CAMERA RAY, and a
+    /// laptop camera sits well off the user's natural eyeline — a tilted-
+    /// back screen reads a natural head position as ~30° chin-up. Gaze
+    /// judgments therefore measure DEVIATION from this captured neutral,
+    /// not absolute camera-ray angles. Defaults of 0 mean "no baseline
+    /// captured yet" (equivalent to the old absolute behavior).
+    public var neutralYawDegrees: Double
+    public var neutralPitchDegrees: Double
+    public var neutralRollDegrees: Double
+
+    public init(
+      eyeMidpointY: Double,
+      eyeMidpointX: Double,
+      interocularWidth: Double,
+      neutralYawDegrees: Double = 0,
+      neutralPitchDegrees: Double = 0,
+      neutralRollDegrees: Double = 0
+    ) {
       self.eyeMidpointY = eyeMidpointY
       self.eyeMidpointX = eyeMidpointX
       self.interocularWidth = interocularWidth
+      self.neutralYawDegrees = neutralYawDegrees
+      self.neutralPitchDegrees = neutralPitchDegrees
+      self.neutralRollDegrees = neutralRollDegrees
     }
   }
 

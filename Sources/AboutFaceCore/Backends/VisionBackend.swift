@@ -37,32 +37,23 @@ import Vision
 /// direction is positive) — this is a known gap in Apple's docs, not an
 /// oversight here.
 ///
-/// This was measured empirically (2026-07-31) against real Vision inference
-/// on ground-truth (known head orientation) images — not inferred from
-/// community reports about the legacy `VNFaceObservation` API. Full writeup:
-/// `Fixtures/corpus/stills/ATTRIBUTION.md` (landing on another branch).
-/// Findings:
+/// Sign conventions are established by CONTROLLED LIVE MOVEMENT tests
+/// (2026-08-01) — deliberate head motion watched against raw values. Two
+/// photo-derived readings were made first and BOTH proved wrong (pitch:
+/// gaze conflated with head pitch; yaw: masked three-quarter faces
+/// misread), so photo inference is no longer accepted as sign ground
+/// truth here. Full correction history:
+/// `Fixtures/corpus/stills/ATTRIBUTION.md`. Current findings:
 ///
-/// - Positive yaw = the subject's head turned toward THEIR OWN RIGHT (the
-///   face turns toward image-left in an unmirrored image). This
-///   *contradicts* the community-reported convention this comment
-///   previously documented as a starting hypothesis ("positive yaw = face
-///   turned toward the image's right edge") — that hypothesis was wrong.
-/// - Positive pitch = chin DOWN (corrected 2026-08-01 by a controlled
-///   live-camera test; the earlier photo-derived "chin up" reading conflated
-///   eye gaze with head pitch — see ATTRIBUTION.md's correction note).
-/// - Positive roll = tilt toward the subject's own right.
+/// - Positive yaw = the subject's head turned toward THEIR OWN LEFT
+///   (in an unmirrored image).
+/// - Positive pitch = chin DOWN.
+/// - Positive roll = tilt toward the subject's own LEFT — assumed by the
+///   same in-image-plane logic as yaw; still awaiting a controlled live
+///   tilt check (the one axis not yet verified by live movement).
 /// - A horizontal flip of the image negates yaw and roll, and leaves pitch
-///   unchanged — checked directly via a synthetic flip-consistency test
-///   (flip a still, re-run inference, confirm the sign relationship), not
-///   inferred from theory.
-///
-/// Caveats, so this isn't overclaimed: n=2 turned-head samples, subjects
-/// masked in the source stills, and the roll finding was verified only via
-/// a synthetic horizontal flip of a single sample (no second real-roll
-/// sample). Treat this as a solid working default confirmed against real
-/// inference, not a fully closed question — revisit if corpus tuning (§14)
-/// ever surfaces a contradiction.
+///   unchanged — checked directly via a synthetic flip-consistency test;
+///   this relative property held through every sign correction.
 ///
 /// Per spec §3.4 this is the single worst failure mode available to this
 /// project. `AnalysisEngine.egocentricPose(raw:mirror:)` is where these raw
