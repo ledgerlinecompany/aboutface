@@ -65,7 +65,7 @@ revisit them without escalating.
 | Constraint | Consequence |
 |---|---|
 | Mac App Store distribution | Apache 2.0 license (GPL is incompatible with MAS terms) |
-| App Sandbox enabled | `com.apple.security.device.camera` only |
+| App Sandbox enabled | `com.apple.security.device.camera`, plus `com.apple.security.files.user-selected.read-write` (amended 2026-08-01: required for §9 config export/import through the sandbox's save/open panels; grants access only to files the user explicitly picks). Nothing else. |
 | **No network entitlement** | `network.client` and `network.server` MUST be absent from the entitlements file. No analytics, no crash reporting SDK, no model downloads. This makes the privacy claim verifiable via `codesign -d --entitlements`. |
 | Library validation / hardened runtime | Backends are **compile-time**, not loadable plugins |
 | App Review 2.5.2 | No downloading or executing code that changes app features |
@@ -695,7 +695,7 @@ hysteresis does not chatter on borderline cases, and they are what makes swappin
 - [ ] Subtitle carries the functional keywords — the name is not discoverable by
       function. "blind," "VoiceOver," "camera," "accessibility" belong here, not
       in the name.
-- [ ] Entitlements: camera present; `network.client` and `network.server` **absent**
+- [ ] Entitlements: camera and user-selected file access present (see §2); `network.client` and `network.server` **absent** (CI-enforced)
 - [ ] No analytics or crash-reporting SDK (they pull the network entitlement back in)
 - [ ] Local log file with a "reveal in Finder" affordance (replaces crash telemetry)
 - [ ] `NSCameraUsageDescription` states video never leaves the device
