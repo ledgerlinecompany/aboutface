@@ -13,33 +13,42 @@ import Testing
 /// shared fixture builders live in `SignalFormatterTestSupport.swift`.
 struct SignalFormatterTests {
 
+  /// Default display quantization (degrees step 2, percent step 2,
+  /// normalized step 0.02) — expectations below are hand-derived against
+  /// these steps.
+  private let display = Config.defaults.display
+
   // MARK: - Horizontal offset direction words (the load-bearing test, §3.4)
 
   @Test("Horizontal offset: error.x > 0 reads 'right of target'")
   func horizontalOffset_positiveError_readsRight() {
     // FramingState.error.x > 0 means "subject is right of target" per §3.3's
     // doc comment on FramingState.error. 0.12 -> "12% right of target".
-    let value = SignalFormatter.formatHorizontalOffset(formatterTestFraming(errorX: 0.12))
+    let value = SignalFormatter.formatHorizontalOffset(
+      formatterTestFraming(errorX: 0.12), display: display)
     #expect(value == "12% right of target")
   }
 
   @Test("Horizontal offset: error.x < 0 reads 'left of target'")
   func horizontalOffset_negativeError_readsLeft() {
-    let value = SignalFormatter.formatHorizontalOffset(formatterTestFraming(errorX: -0.12))
+    let value = SignalFormatter.formatHorizontalOffset(
+      formatterTestFraming(errorX: -0.12), display: display)
     #expect(value == "12% left of target")
   }
 
   @Test("Horizontal offset: error.x == 0 reads 'On target'")
   func horizontalOffset_zeroError_readsOnTarget() {
-    let value = SignalFormatter.formatHorizontalOffset(formatterTestFraming(errorX: 0))
+    let value = SignalFormatter.formatHorizontalOffset(
+      formatterTestFraming(errorX: 0), display: display)
     #expect(value == "On target")
   }
 
-  @Test("Horizontal offset rounds to nearest whole percent")
-  func horizontalOffset_rounds() {
-    // 0.065 -> 6.5% -> rounds to 7% (`.rounded()` uses round-half-away-from-zero).
-    let value = SignalFormatter.formatHorizontalOffset(formatterTestFraming(errorX: 0.065))
-    #expect(value == "7% right of target")
+  @Test("Horizontal offset quantizes to the percent step")
+  func horizontalOffset_quantizes() {
+    // 0.065 -> 6.5% -> /2 = 3.25 -> rounds to 3 -> ×2 = 6%.
+    let value = SignalFormatter.formatHorizontalOffset(
+      formatterTestFraming(errorX: 0.065), display: display)
+    #expect(value == "6% right of target")
   }
 
   @Test("Horizontal offset: small nonzero error still rounds to 0% but is not literally on target")
@@ -47,7 +56,8 @@ struct SignalFormatterTests {
     // 0.002 -> 0.2% -> rounds to 0, which reads the same as exactly on
     // target; this is a deliberate display simplification (§9 cares about
     // "sensible value," not sub-percent noise).
-    let value = SignalFormatter.formatHorizontalOffset(formatterTestFraming(errorX: 0.002))
+    let value = SignalFormatter.formatHorizontalOffset(
+      formatterTestFraming(errorX: 0.002), display: display)
     #expect(value == "On target")
   }
 
@@ -57,21 +67,21 @@ struct SignalFormatterTests {
   func headroom_computedFromBottomLeftOriginY() {
     // y = 0.62 (62% up from bottom) -> headroom = 1 - 0.62 = 0.38 -> 38%.
     let value = SignalFormatter.formatHeadroom(
-      formatterTestGeometry(eyeMidpoint: CGPoint(x: 0.5, y: 0.62)))
+      formatterTestGeometry(eyeMidpoint: CGPoint(x: 0.5, y: 0.62)), display: display)
     #expect(value == "38%")
   }
 
   @Test("Headroom: eyes at very top of frame (y=1) means 0% headroom")
   func headroom_eyesAtTop() {
     let value = SignalFormatter.formatHeadroom(
-      formatterTestGeometry(eyeMidpoint: CGPoint(x: 0.5, y: 1.0)))
+      formatterTestGeometry(eyeMidpoint: CGPoint(x: 0.5, y: 1.0)), display: display)
     #expect(value == "0%")
   }
 
   @Test("Headroom: eyes at very bottom of frame (y=0) means 100% headroom")
   func headroom_eyesAtBottom() {
     let value = SignalFormatter.formatHeadroom(
-      formatterTestGeometry(eyeMidpoint: CGPoint(x: 0.5, y: 0.0)))
+      formatterTestGeometry(eyeMidpoint: CGPoint(x: 0.5, y: 0.0)), display: display)
     #expect(value == "100%")
   }
 
@@ -80,7 +90,10 @@ struct SignalFormatterTests {
   @Test("Face box formats origin and size to 2 decimals")
   func faceBox_formatsToTwoDecimals() {
     let value = SignalFormatter.formatFaceBox(
-      formatterTestGeometry(boundingBox: CGRect(x: 0.401, y: 0.456, width: 0.198, height: 0.302)))
+      formatterTestGeometry(boundingBox: CGRect(x: 0.401, y: 0.456, width: 0.198, height: 0.302)),
+      display: display)
+    // Quantized to the 0.02 normalized step: 0.401→0.40, 0.456→0.46,
+    // 0.198→0.20, 0.302→0.30.
     #expect(value == "origin (0.40, 0.46), size 0.20 × 0.30")
   }
 
@@ -90,50 +103,55 @@ struct SignalFormatterTests {
   func interocularDistance_positiveDistanceError_readsCloser() {
     let value = SignalFormatter.formatInterocularDistance(
       formatterTestGeometry(interocularDistance: 0.15),
-      framing: formatterTestFraming(distanceError: 0.04))
-    #expect(value == "0.15 (closer than target)")
+      framing: formatterTestFraming(distanceError: 0.04), display: display)
+    // 0.15 / 0.02 = 7.5 → rounds away from zero to 8 → 0.16.
+    #expect(value == "0.16 (closer than target)")
   }
 
   @Test("Interocular distance: distanceError < 0 reads 'farther than target'")
   func interocularDistance_negativeDistanceError_readsFarther() {
     let value = SignalFormatter.formatInterocularDistance(
       formatterTestGeometry(interocularDistance: 0.07),
-      framing: formatterTestFraming(distanceError: -0.04))
-    #expect(value == "0.07 (farther than target)")
+      framing: formatterTestFraming(distanceError: -0.04), display: display)
+    // 0.07 / 0.02 = 3.5 → 4 → 0.08.
+    #expect(value == "0.08 (farther than target)")
   }
 
   @Test("Interocular distance: distanceError ~= 0 reads 'at target distance'")
   func interocularDistance_zeroDistanceError_readsAtTarget() {
     let value = SignalFormatter.formatInterocularDistance(
       formatterTestGeometry(interocularDistance: 0.11),
-      framing: formatterTestFraming(distanceError: 0))
-    #expect(value == "0.11 (at target distance)")
+      framing: formatterTestFraming(distanceError: 0), display: display)
+    // 0.11 / 0.02 = 5.5 → 6 → 0.12 (coarse display; the phrase carries the
+    // target-relative meaning).
+    #expect(value == "0.12 (at target distance)")
   }
 
   // MARK: - Lighting
 
   @Test("Face/background luma format as whole-number percent")
   func luma_formatsAsPercent() {
-    #expect(SignalFormatter.percentString(0.5) == "50%")
-    #expect(SignalFormatter.percentString(0.973) == "97%")
-    #expect(SignalFormatter.percentString(0) == "0%")
+    #expect(SignalFormatter.percentString(0.5, display: display) == "50%")
+    // 97.3 / 2 = 48.65 → 49 → 98%.
+    #expect(SignalFormatter.percentString(0.973, display: display) == "98%")
+    #expect(SignalFormatter.percentString(0, display: display) == "0%")
   }
 
   @Test("Backlight delta: positive delta reads 'brighter background (backlit)'")
   func backlightDelta_positive_readsBacklit() {
-    let value = SignalFormatter.formatBacklightDelta(0.18)
+    let value = SignalFormatter.formatBacklightDelta(0.18, display: display)
     #expect(value == "18 points brighter background (backlit)")
   }
 
   @Test("Backlight delta: negative delta reads 'brighter face'")
   func backlightDelta_negative_readsFaceBrighter() {
-    let value = SignalFormatter.formatBacklightDelta(-0.12)
+    let value = SignalFormatter.formatBacklightDelta(-0.12, display: display)
     #expect(value == "12 points brighter face")
   }
 
   @Test("Backlight delta: zero reads 'Even'")
   func backlightDelta_zero_readsEven() {
-    let value = SignalFormatter.formatBacklightDelta(0)
+    let value = SignalFormatter.formatBacklightDelta(0, display: display)
     #expect(value == "Even (0 points)")
   }
 
@@ -141,37 +159,52 @@ struct SignalFormatterTests {
 
   @Test("Yaw: positive reads 'turned toward own right' (§3.3)")
   func yaw_positive_readsOwnRight() {
-    #expect(SignalFormatter.formatYaw(12.34) == "+12.3° (turned toward own right)")
+    #expect(SignalFormatter.formatYaw(12.34, display: display) == "+12° (turned toward own right)")
   }
 
   @Test("Yaw: negative reads 'turned toward own left'")
   func yaw_negative_readsOwnLeft() {
-    #expect(SignalFormatter.formatYaw(-8.0) == "-8.0° (turned toward own left)")
+    #expect(SignalFormatter.formatYaw(-8.0, display: display) == "-8° (turned toward own left)")
   }
 
   @Test("Yaw: exactly zero reads 'facing camera'")
   func yaw_zero_readsFacingCamera() {
-    #expect(SignalFormatter.formatYaw(0) == "0.0° (facing camera)")
+    #expect(SignalFormatter.formatYaw(0, display: display) == "0° (facing camera)")
   }
 
   @Test("Pitch: positive reads 'chin up' (§3.3)")
   func pitch_positive_readsChinUp() {
-    #expect(SignalFormatter.formatPitch(5.6) == "+5.6° (chin up)")
+    #expect(SignalFormatter.formatPitch(5.6, display: display) == "+6° (chin up)")
   }
 
   @Test("Pitch: negative reads 'chin down'")
   func pitch_negative_readsChinDown() {
-    #expect(SignalFormatter.formatPitch(-5.6) == "-5.6° (chin down)")
+    #expect(SignalFormatter.formatPitch(-5.6, display: display) == "-6° (chin down)")
   }
 
   @Test("Roll: positive reads 'tilted toward own right' (§3.3)")
   func roll_positive_readsOwnRight() {
-    #expect(SignalFormatter.formatRoll(3.2) == "+3.2° (tilted toward own right)")
+    #expect(SignalFormatter.formatRoll(3.2, display: display) == "+4° (tilted toward own right)")
   }
 
   @Test("Roll: negative reads 'tilted toward own left'")
   func roll_negative_readsOwnLeft() {
-    #expect(SignalFormatter.formatRoll(-3.2) == "-3.2° (tilted toward own left)")
+    #expect(SignalFormatter.formatRoll(-3.2, display: display) == "-4° (tilted toward own left)")
+  }
+
+  @Test("Quantization collapses frame-to-frame jitter to a stable reading")
+  func quantization_collapsesJitter() {
+    // The Phase 2 VoiceOver pass found raw values too fine — tiny movements
+    // changed every reading. Adjacent noisy samples must format identically.
+    #expect(
+      SignalFormatter.formatYaw(23.7, display: display)
+        == SignalFormatter.formatYaw(24.4, display: display))
+    #expect(
+      SignalFormatter.formatPitch(-0.9, display: display)
+        == SignalFormatter.formatPitch(0.9, display: display))  // both "0° (level)"
+    #expect(
+      SignalFormatter.percentString(0.492, display: display)
+        == SignalFormatter.percentString(0.507, display: display))  // both 50%
   }
 
   // MARK: - Face count / capture format / mirror state

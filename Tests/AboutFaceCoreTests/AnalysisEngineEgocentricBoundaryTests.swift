@@ -97,7 +97,8 @@ struct AnalysisEngineEgocentricBoundaryTests {
     #expect(abs(yaw - 20) < Self.tolerance)
   }
 
-  @Test("Pitch is negated in BOTH mirror states: Vision raw + (chin down) becomes §3.3 − (chin down)")
+  @Test(
+    "Pitch is negated in BOTH mirror states: Vision raw + (chin down) becomes §3.3 − (chin down)")
   func pitchNegatedBothMirrorStates() async throws {
     // Vision raw pitch positive = chin DOWN (corrected 2026-08-01 by a
     // controlled live head-movement test; see ATTRIBUTION.md). §3.3 wants

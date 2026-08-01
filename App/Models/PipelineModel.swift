@@ -278,7 +278,8 @@ public final class PipelineModel {
           output: output,
           backendName: backendDisplayName,
           captureFormat: captureFormat,
-          mirrorState: mirrorState
+          mirrorState: mirrorState,
+          display: config.display
         )
       )
     }

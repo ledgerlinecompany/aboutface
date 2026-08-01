@@ -116,6 +116,23 @@ struct DebugPanelView: View {
         model.resetToDefault(\.lighting)
       }
 
+      ConfigSection(title: "Display quantization") {
+        ConfigSliderRow(
+          title: "Degrees step",
+          value: model.binding(\.display.degreesStep),
+          range: 1...10, step: 1, format: Format.rawDegreesStep)
+        ConfigSliderRow(
+          title: "Percent step",
+          value: model.binding(\.display.percentStep),
+          range: 1...10, step: 1, format: Format.rawPercentStep)
+        ConfigSliderRow(
+          title: "Normalized step",
+          value: model.binding(\.display.normalizedStep),
+          range: 0.005...0.1, step: 0.005, format: Format.rawFourDecimals)
+      } onReset: {
+        model.resetToDefault(\.display)
+      }
+
       Section {
         Button("Reset all to defaults", role: .destructive) {
           showingGlobalResetConfirmation = true
@@ -248,6 +265,14 @@ private struct ConfigSliderRow: View {
 private enum Format {
   static func percent(_ value: Double) -> String {
     "\(Int((value * 100).rounded())) percent"
+  }
+
+  static func rawDegreesStep(_ value: Double) -> String {
+    "\(Int(value.rounded())) degrees per step"
+  }
+
+  static func rawPercentStep(_ value: Double) -> String {
+    "\(Int(value.rounded())) percent per step"
   }
 
   static func degrees(_ value: Double) -> String {
