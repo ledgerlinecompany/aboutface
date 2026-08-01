@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # Keep pinned action SHAs current (Dependabot updates the SHA and the
+  # trailing version comment together).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # SwiftPM dependencies (the core library is dependency-free by policy;
+  # this covers CLI/tooling dependencies).
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

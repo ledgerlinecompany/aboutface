@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+# Actions are pinned to full commit SHAs (with the version as a trailing
+# comment) so a moved tag can't silently change what runs in CI. Dependabot
+# keeps the SHAs current.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -13,9 +16,25 @@ jobs:
   build-and-test:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Print Swift version
-        run: swift --version
+        id: swift-version
+        run: |
+          swift --version
+          echo "version=$(swift --version 2>&1 | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      # Cache SwiftPM checkouts and build artifacts. Keyed on the toolchain
+      # (stale .build dirs from a different Swift are useless) and the
+      # package manifests; restore-keys allow incremental reuse when only
+      # sources changed.
+      - name: Cache SwiftPM build
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            .build
+            ~/.swiftpm
+          key: spm-${{ runner.os }}-${{ steps.swift-version.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ steps.swift-version.outputs.version }}-
       - name: Build
         run: swift build -Xswiftc -warnings-as-errors
       - name: Test
@@ -24,9 +43,20 @@ jobs:
   lint:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - name: Install SwiftLint
-        run: brew install swiftlint
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Pinned SwiftLint release binary with checksum verification: faster
+      # than `brew install` and immune to formula drift. Update the version,
+      # URL, and checksum together.
+      - name: Install SwiftLint (pinned)
+        run: |
+          set -euo pipefail
+          SWIFTLINT_VERSION="0.65.0"
+          SWIFTLINT_SHA256="d6cb0aa7a2f5f1ef306fc9e37bcb54dc9a26facc8f7784ac0c3dd3eccf5c6ba6"
+          curl -sL -o portable_swiftlint.zip \
+            "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/portable_swiftlint.zip"
+          echo "${SWIFTLINT_SHA256}  portable_swiftlint.zip" | shasum -a 256 -c -
+          unzip -q portable_swiftlint.zip -d swiftlint-bin
+          echo "${PWD}/swiftlint-bin" >> "$GITHUB_PATH"
       - name: Lint
         run: swiftlint --strict
       - name: Format check
