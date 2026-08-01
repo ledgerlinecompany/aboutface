@@ -1,0 +1,39 @@
+name: CodeQL
+
+# Swift static analysis. Runs on main pushes and weekly — deliberately NOT
+# on every PR: CodeQL must build the code on a macOS runner (~5-10 min),
+# and PR latency matters more than pre-merge scanning for a project whose
+# PRs are already gated by build+test+lint. Actions are pinned to commit
+# SHAs (Dependabot keeps them fresh), same policy as ci.yml.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: macos-15
+    # The repo-default GITHUB_TOKEN is read-only; CodeQL needs to upload
+    # its results to the security tab.
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@a2983b8bed1923f44751c5c43237f479442827b3 # v3.37.4
+        with:
+          languages: swift
+          build-mode: manual
+      # Analyze the SwiftPM package (core + CLI). The App/ target is a thin
+      # SwiftUI shell over AboutFaceCore by policy (see CLAUDE.md: "keep
+      # logic in AboutFaceCore, keep App/ thin"), so package analysis covers
+      # the code that matters without dragging XcodeGen into this workflow.
+      - name: Build
+        run: swift build
+      - name: Analyze
+        uses: github/codeql-action/analyze@a2983b8bed1923f44751c5c43237f479442827b3 # v3.37.4
+        with:
+          category: "/language:swift"
