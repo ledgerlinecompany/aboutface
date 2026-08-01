@@ -84,6 +84,20 @@ vocabulary lives in `Lexicon.swift` only — never generate phrases dynamically.
 - Signal-processing tests replay recorded/synthetic input; never write tests
   that require a live camera to pass in CI.
 
+## Toolchain notes
+
+- CI's `macos-15` runner pins an older Swift toolchain than dev machines may
+  have. Newer SDKs keep adding `Sendable` annotations to AVFoundation/Vision
+  types, so code that compiles locally can fail to build on CI even though
+  nothing "changed." Rule: never rely on an SDK's `Sendable` annotation for an
+  AVFoundation/Vision value crossing an isolation boundary. Keep every call
+  into those frameworks inside one `nonisolated` domain and hand the result
+  across as an explicit `Sendable` value, or a small `final class: @unchecked
+  Sendable` wrapper documenting an ownership transfer (never concurrent
+  sharing). See `FileCaptureSource.makeReader`/`ReaderBox` for the reference
+  pattern — its doc comments explain, at the call site, exactly why the
+  `nonisolated` boundary is needed regardless of which SDK is compiling it.
+
 ## Open-source hygiene
 
 - License: Apache 2.0. Contributions are covered by the DCO — commits need
