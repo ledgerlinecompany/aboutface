@@ -50,6 +50,13 @@ public struct Config: Codable, Sendable, Equatable {
   /// gaze if available").
   public var gaze: Gaze
 
+  /// Display quantization for the §9 signal rows. Raw signals are noisy at
+  /// the last digit (Vision pose jitters 1-3 degrees frame to frame), and
+  /// VoiceOver users reading live values need stable, coarse steps rather
+  /// than every flicker (§9, Phase 2 acceptance feedback). Display-only —
+  /// changes no engine behavior, only how values are rendered/spoken.
+  public var display: Display
+
   public struct TargetFraming: Codable, Sendable, Equatable {
     /// Eye midpoint, fraction of frame height from top (§4: "upper third,
     /// modest headroom").
@@ -147,6 +154,24 @@ public struct Config: Codable, Sendable, Equatable {
     }
   }
 
+  public struct Display: Codable, Sendable, Equatable {
+    /// Yaw/pitch/roll are rounded to the nearest multiple of this many
+    /// degrees before display ("+24°", not "+23.7°").
+    public var degreesStep: Double
+    /// Percent-rendered values (headroom, offsets, luma, confidence) are
+    /// rounded to the nearest multiple of this many percentage points.
+    public var percentStep: Double
+    /// Normalized 0...1 values (face box, interocular distance, sharpness)
+    /// are rounded to the nearest multiple of this step.
+    public var normalizedStep: Double
+
+    public init(degreesStep: Double, percentStep: Double, normalizedStep: Double) {
+      self.degreesStep = degreesStep
+      self.percentStep = percentStep
+      self.normalizedStep = normalizedStep
+    }
+  }
+
   public init(
     version: Int,
     targetFraming: TargetFraming,
@@ -156,7 +181,8 @@ public struct Config: Codable, Sendable, Equatable {
     smoothingWindow: Int,
     lighting: Lighting,
     signal: Signal,
-    gaze: Gaze
+    gaze: Gaze,
+    display: Display
   ) {
     self.version = version
     self.targetFraming = targetFraming
@@ -167,6 +193,7 @@ public struct Config: Codable, Sendable, Equatable {
     self.lighting = lighting
     self.signal = signal
     self.gaze = gaze
+    self.display = display
   }
 
   /// The spec's §4 starting-point defaults. `Config.defaults` MUST remain
@@ -198,6 +225,11 @@ public struct Config: Codable, Sendable, Equatable {
     gaze: Gaze(
       maxYawDegrees: 15,
       maxPitchDegrees: 15
+    ),
+    display: Display(
+      degreesStep: 2,
+      percentStep: 2,
+      normalizedStep: 0.02
     )
   )
 }

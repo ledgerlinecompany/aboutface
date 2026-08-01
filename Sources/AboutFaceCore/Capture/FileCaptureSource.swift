@@ -6,6 +6,7 @@ import AVFoundation
 import Accelerate
 import CoreMedia
 import CoreVideo
+
 // swiftlint:enable sorted_imports
 
 /// A `CaptureSource` that replays a video file from disk instead of a live

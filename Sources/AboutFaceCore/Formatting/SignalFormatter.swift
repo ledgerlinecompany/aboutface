@@ -94,17 +94,28 @@ public enum SignalFormatter {
   ///     has not been configured yet.
   ///   - mirrorState: The active capture session's `MirrorState`, or `nil`
   ///     before a session exists.
+  /// Everything a row needs besides the field itself — bundled so the
+  /// internal helpers stay within SwiftLint's parameter-count limit as the
+  /// context grows.
+  struct Context {
+    let output: EngineOutput?
+    let backendName: String
+    let captureFormat: CaptureFormatDescriptor?
+    let mirrorState: MirrorState?
+    let display: Config.Display
+  }
+
   public static func snapshot(
     output: EngineOutput?,
     backendName: String,
     captureFormat: CaptureFormatDescriptor?,
-    mirrorState: MirrorState?
+    mirrorState: MirrorState?,
+    display: Config.Display = Config.defaults.display
   ) -> [FormattedSignal] {
-    Field.allCases.map {
-      row(
-        for: $0, output: output, backendName: backendName, captureFormat: captureFormat,
-        mirrorState: mirrorState)
-    }
+    let context = Context(
+      output: output, backendName: backendName, captureFormat: captureFormat,
+      mirrorState: mirrorState, display: display)
+    return Field.allCases.map { row(for: $0, context: context) }
   }
 
   // MARK: - Placeholders (§9: "never blank, never stale-looking")
@@ -138,49 +149,40 @@ public enum SignalFormatter {
   // once), and face-dependent (needs a detected face). `value(for:...)`
   // tries each tier in order and stops at the first that applies.
 
-  private static func row(
-    for field: Field,
-    output: EngineOutput?,
-    backendName: String,
-    captureFormat: CaptureFormatDescriptor?,
-    mirrorState: MirrorState?
-  ) -> FormattedSignal {
-    let resolvedValue = value(
-      for: field, output: output, backendName: backendName, captureFormat: captureFormat,
-      mirrorState: mirrorState)
-    return FormattedSignal(id: field, label: label(for: field), value: resolvedValue)
+  private static func row(for field: Field, context: Context) -> FormattedSignal {
+    FormattedSignal(id: field, label: label(for: field), value: value(for: field, context: context))
   }
 
-  private static func value(
-    for field: Field,
-    output: EngineOutput?,
-    backendName: String,
-    captureFormat: CaptureFormatDescriptor?,
-    mirrorState: MirrorState?
-  ) -> String {
+  private static func value(for field: Field, context: Context) -> String {
+    let output = context.output
+    let display = context.display
     // swift-format requires the brace on its own line after a multiline
     // condition; swiftlint's opening_brace rule disagrees. Format wins (see
     // ConfigStore.swift for the same, pre-existing conflict).
     // swiftlint:disable opening_brace
     if let staticValue = staticValue(
-      for: field, backendName: backendName, captureFormat: captureFormat, mirrorState: mirrorState)
+      for: field, backendName: context.backendName, captureFormat: context.captureFormat,
+      mirrorState: context.mirrorState)
     {
-      // swiftlint:enable opening_brace
       return staticValue
     }
     guard let output else {
       return notStartedPlaceholder
     }
-    if let wholeFrame = wholeFrameValue(for: field, output: output) {
+    if let wholeFrame = wholeFrameValue(for: field, output: output, display: display) {
       return wholeFrame
     }
     guard let geometry = output.analysis.primary, let framing = output.framing else {
       return facePlaceholder(for: output.analysis.signalState)
     }
-    if let position = positionValue(for: field, geometry: geometry, framing: framing) {
+    if let position = positionValue(
+      for: field, geometry: geometry, framing: framing, display: display)
+    {
+      // swiftlint:enable opening_brace
       return position
     }
-    return poseAndQualityValue(for: field, geometry: geometry, lighting: output.analysis.lighting)
+    return poseAndQualityValue(
+      for: field, geometry: geometry, lighting: output.analysis.lighting, display: display)
   }
 
   /// Fields with no per-frame dependency at all: always have a value, even
@@ -206,14 +208,16 @@ public enum SignalFormatter {
   /// Whole-frame lighting/count fields: meaningful once analysis has run at
   /// least once, face or no face (`LightingAnalyzer` computes them from the
   /// whole frame minus whatever face ROI it was given, `nil` or not).
-  private static func wholeFrameValue(for field: Field, output: EngineOutput) -> String? {
+  private static func wholeFrameValue(
+    for field: Field, output: EngineOutput, display: Config.Display
+  ) -> String? {
     switch field {
     case .backgroundLuma:
-      return percentString(output.analysis.lighting.backgroundLuma)
+      return percentString(output.analysis.lighting.backgroundLuma, display: display)
     case .clippedHighlights:
-      return percentString(output.analysis.lighting.clippedHighlightFraction)
+      return percentString(output.analysis.lighting.clippedHighlightFraction, display: display)
     case .clippedShadows:
-      return percentString(output.analysis.lighting.clippedShadowFraction)
+      return percentString(output.analysis.lighting.clippedShadowFraction, display: display)
     case .faceCount:
       return formatFaceCount(output.analysis.faceCount)
     default:
@@ -223,17 +227,17 @@ public enum SignalFormatter {
 
   /// Framing-position fields: need a detected face's geometry/framing.
   private static func positionValue(
-    for field: Field, geometry: FaceGeometry, framing: FramingState
+    for field: Field, geometry: FaceGeometry, framing: FramingState, display: Config.Display
   ) -> String? {
     switch field {
     case .headroom:
-      return formatHeadroom(geometry)
+      return formatHeadroom(geometry, display: display)
     case .horizontalOffset:
-      return formatHorizontalOffset(framing)
+      return formatHorizontalOffset(framing, display: display)
     case .faceBox:
-      return formatFaceBox(geometry)
+      return formatFaceBox(geometry, display: display)
     case .interocularDistance:
-      return formatInterocularDistance(geometry, framing: framing)
+      return formatInterocularDistance(geometry, framing: framing, display: display)
     default:
       return nil
     }
@@ -244,23 +248,23 @@ public enum SignalFormatter {
   /// practice" fallback — every field reaching this function was already
   /// ruled out by `staticValue`/`wholeFrameValue`/`positionValue` above.
   private static func poseAndQualityValue(
-    for field: Field, geometry: FaceGeometry, lighting: LightingMetrics
+    for field: Field, geometry: FaceGeometry, lighting: LightingMetrics, display: Config.Display
   ) -> String {
     switch field {
     case .faceLuma:
-      return percentString(lighting.faceLuma)
+      return percentString(lighting.faceLuma, display: display)
     case .backlightDelta:
-      return formatBacklightDelta(lighting.backlightDelta)
+      return formatBacklightDelta(lighting.backlightDelta, display: display)
     case .sharpness:
-      return fixed(Double(lighting.sharpness), decimals: 2)
+      return fixed(quantized(Double(lighting.sharpness), step: display.normalizedStep), decimals: 2)
     case .yaw:
-      return formatYaw(geometry.yaw)
+      return formatYaw(geometry.yaw, display: display)
     case .pitch:
-      return formatPitch(geometry.pitch)
+      return formatPitch(geometry.pitch, display: display)
     case .roll:
-      return formatRoll(geometry.roll)
+      return formatRoll(geometry.roll, display: display)
     case .backendConfidence:
-      return percentString(geometry.confidence)
+      return percentString(geometry.confidence, display: display)
     default:
       return notStartedPlaceholder
     }

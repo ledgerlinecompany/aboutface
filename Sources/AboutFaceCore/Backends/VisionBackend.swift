@@ -48,7 +48,9 @@ import Vision
 ///   *contradicts* the community-reported convention this comment
 ///   previously documented as a starting hypothesis ("positive yaw = face
 ///   turned toward the image's right edge") — that hypothesis was wrong.
-/// - Positive pitch = chin up.
+/// - Positive pitch = chin DOWN (corrected 2026-08-01 by a controlled
+///   live-camera test; the earlier photo-derived "chin up" reading conflated
+///   eye gaze with head pitch — see ATTRIBUTION.md's correction note).
 /// - Positive roll = tilt toward the subject's own right.
 /// - A horizontal flip of the image negates yaw and roll, and leaves pitch
 ///   unchanged — checked directly via a synthetic flip-consistency test

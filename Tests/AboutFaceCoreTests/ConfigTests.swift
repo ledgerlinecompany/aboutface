@@ -31,6 +31,11 @@ struct ConfigTests {
       gaze: Config.Gaze(
         maxYawDegrees: 12,
         maxPitchDegrees: 18
+      ),
+      display: Config.Display(
+        degreesStep: 5,
+        percentStep: 3,
+        normalizedStep: 0.05
       )
     )
 

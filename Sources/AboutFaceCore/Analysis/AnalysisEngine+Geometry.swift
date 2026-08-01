@@ -82,36 +82,43 @@ extension AnalysisEngine {
   ///
   /// ## Empirical basis
   ///
-  /// Measured 2026-07-31 against real Vision output on ground-truth
-  /// (known head orientation) images — see `VisionBackend`'s corrected
-  /// pose-sign-convention doc comment for the full findings and caveats,
-  /// and `Fixtures/corpus/stills/ATTRIBUTION.md` (landing on another
-  /// branch) for the complete writeup. Summary:
+  /// Yaw/roll measured 2026-07-31 against real Vision output on
+  /// ground-truth (known head orientation) images; pitch CORRECTED
+  /// 2026-08-01 by a controlled live test — see
+  /// `Fixtures/corpus/stills/ATTRIBUTION.md` for the full writeup and
+  /// correction history. Summary:
   ///
   /// - Vision yaw: positive = the subject's head turned toward THEIR OWN
   ///   RIGHT (face turns toward image-left in an unmirrored image).
-  /// - Vision pitch: positive = chin up.
+  /// - Vision pitch: positive = **chin DOWN**. The 2026-07-31 photo-based
+  ///   reading ("positive = chin up") was wrong: its ground truth image
+  ///   (a masked subject *looking* upward) conflated eye gaze with head
+  ///   pitch. The correction comes from a controlled live-camera test —
+  ///   the maintainer deliberately tilting their chin up and watching the
+  ///   raw value fall — which is direct head movement with no gaze
+  ///   confound, and therefore supersedes the photo inference.
   /// - Vision roll: positive = tilt toward the subject's own right.
   /// - A horizontal flip of the image negates yaw and roll, and leaves
   ///   pitch unchanged (checked via a synthetic flip-consistency test, not
-  ///   assumed).
+  ///   assumed; unaffected by the pitch-sign correction).
   ///
-  /// Caveats carried over from that measurement: n=2 turned-head samples,
-  /// subjects masked in the source images, roll verified only via a
-  /// synthetic flip (no second real-roll sample). A solid working default,
-  /// not a fully closed question.
+  /// Remaining caveats: yaw n=2 (masked subjects); roll verified only via
+  /// synthetic flip (no real tilted-head sample yet). A solid working
+  /// default, not a fully closed question — re-verify against
+  /// purpose-recorded corpus clips (§14).
   ///
   /// ## Consequence for this mapping
   ///
-  /// For `.notMirrored` frames, Vision's raw yaw/roll/pitch ALREADY match
-  /// `FaceGeometry`'s egocentric convention (Vision's "subject's own
-  /// right" is the same "own right" §3.3 wants) and pass through
-  /// unchanged. For `.mirrored` frames, the pixels handed to Vision were
-  /// already flipped before inference ran (see `FileCaptureSource`'s
+  /// §3.3 wants "+pitch = chin up," and Vision's raw positive is chin
+  /// DOWN, so **pitch is negated in BOTH mirror states** (a horizontal
+  /// flip does not affect pitch, so the negation is mirror-independent).
+  /// For `.notMirrored` frames, Vision's raw yaw/roll already match
+  /// `FaceGeometry`'s egocentric convention and pass through unchanged.
+  /// For `.mirrored` frames, the pixels handed to Vision were already
+  /// flipped before inference ran (see `FileCaptureSource`'s
   /// `simulateMirrored` / `CameraCaptureSource`'s mirror handling), so per
-  /// the flip-consistency finding above, yaw and roll must be NEGATED here
-  /// to undo that and recover the egocentric sense; pitch is unaffected by
-  /// a horizontal flip and passes through unchanged in both cases.
+  /// the flip-consistency finding above, yaw and roll must be NEGATED to
+  /// undo that and recover the egocentric sense.
   ///
   /// `nil` fields (a backend without `.headPose`, or a best-effort
   /// per-field failure) default to 0 — `FaceGeometry.yaw/pitch/roll` are
@@ -125,9 +132,9 @@ extension AnalysisEngine {
     let rawRoll = raw.roll ?? 0
     switch mirror {
     case .notMirrored:
-      return EgocentricPose(yaw: rawYaw, pitch: rawPitch, roll: rawRoll)
+      return EgocentricPose(yaw: rawYaw, pitch: -rawPitch, roll: rawRoll)
     case .mirrored:
-      return EgocentricPose(yaw: -rawYaw, pitch: rawPitch, roll: -rawRoll)
+      return EgocentricPose(yaw: -rawYaw, pitch: -rawPitch, roll: -rawRoll)
     }
   }
 }

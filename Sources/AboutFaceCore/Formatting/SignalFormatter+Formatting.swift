@@ -15,9 +15,9 @@ extension SignalFormatter {
   /// `FaceGeometry.eyeMidpoint.y` is normalized, BOTTOM-LEFT origin (§3.3,
   /// `VisionBackend`'s coordinate contract, `AnalysisEngine+Framing.swift`),
   /// so the fraction of frame ABOVE the eyes is `1 - y`.
-  static func formatHeadroom(_ geometry: FaceGeometry) -> String {
+  static func formatHeadroom(_ geometry: FaceGeometry, display: Config.Display) -> String {
     let headroomFraction = 1 - Float(geometry.eyeMidpoint.y)
-    return percentString(headroomFraction)
+    return percentString(headroomFraction, display: display)
   }
 
   /// Horizontal offset (§9), with direction word (§3.4 egocentric):
@@ -27,20 +27,24 @@ extension SignalFormatter {
   /// target" — never "the subject should move," since this is a read-only
   /// state value, not an instruction (§9 vs. §6.3's instruction phrasing
   /// are deliberately different registers).
-  static func formatHorizontalOffset(_ framing: FramingState) -> String {
-    let percent = Int((abs(framing.error.x) * 100).rounded())
+  static func formatHorizontalOffset(_ framing: FramingState, display: Config.Display) -> String {
+    // Quantize BEFORE the zero/direction decision so noise around the
+    // target reads as a stable "On target" rather than flickering between
+    // "1% left" and "1% right".
+    let percent = quantizedPercent(abs(framing.error.x), display: display)
     guard percent != 0 else { return "On target" }
     let direction = framing.error.x > 0 ? "right" : "left"
     return "\(percent)% \(direction) of target"
   }
 
   /// Face box origin and size (§9), normalized, 2 decimals.
-  static func formatFaceBox(_ geometry: FaceGeometry) -> String {
+  static func formatFaceBox(_ geometry: FaceGeometry, display: Config.Display) -> String {
     let box = geometry.boundingBox
-    let origin =
-      "(\(fixed(box.origin.x, decimals: 2)), \(fixed(box.origin.y, decimals: 2)))"
-    let size =
-      "\(fixed(box.width, decimals: 2)) × \(fixed(box.height, decimals: 2))"
+    func q(_ value: CGFloat) -> String {
+      fixed(quantized(Double(value), step: display.normalizedStep), decimals: 2)
+    }
+    let origin = "(\(q(box.origin.x)), \(q(box.origin.y)))"
+    let size = "\(q(box.width)) × \(q(box.height))"
     return "origin \(origin), size \(size)"
   }
 
@@ -52,8 +56,11 @@ extension SignalFormatter {
   /// flicker between "closer"/"farther" for a value that is, for display
   /// purposes, zero — this is a display-rounding constant, not a §0/§11
   /// engine threshold (it changes no behavior, only which word is printed).
-  static func formatInterocularDistance(_ geometry: FaceGeometry, framing: FramingState) -> String {
-    let distance = fixed(geometry.interocularDistance, decimals: 2)
+  static func formatInterocularDistance(
+    _ geometry: FaceGeometry, framing: FramingState, display: Config.Display
+  ) -> String {
+    let distance = fixed(
+      quantized(Double(geometry.interocularDistance), step: display.normalizedStep), decimals: 2)
     let epsilon: Float = 0.0005
     let phrase: String
     if framing.distanceError > epsilon {
@@ -70,8 +77,11 @@ extension SignalFormatter {
   /// backlit." Reported as signed percentage points plus the same word the
   /// spec's own field doc uses ("backlit") so the reading is self-
   /// explanatory without cross-referencing another row.
-  static func formatBacklightDelta(_ delta: Float) -> String {
-    let points = Int((delta * 100).rounded())
+  static func formatBacklightDelta(_ delta: Float, display: Config.Display) -> String {
+    let points =
+      delta > 0
+      ? quantizedPercent(delta, display: display)
+      : -quantizedPercent(-delta, display: display)
     if points > 0 {
       return "\(points) points brighter background (backlit)"
     } else if points < 0 {
@@ -83,25 +93,28 @@ extension SignalFormatter {
 
   /// Yaw (§9): degrees, signed, one decimal, egocentric. `FaceGeometry.yaw`
   /// is documented "+ = subject's head turned to their right" (§3.3).
-  static func formatYaw(_ yaw: Float) -> String {
-    guard yaw != 0 else { return "0.0° (facing camera)" }
-    let direction = yaw > 0 ? "own right" : "own left"
-    return "\(signedDegrees(yaw))° (turned toward \(direction))"
+  static func formatYaw(_ yaw: Float, display: Config.Display) -> String {
+    let degrees = quantizedDegrees(yaw, display: display)
+    guard degrees != 0 else { return "0° (facing camera)" }
+    let direction = degrees > 0 ? "own right" : "own left"
+    return "\(signedDegrees(degrees))° (turned toward \(direction))"
   }
 
   /// Pitch (§9): `FaceGeometry.pitch` is "+ = chin up" (§3.3).
-  static func formatPitch(_ pitch: Float) -> String {
-    guard pitch != 0 else { return "0.0° (level)" }
-    let direction = pitch > 0 ? "chin up" : "chin down"
-    return "\(signedDegrees(pitch))° (\(direction))"
+  static func formatPitch(_ pitch: Float, display: Config.Display) -> String {
+    let degrees = quantizedDegrees(pitch, display: display)
+    guard degrees != 0 else { return "0° (level)" }
+    let direction = degrees > 0 ? "chin up" : "chin down"
+    return "\(signedDegrees(degrees))° (\(direction))"
   }
 
   /// Roll (§9): `FaceGeometry.roll` is "+ = subject's head tilted to their
   /// right" (§3.3).
-  static func formatRoll(_ roll: Float) -> String {
-    guard roll != 0 else { return "0.0° (level)" }
-    let direction = roll > 0 ? "own right" : "own left"
-    return "\(signedDegrees(roll))° (tilted toward \(direction))"
+  static func formatRoll(_ roll: Float, display: Config.Display) -> String {
+    let degrees = quantizedDegrees(roll, display: display)
+    guard degrees != 0 else { return "0° (level)" }
+    let direction = degrees > 0 ? "own right" : "own left"
+    return "\(signedDegrees(degrees))° (tilted toward \(direction))"
   }
 
   static func formatFaceCount(_ count: Int) -> String {
@@ -127,17 +140,37 @@ extension SignalFormatter {
 
   // MARK: - Numeric primitives
 
-  /// Formats a `0...1`-ish fraction as a whole-number percent. Not clamped
-  /// — a value that legitimately exceeds `0...1` (measurement noise, an
-  /// out-of-range metric) still prints rather than silently clipping to a
-  /// misleading 100%.
-  static func percentString(_ fraction: Float) -> String {
-    "\(Int((fraction * 100).rounded()))%"
+  /// Formats a `0...1`-ish fraction as a percent quantized to
+  /// `display.percentStep` (§9 Phase 2 acceptance feedback: raw signals
+  /// jitter at the last digit; VoiceOver users need coarse stable steps).
+  /// Not clamped — a value that legitimately exceeds `0...1` (measurement
+  /// noise, an out-of-range metric) still prints rather than silently
+  /// clipping to a misleading 100%.
+  static func percentString(_ fraction: Float, display: Config.Display) -> String {
+    "\(quantizedPercent(fraction, display: display))%"
   }
 
-  static func signedDegrees(_ value: Float) -> String {
-    let magnitude = fixed(Double(abs(value)), decimals: 1)
-    return value > 0 ? "+\(magnitude)" : "-\(magnitude)"
+  /// Fraction → whole percent rounded to the nearest `percentStep`.
+  static func quantizedPercent(_ fraction: Float, display: Config.Display) -> Int {
+    let step = max(display.percentStep, 1)
+    return Int((Double(fraction) * 100 / step).rounded() * step)
+  }
+
+  /// Degrees rounded to the nearest `degreesStep`, as a whole number.
+  static func quantizedDegrees(_ value: Float, display: Config.Display) -> Int {
+    let step = max(display.degreesStep, 1)
+    return Int((Double(value) / step).rounded() * step)
+  }
+
+  /// Rounds a value to the nearest multiple of `step` (display only —
+  /// never used in engine decisions).
+  static func quantized(_ value: Double, step: Double) -> Double {
+    guard step > 0 else { return value }
+    return (value / step).rounded() * step
+  }
+
+  static func signedDegrees(_ degrees: Int) -> String {
+    degrees > 0 ? "+\(degrees)" : "\(degrees)"
   }
 
   static func fixed(_ value: Double, decimals: Int) -> String {
