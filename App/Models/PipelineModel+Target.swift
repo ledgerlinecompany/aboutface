@@ -7,8 +7,8 @@ import Accessibility
 /// implementation, not a separate public surface.
 extension PipelineModel {
 
-  /// "Capture current position as target" (§4's v1 primitive, bound to
-  /// ⌘⌃⇧T globally and to a plain button in the Setup window): copies the
+  /// "Capture current position as target" (§4's v1 primitive; global ⌘⌃⇧T
+  /// arrives with the §8 hotkey work — for now it is a Setup-window button): copies the
   /// **current smoothed** eye midpoint and interocular distance into
   /// `Config.targetFraming`.
   ///
