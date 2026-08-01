@@ -8,6 +8,7 @@ import AboutFaceCore
 import AppKit
 import Observation
 import SwiftUI
+
 // swiftlint:enable sorted_imports
 
 /// Camera-permission state for the Setup window's permission flow (spec
@@ -116,6 +117,30 @@ public final class PipelineModel {
 
   public private(set) var isRunning = false
   public private(set) var captureErrorMessage: String?
+
+  // MARK: - Feedback chain (§5.1, §13 Phase 3) — see `PipelineModel+Audio.swift`
+
+  /// "Feedback" toggle (§5.1 task brief): on by default whenever the
+  /// pipeline is running. Distinct from `isSilenced` — this is a
+  /// user-facing master switch (persists across start/stop), `isSilenced`
+  /// is the §7.5 "someone just started talking to me" instant mute. Both
+  /// feed the same `FeedbackRouter.setSilenced(_:)` call; see
+  /// `PipelineModel+Audio.swift`'s `pushSilencedState()`.
+  public internal(set) var feedbackEnabled = true
+  /// §7.5 manual silence (⌘⌃⇧/ in-app stand-in — see
+  /// `PipelineModel+Audio.swift`'s `toggleSilence()` doc comment for why
+  /// this is not yet the global `RegisterEventHotKey` §8 requires).
+  public internal(set) var isSilenced = false
+  /// Set when `AudioRenderer.start()` throws (no audio device, or any other
+  /// startup failure) — the pipeline keeps running UI-only in that case
+  /// (task brief: "a no-audio-device failure can't crash the app; feedback
+  /// chain failure degrades to silent UI-only operation with a visible
+  /// notice"). `nil` when audio is fine or not yet started.
+  public internal(set) var audioUnavailableMessage: String?
+
+  var audioRenderer: AudioRenderer?
+  var speechRenderer: SpeechRenderer?
+  var feedbackRouter: FeedbackRouter?
 
   // MARK: - Throttled state (see type-level doc comment)
 
@@ -236,11 +261,22 @@ public final class PipelineModel {
     isRunning = true
     signalStateLine = "Starting…"
 
+    // Audio starts with the pipeline (task brief §5.1): same lifecycle as
+    // the camera/engine above, degrading to a visible notice rather than
+    // failing `start()` if no audio device is available — see
+    // `PipelineModel+Audio.swift`.
+    await startFeedbackChain()
+
     consumeTask = Task { @MainActor [weak self] in
       guard let self else { return }
       do {
         for try await item in newEngine.stream(from: source) {
           self.ingest(item)
+          // Same per-frame stream that drives the UI (task brief: "fed
+          // from the same engine stream... every frame, real timestamps
+          // via ContinuousClock") — not the throttled `visualOutput`/
+          // `accessibilitySnapshot` views `ingest(_:)` above derives from.
+          await self.feedFeedbackChain(item)
         }
       } catch {
         self.captureErrorMessage = "Capture stopped: \(error)"
@@ -255,6 +291,9 @@ public final class PipelineModel {
     await captureSource?.stop()
     captureSource = nil
     engine = nil
+    // Audio stops with the pipeline (task brief §5.1: "stop → stops
+    // cleanly") — see `PipelineModel+Audio.swift`.
+    await stopFeedbackChain()
     isRunning = false
     signalStateLine = "Stopped"
     latestOutput = nil

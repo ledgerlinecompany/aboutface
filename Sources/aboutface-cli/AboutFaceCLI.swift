@@ -5,9 +5,14 @@ import ArgumentParser
 /// `FrameAnalysis` to console. No UI, no audio."). Two subcommands:
 ///
 /// - `replay` — corpus/file replay through `AnalysisEngine` (§14 harness).
+///   `replay --audio` (§13 Phase 3) plays that replay's feedback through a
+///   real `AudioRenderer`/`SpeechRenderer`/`FeedbackRouter`.
 /// - `live` — live camera through `AnalysisEngine`, the §13 Phase 1
 ///   acceptance probe for "runs a live camera at 30Hz without dropping
 ///   frames."
+/// - `audition` — play About Face's synthesized audio feedback directly
+///   (earcons by name, a positional sweep, or both) without needing a
+///   corpus clip: the §13 ear-tuning entry point.
 ///
 /// Not named `main.swift`, deliberately: `@main` and the implicit top-level
 /// executable semantics of a file literally named `main.swift` are mutually
@@ -24,9 +29,10 @@ import ArgumentParser
 struct AboutFaceCLI: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "aboutface-cli",
-    abstract: "About Face headless harness (§13 Phase 1): replay a corpus clip or run a live "
-      + "camera through AnalysisEngine and print FrameAnalysis to the console.",
-    version: "0.0.0-phase1 (Config schema v\(Config.defaults.version))",
-    subcommands: [Replay.self, Live.self, RecordCorpus.self, VerifyCorpus.self]
+    abstract: "About Face headless harness: replay a corpus clip or run a live camera through "
+      + "AnalysisEngine and print FrameAnalysis to the console, optionally with real audio "
+      + "feedback (§13 Phase 3).",
+    version: "0.0.0-phase3 (Config schema v\(Config.defaults.version))",
+    subcommands: [Replay.self, Live.self, Audition.self, RecordCorpus.self, VerifyCorpus.self]
   )
 }

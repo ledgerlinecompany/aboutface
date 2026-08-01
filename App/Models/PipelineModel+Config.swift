@@ -15,10 +15,16 @@ extension PipelineModel {
   /// a debounced (~1 s) save to disk so a slider being dragged doesn't
   /// generate a disk write per frame.
   public func updateConfig(_ newConfig: Config) {
+    let previousConfig = config
     config = newConfig
     if let engine {
       Task { await engine.updateConfig(newConfig) }
     }
+    // Feedback-chain half of the same "push live, save debounced" contract
+    // (task brief: "Live changes flow to the renderer") — see
+    // `PipelineModel+Audio.swift`'s doc comment for why `AudioRenderer`'s
+    // push is gated on `old.audio != new.audio` there.
+    pushConfigToFeedbackChain(old: previousConfig, new: newConfig)
     scheduleSave()
   }
 
@@ -91,6 +97,43 @@ extension PipelineModel {
       set: { newValue in
         var updated = self.config
         updated[keyPath: keyPath] = Int(newValue.rounded())
+        self.updateConfig(updated)
+      }
+    )
+  }
+
+  /// Same idea as `binding(_:)`, for `Bool` `Config` fields (the Debug
+  /// panel's Audio-section toggles: beacon polarity, Scheme B enable).
+  public func boolBinding(_ keyPath: WritableKeyPath<Config, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { self.config[keyPath: keyPath] },
+      set: { newValue in
+        var updated = self.config
+        updated[keyPath: keyPath] = newValue
+        self.updateConfig(updated)
+      }
+    )
+  }
+
+  /// Backs the Debug panel's Audio-section pickers
+  /// (`Config.AudioPositionalScheme`/`Config.AudioOutputMode`) through their
+  /// `String` raw value rather than the enum itself: SwiftUI's
+  /// `Picker(selection:)` requires `Hashable`, and adding that conformance
+  /// to those `AboutFaceCore` enums (which are `RawRepresentable<String>`
+  /// but not `Hashable`) is a core-type change this UI-only need doesn't
+  /// justify — `String` is already `Hashable`, so binding through the raw
+  /// value sidesteps the question entirely. Invalid raw values (impossible
+  /// in practice — the picker only ever writes back a case's own
+  /// `rawValue`) are ignored rather than crashing.
+  public func rawValueBinding<Value: RawRepresentable>(
+    _ keyPath: WritableKeyPath<Config, Value>
+  ) -> Binding<Value.RawValue> {
+    Binding(
+      get: { self.config[keyPath: keyPath].rawValue },
+      set: { newRaw in
+        guard let newValue = Value(rawValue: newRaw) else { return }
+        var updated = self.config
+        updated[keyPath: keyPath] = newValue
         self.updateConfig(updated)
       }
     )

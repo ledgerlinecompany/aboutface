@@ -6,6 +6,12 @@ import Foundation
 /// "test corpus harness. Emits `FrameAnalysis` to console" acceptance
 /// criterion. Feeds a `FileCaptureSource` through `AnalysisEngine` and
 /// prints one line per frame, then a summary.
+///
+/// `--audio` (§13 Phase 3) turns this into the §13 tuning instrument: paced,
+/// real-time replay driving the SAME `AnalysisEngine` output into a real
+/// `FeedbackRouter(mode: .setup)` + `AudioRenderer` + `SpeechRenderer` — the
+/// exact renderer/router types `PipelineModel` wires into the app — so a
+/// corpus clip is HEARD exactly as the app would render it, not simulated.
 struct Replay: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "replay",
@@ -26,6 +32,18 @@ struct Replay: AsyncParsableCommand {
       contract -- look fields up by name. No summary block is printed after JSON output, so a \
       script can pipe stdout straight into a JSON-lines parser without special-casing a trailing \
       non-JSON block.
+
+      --audio (§13 Phase 3): plays the clip's feedback through a real AudioRenderer + \
+      SpeechRenderer + FeedbackRouter(mode: .setup), paced at the clip's real-time rate (implies \
+      --paced) so timing-sensitive behavior -- dwell, hysteresis, the heartbeat, the face-lost \
+      ladder -- sounds the way it would live. Needs a real audio output device; fails with a \
+      clear message (not a crash) when none is available, which is expected under CI. \
+      Per-frame text output is suppressed by default under --audio (one status line per second \
+      instead) since the point is to LISTEN; pass --verbose to keep the full per-frame lines too. \
+      --scheme/--scheme-b/--config let you A/B two tuning profiles against the identical clip \
+      (the §14 workflow): run replay --audio twice, once per --config, and compare by ear. \
+      --silence-at <sec> engages the §7.5 manual-silence path partway through the clip, so that \
+      "cuts within one buffer, analysis keeps running" behavior is audible too.
       """
   )
 
@@ -46,14 +64,78 @@ struct Replay: AsyncParsableCommand {
   @Flag(help: "Emit one JSON object per line instead of the plain-text format.")
   var json = false
 
+  @Flag(
+    name: .customLong("audio"),
+    help: ArgumentHelp(
+      "Play the clip's feedback through a real AudioRenderer/SpeechRenderer/FeedbackRouter "
+        + "(§13 Phase 3) as it replays. Implies --paced. Needs a real audio output device."
+    )
+  )
+  var audioEnabled = false
+
+  @Option(
+    name: .customLong("scheme"),
+    help: ArgumentHelp(
+      "Override the positional sonification scheme for --audio: 'a' (pan/pitch, default) or "
+        + "'c' (sequential axis)."
+    )
+  )
+  var scheme: AudioCLISupport.SchemeFlag?
+
+  @Option(
+    name: .customLong("scheme-b"),
+    help: ArgumentHelp(
+      "Override the Scheme B (zero-beat refinement) enable flag for --audio: 'on' or 'off'.")
+  )
+  var schemeB: AudioCLISupport.OnOffFlag?
+
+  @Option(
+    name: .customLong("silence-at"),
+    help: ArgumentHelp(
+      "With --audio, engage §7.5 manual silence once the clip reaches this many seconds "
+        + "(clip-relative timestamp). Analysis keeps running; only the feedback goes silent."
+    )
+  )
+  var silenceAt: Double?
+
+  @Option(
+    name: .customLong("config"),
+    help: ArgumentHelp(
+      "Path to a ConfigStore-exported JSON tuning profile (Debug panel Export…) to replay "
+        + "against, instead of Config.defaults. Only affects --audio."
+    )
+  )
+  var configPath: String?
+
+  @Flag(
+    help: ArgumentHelp(
+      "With --audio, also print the normal per-frame text/JSON lines (suppressed by default "
+        + "under --audio, since the point is to listen). No effect without --audio."
+    )
+  )
+  var verbose = false
+
   func run() async throws {
     let url = URL(fileURLWithPath: path)
-    let pacing: FileCaptureSource.PacingMode = paced ? .realTime : .unpaced
+    let effectivePaced = paced || audioEnabled
+    let pacing: FileCaptureSource.PacingMode = effectivePaced ? .realTime : .unpaced
     let source = FileCaptureSource(url: url, pacing: pacing, simulateMirrored: simulateMirrored)
     let engine = AnalysisEngine(backend: VisionBackend())
 
     try await source.start()
 
+    if audioEnabled {
+      try await runWithAudio(source: source, engine: engine)
+    } else {
+      try await runPlain(source: source, engine: engine)
+    }
+
+    await source.stop()
+  }
+
+  // MARK: - Plain replay (existing behavior, unchanged)
+
+  private func runPlain(source: FileCaptureSource, engine: AnalysisEngine) async throws {
     var frameCount = 0
     var stateHistogram: [String: Int] = [:]
     var absErrorXSum: Float = 0
@@ -72,7 +154,68 @@ struct Replay: AsyncParsableCommand {
       print(json ? line.jsonString() : line.plainText())
     }
 
-    await source.stop()
+    guard !json else { return }
+    printSummary(
+      frameCount: frameCount,
+      stateHistogram: stateHistogram,
+      absErrorXSum: absErrorXSum,
+      absErrorYSum: absErrorYSum,
+      errorSampleCount: errorSampleCount
+    )
+  }
+
+  // MARK: - --audio replay (§13 Phase 3)
+
+  private func runWithAudio(source: FileCaptureSource, engine: AnalysisEngine) async throws {
+    var config = try AudioCLISupport.loadConfig(configPath: configPath)
+    AudioCLISupport.applyOverrides(&config, scheme: scheme, schemeB: schemeB)
+
+    let chain: AudioCLISupport.FeedbackChain
+    do {
+      chain = try await AudioCLISupport.makeFeedbackChain(config: config)
+    } catch {
+      print("\(error)")
+      throw ExitCode.failure
+    }
+
+    var frameCount = 0
+    var stateHistogram: [String: Int] = [:]
+    var absErrorXSum: Float = 0
+    var absErrorYSum: Float = 0
+    var errorSampleCount = 0
+    var lastReportedSecond = -1
+    var silenceEngaged = false
+
+    for try await output in engine.stream(from: source) {
+      frameCount += 1
+      let line = OutputLine(output)
+      stateHistogram[line.signalState, default: 0] += 1
+      if let framing = output.framing {
+        absErrorXSum += abs(framing.error.x)
+        absErrorYSum += abs(framing.error.y)
+        errorSampleCount += 1
+      }
+
+      if verbose {
+        print(json ? line.jsonString() : line.plainText())
+      } else {
+        let wholeSecond = Int(line.timestampSeconds)
+        if wholeSecond != lastReportedSecond {
+          lastReportedSecond = wholeSecond
+          print("t=\(wholeSecond)s \(line.signalState) faces=\(line.faceCount)")
+        }
+      }
+
+      if let silenceAt, !silenceEngaged, line.timestampSeconds >= silenceAt {
+        silenceEngaged = true
+        await chain.router.setSilenced(true)
+        print("-- §7.5 manual silence engaged at t=\(String(format: "%.2f", silenceAt))s --")
+      }
+
+      await chain.router.ingest(output, at: .now)
+    }
+
+    await chain.audio.stop()
 
     guard !json else { return }
     printSummary(
