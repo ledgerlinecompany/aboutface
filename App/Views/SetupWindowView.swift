@@ -1,0 +1,168 @@
+import AboutFaceCore
+import Accessibility
+import SwiftUI
+
+/// The Setup window (spec §5.1, §9): "A real window means every signal
+/// becomes a VoiceOver-navigable element with an actual value." This view
+/// is the accessible value list plus the controls the task brief calls out
+/// explicitly — camera picker, start/stop, current state line, and
+/// "capture current position as target" (§4).
+///
+/// Deliberately thin (CLAUDE.md: "keep `App/` thin") — every value shown
+/// here is already a formatted string from `SignalFormatter`/
+/// `PipelineModel`; this view does no signal math of its own.
+struct SetupWindowView: View {
+  @Bindable var model: PipelineModel
+
+  var body: some View {
+    Form {
+      Section("Camera") {
+        permissionSection
+        cameraPickerRow
+        startStopRow
+        stateLineRow
+        captureTargetRow
+      }
+
+      Section("Signals") {
+        ForEach(model.accessibilitySnapshot.rows) { row in
+          SignalRow(row: row)
+        }
+      }
+
+      if let issue = model.configLoadIssue {
+        Section("Configuration") {
+          configLoadIssueRow(issue)
+        }
+      }
+
+      if let message = model.captureErrorMessage {
+        Section("Capture error") {
+          Text(message)
+            .foregroundStyle(.red)
+        }
+      }
+    }
+    .formStyle(.grouped)
+    .navigationTitle("About Face — Setup")
+    .task {
+      await model.requestCameraPermission()
+    }
+  }
+
+  // MARK: - Camera permission
+
+  @ViewBuilder
+  private var permissionSection: some View {
+    switch model.permissionState {
+    case .authorized:
+      EmptyView()
+    case .notDetermined:
+      Text("Waiting for camera permission…")
+        .foregroundStyle(.secondary)
+    case .denied, .restricted:
+      VStack(alignment: .leading, spacing: 6) {
+        Text("About Face needs camera access to analyze your framing.")
+        Button("Open System Settings") {
+          model.openSystemSettingsForCameraPrivacy()
+        }
+      }
+    }
+  }
+
+  // MARK: - Camera picker (§9: "device name + uniqueID")
+
+  private var cameraPickerRow: some View {
+    Picker("Camera", selection: $model.selectedCameraID) {
+      Text("Select a camera").tag(String?.none)
+      ForEach(model.cameraDiscovery.devices) { device in
+        Text("\(device.displayName) (\(device.id))")
+          .tag(String?.some(device.id))
+      }
+    }
+    .disabled(model.isRunning)
+  }
+
+  private var startStopRow: some View {
+    HStack {
+      Button(model.isRunning ? "Stop" : "Start") {
+        Task {
+          if model.isRunning {
+            await model.stop()
+          } else {
+            await model.start()
+          }
+        }
+      }
+      .disabled(model.permissionState != .authorized || model.selectedCameraID == nil)
+
+      Spacer()
+    }
+  }
+
+  /// The "current state line (signalState words)" the task brief asks for.
+  /// A single VoiceOver-navigable element with a label distinct from its
+  /// live value, same convention as every row in `SignalRow`.
+  private var stateLineRow: some View {
+    HStack {
+      Text("State")
+      Spacer()
+      Text(model.signalStateLine)
+        .foregroundStyle(.secondary)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("State")
+    .accessibilityValue(model.signalStateLine)
+  }
+
+  /// "Capture current position as target" (§4's v1 primitive; global
+  /// hotkey ⌘⌃⇧T is out of scope for this window-focused button — see the
+  /// Phase 2 checklist for what remains hotkey-wired in a later phase).
+  private var captureTargetRow: some View {
+    Button("Capture current position as target") {
+      let captured = model.captureCurrentPositionAsTarget()
+      if !captured {
+        AccessibilityNotification.Announcement("No face detected — nothing to capture").post()
+      }
+    }
+    .disabled(!model.isRunning)
+  }
+
+  private func configLoadIssueRow(_ issue: ConfigStore.LoadIssue) -> some View {
+    Group {
+      switch issue {
+      case .missing:
+        Text("No saved configuration found — using defaults.")
+      case .corruptBackedUp(let backupURL):
+        Text(
+          "Your saved configuration could not be read and was reset to defaults. "
+            + "The original file was kept at \(backupURL.path)."
+        )
+      }
+    }
+    .foregroundStyle(.secondary)
+  }
+}
+
+/// One §9 accessible value row: a single VoiceOver element
+/// (`.accessibilityElement(children: .ignore)`) whose label is the field
+/// name and whose value is `SignalFormatter`'s live formatted string. The
+/// visual layout (label left, value right) is incidental — VoiceOver never
+/// sees the two `Text`s as separate elements, only the combined
+/// label/value pair set explicitly below.
+private struct SignalRow: View {
+  let row: SignalFormatter.FormattedSignal
+
+  var body: some View {
+    HStack {
+      Text(row.label)
+      Spacer()
+      Text(row.value)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(row.label)
+    .accessibilityValue(row.value)
+  }
+}
