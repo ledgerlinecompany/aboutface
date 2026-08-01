@@ -35,6 +35,13 @@ public struct Config: Codable, Sendable, Equatable {
   /// transitions — only dwell (§7.1) gates those.
   public var smoothingWindow: Int
 
+  /// Thresholds and performance knobs for `LightingAnalyzer`'s computation
+  /// of `LightingMetrics` (§3.3). Per §6.2, lighting is a discrete,
+  /// dwell-and-hysteresis-gated state rather than part of the continuous
+  /// positional loop, but the raw signals it is derived from still need
+  /// their own tunable numbers (§0), which live here.
+  public var lighting: Lighting
+
   public struct TargetFraming: Codable, Sendable, Equatable {
     /// Eye midpoint, fraction of frame height from top (§4: "upper third,
     /// modest headroom").
@@ -64,13 +71,48 @@ public struct Config: Codable, Sendable, Equatable {
     }
   }
 
+  public struct Lighting: Codable, Sendable, Equatable {
+    /// Luma (0...1) at or above this fraction of full brightness counts
+    /// toward `LightingMetrics.clippedHighlightFraction`.
+    public var clippedHighlightThreshold: Double
+    /// Luma (0...1) at or below this fraction of full brightness counts
+    /// toward `LightingMetrics.clippedShadowFraction`.
+    public var clippedShadowThreshold: Double
+    /// `LightingAnalyzer` downsamples the captured frame to at most this
+    /// many pixels wide (aspect-preserving) before doing any per-pixel
+    /// work, so lighting analysis stays cheap at up to 30 Hz on 720p
+    /// capture (§13, Phase 1 acceptance).
+    public var maxAnalysisWidth: Int
+    /// Divisor `LightingAnalyzer` uses to map its raw Laplacian-of-luma
+    /// variance (the classic "variance of Laplacian" blur metric) onto an
+    /// approximately 0...1 `LightingMetrics.sharpness` range:
+    /// `sharpness = rawVariance / sharpnessNormalizationDivisor`. The
+    /// default is a starting-point estimate scaled for 0...1 luma (blur
+    /// literature usually works on a 0...255 scale) — tune against the test
+    /// corpus (§14) once real clips exist.
+    public var sharpnessNormalizationDivisor: Double
+
+    public init(
+      clippedHighlightThreshold: Double,
+      clippedShadowThreshold: Double,
+      maxAnalysisWidth: Int,
+      sharpnessNormalizationDivisor: Double
+    ) {
+      self.clippedHighlightThreshold = clippedHighlightThreshold
+      self.clippedShadowThreshold = clippedShadowThreshold
+      self.maxAnalysisWidth = maxAnalysisWidth
+      self.sharpnessNormalizationDivisor = sharpnessNormalizationDivisor
+    }
+  }
+
   public init(
     version: Int,
     targetFraming: TargetFraming,
     deadZone: DeadZone,
     hysteresisExitRatio: Double,
     dwellMs: Int,
-    smoothingWindow: Int
+    smoothingWindow: Int,
+    lighting: Lighting
   ) {
     self.version = version
     self.targetFraming = targetFraming
@@ -78,6 +120,7 @@ public struct Config: Codable, Sendable, Equatable {
     self.hysteresisExitRatio = hysteresisExitRatio
     self.dwellMs = dwellMs
     self.smoothingWindow = smoothingWindow
+    self.lighting = lighting
   }
 
   /// The spec's §4 starting-point defaults. `Config.defaults` MUST remain
@@ -95,6 +138,12 @@ public struct Config: Codable, Sendable, Equatable {
     ),
     hysteresisExitRatio: 1.4,
     dwellMs: 800,
-    smoothingWindow: 8
+    smoothingWindow: 8,
+    lighting: Lighting(
+      clippedHighlightThreshold: 0.98,
+      clippedShadowThreshold: 0.02,
+      maxAnalysisWidth: 320,
+      sharpnessNormalizationDivisor: 0.02
+    )
   )
 }

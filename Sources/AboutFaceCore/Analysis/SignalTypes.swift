@@ -179,6 +179,17 @@ public struct RawFaceObservation: Sendable {
   /// Backend's confidence that this observation is a face.
   public let confidence: Float
 
+  /// Total number of faces the backend detected in this frame — may exceed
+  /// `1` even though this observation's `boundingBox`/landmarks/pose fields
+  /// only describe the **primary** face (the one with the largest
+  /// bounding-box area). Backends that declare `.multiFace` (§3.2) populate
+  /// this with the real count; a backend without multi-face support should
+  /// report `1` for any non-`nil` observation. `AnalysisEngine` reads this to
+  /// populate `FrameAnalysis.faceCount` — it is not derived from the length
+  /// of any array here, since `RawFaceObservation` only ever carries one
+  /// face's geometry.
+  public let faceCount: Int
+
   public init(
     boundingBox: CGRect,
     landmarks: [CGPoint]? = nil,
@@ -187,7 +198,8 @@ public struct RawFaceObservation: Sendable {
     pitch: Float? = nil,
     roll: Float? = nil,
     captureQuality: Float? = nil,
-    confidence: Float
+    confidence: Float,
+    faceCount: Int
   ) {
     self.boundingBox = boundingBox
     self.landmarks = landmarks
@@ -197,5 +209,6 @@ public struct RawFaceObservation: Sendable {
     self.roll = roll
     self.captureQuality = captureQuality
     self.confidence = confidence
+    self.faceCount = faceCount
   }
 }
