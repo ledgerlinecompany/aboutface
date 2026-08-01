@@ -1,0 +1,64 @@
+# XcodeGen project definition for the About Face app shell.
+#
+# The .xcodeproj is GENERATED and gitignored — run `xcodegen generate` after
+# checkout (brew install xcodegen; CI pins the same release). Never hand-edit
+# the generated project: change this file and regenerate. The SwiftPM package
+# (Package.swift) remains the core; this project exists only to build the Mac
+# App Store app target on top of it.
+name: AboutFace
+options:
+  bundleIdPrefix: com.ledgerlinecompany
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "16.0"
+  groupSortPosition: top
+
+packages:
+  AboutFacePackage:
+    path: .
+
+targets:
+  AboutFaceApp:
+    type: application
+    platform: macOS
+    sources:
+      - App
+    dependencies:
+      - package: AboutFacePackage
+        product: AboutFaceCore
+    settings:
+      base:
+        PRODUCT_NAME: About Face
+        PRODUCT_BUNDLE_IDENTIFIER: com.ledgerlinecompany.aboutface
+        SWIFT_VERSION: "6.0"
+        # Spec §2: App Sandbox + camera only. The entitlements file is
+        # committed plain text; CI fails if a network entitlement ever
+        # appears in it (see .github/workflows/ci.yml, app-build job).
+        CODE_SIGN_ENTITLEMENTS: App/AboutFace.entitlements
+        ENABLE_HARDENED_RUNTIME: true
+        ENABLE_USER_SCRIPT_SANDBOXING: true
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_CFBundleDisplayName: About Face
+        # §2 MUST: the camera-usage string states video never leaves the
+        # device. Keep this claim in sync with the README privacy section.
+        INFOPLIST_KEY_NSCameraUsageDescription: >-
+          About Face analyzes your camera image on this Mac to describe your
+          framing and lighting. Video is processed entirely on-device and
+          never leaves your Mac; the app has no network access.
+        INFOPLIST_KEY_NSHumanReadableCopyright: © 2026 Ledger Line Company LLC
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.1.0
+        # LSUIElement (menu-bar-only, §5.2) is deliberately NOT set yet:
+        # Monitor mode arrives in Phase 4, and a Dock icon makes Phase 2/3
+        # development and accessibility testing easier. Set
+        # INFOPLIST_KEY_LSUIElement: true when Monitor mode lands.
+
+schemes:
+  AboutFaceApp:
+    build:
+      targets:
+        AboutFaceApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release

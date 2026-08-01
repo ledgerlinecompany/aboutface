@@ -15,3 +15,6 @@ Fixtures/corpus/clips/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# XcodeGen output (regenerate with `xcodegen generate`)
+AboutFace.xcodeproj/

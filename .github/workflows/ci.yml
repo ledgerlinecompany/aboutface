@@ -60,4 +60,39 @@ jobs:
       - name: Lint
         run: swiftlint --strict
       - name: Format check
-        run: swift format lint --strict --recursive Sources Tests
+        run: swift format lint --strict --recursive Sources Tests App
+
+  app-build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # §2 guard: the entitlements file must never contain a network
+      # entitlement. Checked before anything is built so the failure is
+      # unmissable and instant.
+      - name: Verify no network entitlements (§2)
+        run: |
+          set -euo pipefail
+          if grep -E "com\.apple\.security\.network\.(client|server)" App/AboutFace.entitlements; then
+            echo "::error file=App/AboutFace.entitlements::Network entitlements are forbidden by design (spec §2)."
+            exit 1
+          fi
+          echo "OK: no network entitlements present."
+      # Pinned XcodeGen release binary with checksum verification (same
+      # rationale as SwiftLint in the lint job).
+      - name: Install XcodeGen (pinned)
+        run: |
+          set -euo pipefail
+          XCODEGEN_VERSION="2.46.0"
+          XCODEGEN_SHA256="4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+          curl -sL -o xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  xcodegen.zip" | shasum -a 256 -c -
+          unzip -q xcodegen.zip -d xcodegen-dist
+          echo "${PWD}/xcodegen-dist/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build app (unsigned)
+        run: |
+          xcodebuild -project AboutFace.xcodeproj -scheme AboutFaceApp \
+            -destination "generic/platform=macOS" build \
+            CODE_SIGNING_ALLOWED=NO -quiet
