@@ -159,12 +159,12 @@ struct SignalFormatterTests {
 
   @Test("Yaw: positive reads 'turned toward own right' (§3.3)")
   func yaw_positive_readsOwnRight() {
-    #expect(SignalFormatter.formatYaw(12.34, display: display) == "+12° (turned toward own right)")
+    #expect(SignalFormatter.formatYaw(12.34, display: display) == "12° toward own right")
   }
 
   @Test("Yaw: negative reads 'turned toward own left'")
   func yaw_negative_readsOwnLeft() {
-    #expect(SignalFormatter.formatYaw(-8.0, display: display) == "-8° (turned toward own left)")
+    #expect(SignalFormatter.formatYaw(-8.0, display: display) == "8° toward own left")
   }
 
   @Test("Yaw: exactly zero reads 'facing camera'")
@@ -174,22 +174,22 @@ struct SignalFormatterTests {
 
   @Test("Pitch: positive reads 'chin up' (§3.3)")
   func pitch_positive_readsChinUp() {
-    #expect(SignalFormatter.formatPitch(5.6, display: display) == "+6° (chin up)")
+    #expect(SignalFormatter.formatPitch(5.6, display: display) == "6° chin up")
   }
 
   @Test("Pitch: negative reads 'chin down'")
   func pitch_negative_readsChinDown() {
-    #expect(SignalFormatter.formatPitch(-5.6, display: display) == "-6° (chin down)")
+    #expect(SignalFormatter.formatPitch(-5.6, display: display) == "6° chin down")
   }
 
   @Test("Roll: positive reads 'tilted toward own right' (§3.3)")
   func roll_positive_readsOwnRight() {
-    #expect(SignalFormatter.formatRoll(3.2, display: display) == "+4° (tilted toward own right)")
+    #expect(SignalFormatter.formatRoll(3.2, display: display) == "4° tilted toward own right")
   }
 
   @Test("Roll: negative reads 'tilted toward own left'")
   func roll_negative_readsOwnLeft() {
-    #expect(SignalFormatter.formatRoll(-3.2, display: display) == "-4° (tilted toward own left)")
+    #expect(SignalFormatter.formatRoll(-3.2, display: display) == "4° tilted toward own left")
   }
 
   @Test("Quantization collapses frame-to-frame jitter to a stable reading")
