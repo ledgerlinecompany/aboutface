@@ -98,10 +98,12 @@ extension AnalysisEngine {
   /// - Vision yaw: positive = the subject's head turned toward THEIR OWN
   ///   LEFT (in an unmirrored image).
   /// - Vision pitch: positive = chin DOWN.
-  /// - Vision roll: assumed positive = tilt toward the subject's own LEFT,
-  ///   by the same in-image-plane logic as yaw. UNVERIFIED by a controlled
-  ///   live tilt — flagged for the maintainer's ear-to-shoulder check and
-  ///   the §14 head-tilt corpus clip.
+  /// - Vision roll: positive = tilt toward the subject's own RIGHT —
+  ///   VERIFIED by controlled live tilt (ear toward right shoulder,
+  ///   2026-08-01). Note this is the OPPOSITE baseline sense from yaw:
+  ///   the "same in-image-plane logic as yaw" analogy briefly applied on
+  ///   2026-08-01 was wrong and lasted one commit. Vision's raw axes do
+  ///   not share a sign philosophy; each was measured separately.
   /// - A horizontal flip of the image negates yaw and roll, and leaves
   ///   pitch unchanged (synthetic flip-consistency test; robust across all
   ///   the sign corrections, since it is a relative property).
@@ -109,11 +111,12 @@ extension AnalysisEngine {
   /// ## Consequence for this mapping
   ///
   /// §3.3 wants "+ = own right / chin up / tilt right." Vision's raw
-  /// positives are own-left / chin-down / tilt-left, so for `.notMirrored`
-  /// frames ALL THREE axes are negated. For `.mirrored` frames the pixels
-  /// handed to Vision were already flipped before inference ran (see
+  /// positives are own-left (yaw) / chin-down (pitch) / own-RIGHT (roll),
+  /// so for `.notMirrored` frames yaw and pitch are negated and roll
+  /// passes through. For `.mirrored` frames the pixels handed to Vision
+  /// were already flipped before inference ran (see
   /// `FileCaptureSource.simulateMirrored`), which negates raw yaw and roll
-  /// once already — so yaw/roll pass through unchanged there, while pitch
+  /// once — so there yaw passes through, roll is negated, and pitch
   /// (mirror-invariant) is negated in both states.
   ///
   /// `nil` fields (a backend without `.headPose`, or a best-effort
@@ -128,9 +131,9 @@ extension AnalysisEngine {
     let rawRoll = raw.roll ?? 0
     switch mirror {
     case .notMirrored:
-      return EgocentricPose(yaw: -rawYaw, pitch: -rawPitch, roll: -rawRoll)
+      return EgocentricPose(yaw: -rawYaw, pitch: -rawPitch, roll: rawRoll)
     case .mirrored:
-      return EgocentricPose(yaw: rawYaw, pitch: -rawPitch, roll: rawRoll)
+      return EgocentricPose(yaw: rawYaw, pitch: -rawPitch, roll: -rawRoll)
     }
   }
 }

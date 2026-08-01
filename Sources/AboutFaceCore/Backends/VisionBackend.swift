@@ -48,9 +48,9 @@ import Vision
 /// - Positive yaw = the subject's head turned toward THEIR OWN LEFT
 ///   (in an unmirrored image).
 /// - Positive pitch = chin DOWN.
-/// - Positive roll = tilt toward the subject's own LEFT — assumed by the
-///   same in-image-plane logic as yaw; still awaiting a controlled live
-///   tilt check (the one axis not yet verified by live movement).
+/// - Positive roll = tilt toward the subject's own RIGHT — verified by
+///   controlled live tilt 2026-08-01. Note the opposite baseline sense
+///   from yaw: Vision's raw axes do not share a sign philosophy.
 /// - A horizontal flip of the image negates yaw and roll, and leaves pitch
 ///   unchanged — checked directly via a synthetic flip-consistency test;
 ///   this relative property held through every sign correction.
