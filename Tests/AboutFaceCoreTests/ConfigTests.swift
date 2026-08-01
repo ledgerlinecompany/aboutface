@@ -23,6 +23,14 @@ struct ConfigTests {
         clippedShadowThreshold: 0.03,
         maxAnalysisWidth: 256,
         sharpnessNormalizationDivisor: 0.015
+      ),
+      signal: Config.Signal(
+        noSignalLumaVarianceThreshold: 0.0006,
+        lowConfidenceThreshold: 0.45
+      ),
+      gaze: Config.Gaze(
+        maxYawDegrees: 12,
+        maxPitchDegrees: 18
       )
     )
 
@@ -92,6 +100,36 @@ struct ConfigTests {
     )
     let data = try JSONEncoder().encode(original)
     let decoded = try JSONDecoder().decode(Config.Lighting.self, from: data)
+    #expect(decoded == original)
+  }
+
+  // MARK: - §3.3 SignalState / gaze default values
+
+  @Test("Default signal thresholds are documented starting points")
+  func defaultSignal() {
+    #expect(Config.defaults.signal.noSignalLumaVarianceThreshold == 0.0005)
+    #expect(Config.defaults.signal.lowConfidenceThreshold == 0.5)
+  }
+
+  @Test("Default gaze thresholds are documented starting points")
+  func defaultGaze() {
+    #expect(Config.defaults.gaze.maxYawDegrees == 15)
+    #expect(Config.defaults.gaze.maxPitchDegrees == 15)
+  }
+
+  @Test("Signal sub-struct round-trips through Codable independently")
+  func signalRoundTrip() throws {
+    let original = Config.Signal(noSignalLumaVarianceThreshold: 0.0008, lowConfidenceThreshold: 0.6)
+    let data = try JSONEncoder().encode(original)
+    let decoded = try JSONDecoder().decode(Config.Signal.self, from: data)
+    #expect(decoded == original)
+  }
+
+  @Test("Gaze sub-struct round-trips through Codable independently")
+  func gazeRoundTrip() throws {
+    let original = Config.Gaze(maxYawDegrees: 10, maxPitchDegrees: 20)
+    let data = try JSONEncoder().encode(original)
+    let decoded = try JSONDecoder().decode(Config.Gaze.self, from: data)
     #expect(decoded == original)
   }
 }

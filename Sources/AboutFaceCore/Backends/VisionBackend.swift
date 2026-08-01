@@ -26,7 +26,7 @@ import Vision
 /// before returning a `RawFaceObservation`, so `AnalysisEngine` never has to
 /// know which backend produced a given observation.
 ///
-/// ## Pose sign convention — UNVERIFIED, flagged for empirical confirmation
+/// ## Pose sign convention — measured, not assumed
 ///
 /// `yaw`/`pitch`/`roll` are Vision's own `FaceObservation.yaw/.pitch/.roll`
 /// (each a non-optional `Measurement<UnitAngle>` in the current SDK),
@@ -35,17 +35,38 @@ import Vision
 /// around the {x,y,z}-axis") and does not commit, in prose, to a sign
 /// convention (clockwise vs. counterclockwise, or which screen-relative
 /// direction is positive) — this is a known gap in Apple's docs, not an
-/// oversight here. Community-reported (but Apple-unverified) convention for
-/// the legacy `VNFaceObservation` equivalents, which this API is built on top
-/// of, is: positive roll = counterclockwise as viewed in the (unmirrored)
-/// image; positive yaw = face turned toward the image's right edge; positive
-/// pitch = chin up. Treat that as a **starting hypothesis only**. Per spec
-/// §3.4 this is the single worst failure mode available to this project, so
-/// `AnalysisEngine`'s mapping of these raw values to `FaceGeometry`'s
-/// documented egocentric sign conventions MUST be confirmed empirically
-/// against a real face (e.g. the `Fixtures/corpus/clips/test-face` fixture
-/// described in `VisionBackendTests.detectsRealFaceWhenFixturePresent()`,
-/// once populated) before being trusted, not assumed from this comment.
+/// oversight here.
+///
+/// This was measured empirically (2026-07-31) against real Vision inference
+/// on ground-truth (known head orientation) images — not inferred from
+/// community reports about the legacy `VNFaceObservation` API. Full writeup:
+/// `Fixtures/corpus/stills/ATTRIBUTION.md` (landing on another branch).
+/// Findings:
+///
+/// - Positive yaw = the subject's head turned toward THEIR OWN RIGHT (the
+///   face turns toward image-left in an unmirrored image). This
+///   *contradicts* the community-reported convention this comment
+///   previously documented as a starting hypothesis ("positive yaw = face
+///   turned toward the image's right edge") — that hypothesis was wrong.
+/// - Positive pitch = chin up.
+/// - Positive roll = tilt toward the subject's own right.
+/// - A horizontal flip of the image negates yaw and roll, and leaves pitch
+///   unchanged — checked directly via a synthetic flip-consistency test
+///   (flip a still, re-run inference, confirm the sign relationship), not
+///   inferred from theory.
+///
+/// Caveats, so this isn't overclaimed: n=2 turned-head samples, subjects
+/// masked in the source stills, and the roll finding was verified only via
+/// a synthetic horizontal flip of a single sample (no second real-roll
+/// sample). Treat this as a solid working default confirmed against real
+/// inference, not a fully closed question — revisit if corpus tuning (§14)
+/// ever surfaces a contradiction.
+///
+/// Per spec §3.4 this is the single worst failure mode available to this
+/// project. `AnalysisEngine.egocentricPose(raw:mirror:)` is where these raw
+/// values get mapped to `FaceGeometry`'s documented egocentric sign
+/// conventions (§3.3); see its doc comment for the mirrored-vs-unmirrored
+/// handling this finding implies.
 ///
 /// ## "No face" contract
 ///

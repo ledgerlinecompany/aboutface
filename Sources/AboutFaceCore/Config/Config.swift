@@ -42,6 +42,14 @@ public struct Config: Codable, Sendable, Equatable {
   /// their own tunable numbers (§0), which live here.
   public var lighting: Lighting
 
+  /// Thresholds `AnalysisEngine` uses to classify `SignalState` (§3.3).
+  public var signal: Signal
+
+  /// Thresholds `AnalysisEngine` uses to derive `FramingState.gazeOnCamera`
+  /// from head-pose magnitude (§3.3: "from yaw/pitch magnitude, or true
+  /// gaze if available").
+  public var gaze: Gaze
+
   public struct TargetFraming: Codable, Sendable, Equatable {
     /// Eye midpoint, fraction of frame height from top (§4: "upper third,
     /// modest headroom").
@@ -105,6 +113,40 @@ public struct Config: Codable, Sendable, Equatable {
     }
   }
 
+  public struct Signal: Codable, Sendable, Equatable {
+    /// Below this `LightingMetrics.frameLumaVariance`, the frame is treated
+    /// as near-uniform regardless of what the backend reports — lens
+    /// covered, camera asleep, or a dead feed (§3.3 `SignalState.noSignal`).
+    /// Starting point chosen relative to `LightingAnalyzerTests`' measured
+    /// reference points: a genuinely uniform frame measures well under
+    /// `1e-6`, while a half-black/half-white scene measures ~0.25; ordinary
+    /// (non-uniform) real content sits far above this threshold.
+    public var noSignalLumaVarianceThreshold: Double
+    /// A face detected with backend confidence below this is reported as
+    /// `SignalState.lowConfidence` rather than `.ok` (§3.3: "probably
+    /// there, detector unsure — often too dark").
+    public var lowConfidenceThreshold: Double
+
+    public init(noSignalLumaVarianceThreshold: Double, lowConfidenceThreshold: Double) {
+      self.noSignalLumaVarianceThreshold = noSignalLumaVarianceThreshold
+      self.lowConfidenceThreshold = lowConfidenceThreshold
+    }
+  }
+
+  public struct Gaze: Codable, Sendable, Equatable {
+    /// `FramingState.gazeOnCamera` requires `|yaw|` at or below this many
+    /// degrees.
+    public var maxYawDegrees: Double
+    /// `FramingState.gazeOnCamera` requires `|pitch|` at or below this many
+    /// degrees.
+    public var maxPitchDegrees: Double
+
+    public init(maxYawDegrees: Double, maxPitchDegrees: Double) {
+      self.maxYawDegrees = maxYawDegrees
+      self.maxPitchDegrees = maxPitchDegrees
+    }
+  }
+
   public init(
     version: Int,
     targetFraming: TargetFraming,
@@ -112,7 +154,9 @@ public struct Config: Codable, Sendable, Equatable {
     hysteresisExitRatio: Double,
     dwellMs: Int,
     smoothingWindow: Int,
-    lighting: Lighting
+    lighting: Lighting,
+    signal: Signal,
+    gaze: Gaze
   ) {
     self.version = version
     self.targetFraming = targetFraming
@@ -121,6 +165,8 @@ public struct Config: Codable, Sendable, Equatable {
     self.dwellMs = dwellMs
     self.smoothingWindow = smoothingWindow
     self.lighting = lighting
+    self.signal = signal
+    self.gaze = gaze
   }
 
   /// The spec's §4 starting-point defaults. `Config.defaults` MUST remain
@@ -144,6 +190,14 @@ public struct Config: Codable, Sendable, Equatable {
       clippedShadowThreshold: 0.02,
       maxAnalysisWidth: 320,
       sharpnessNormalizationDivisor: 0.02
+    ),
+    signal: Signal(
+      noSignalLumaVarianceThreshold: 0.0005,
+      lowConfidenceThreshold: 0.5
+    ),
+    gaze: Gaze(
+      maxYawDegrees: 15,
+      maxPitchDegrees: 15
     )
   )
 }
