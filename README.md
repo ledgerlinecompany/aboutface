@@ -33,6 +33,23 @@ xcodegen generate
 xcodebuild -project AboutFace.xcodeproj -scheme AboutFaceApp build
 ```
 
+## Speech voices (spec §6.3 finding)
+
+Measured 2026-08-01 on macOS 26 via `AVSpeechSynthesisVoice.speechVoices()`:
+
+- **Eloquence voices are available** to the app's own speech synthesis — all
+  eight classic personas (Eddy, Flo, Grandma, Grandpa, Reed, Rocko, Sandy,
+  Shelley) as `com.apple.eloquence.*`, across ~14 languages. Users who want
+  Eloquence at very high speech rates can have it.
+- **Vocalizer/Nuance voices are not exposed** by the public API — they remain
+  VoiceOver-exclusive. This is a known platform limitation, not an app bug.
+- Enhanced/Premium Apple voices appear only after the user downloads them in
+  System Settings.
+- Voice-picker consideration: because Eloquence is also a popular VoiceOver
+  voice, defaulting to it could remove the timbral separation between the
+  app's speech and VoiceOver's (spec §6.3). The default voice should be
+  chosen to contrast with the user's VoiceOver voice, whatever it is.
+
 ## Contributing
 
 Contributions are welcome. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Commits must include a Signed-off-by line per the Developer Certificate of Origin (DCO).
