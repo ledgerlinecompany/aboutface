@@ -58,8 +58,7 @@ public actor FileCaptureSource: CaptureSource {
   private let pacing: PacingMode
   private let simulateMirrored: Bool
 
-  private var reader: AVAssetReader?
-  private var trackOutput: AVAssetReaderTrackOutput?
+  private var readerBox: ReaderBox?
   private var readTask: Task<Void, Never>?
 
   public init(url: URL, pacing: PacingMode = .realTime, simulateMirrored: Bool = false) {
@@ -85,6 +84,35 @@ public actor FileCaptureSource: CaptureSource {
   public func start() async throws {
     guard readTask == nil else { return }
 
+    // Reader setup happens entirely inside a `nonisolated` helper: older
+    // SDKs (e.g. the Swift 6.1 toolchain on CI's macos-15 image) don't
+    // annotate `loadTracks(withMediaType:)`'s `[AVAssetTrack]` result as
+    // Sendable, so `await`ing it directly from actor-isolated code is a
+    // strict-concurrency error there even though newer SDKs allow it. By
+    // keeping every non-Sendable AVFoundation value inside one nonisolated
+    // domain and handing back only the `ReaderBox` ownership-transfer
+    // wrapper, no raw AVFoundation type ever crosses an isolation boundary
+    // on any toolchain.
+    let box = try await Self.makeReader(url: url)
+    self.readerBox = box
+
+    readTask = Task { [weak self] in
+      await self?.readLoop()
+    }
+  }
+
+  public func stop() async {
+    readTask?.cancel()
+    await readTask?.value
+    readTask = nil
+    readerBox?.reader.cancelReading()
+    readerBox = nil
+    continuation.finish()
+  }
+
+  /// Builds and starts the `AVAssetReader` pipeline for `url`. Nonisolated
+  /// on purpose — see the comment in `start()`.
+  private nonisolated static func makeReader(url: URL) async throws -> ReaderBox {
     let asset = AVURLAsset(url: url)
     guard let track = try await asset.loadTracks(withMediaType: .video).first else {
       throw FileCaptureSourceError.noVideoTrack
@@ -105,22 +133,7 @@ public actor FileCaptureSource: CaptureSource {
       let message = reader.error?.localizedDescription ?? "unknown reader error"
       throw FileCaptureSourceError.readerFailed(message)
     }
-    self.reader = reader
-    self.trackOutput = output
-
-    readTask = Task { [weak self] in
-      await self?.readLoop()
-    }
-  }
-
-  public func stop() async {
-    readTask?.cancel()
-    await readTask?.value
-    readTask = nil
-    reader?.cancelReading()
-    reader = nil
-    trackOutput = nil
-    continuation.finish()
+    return ReaderBox(reader: reader, output: output)
   }
 
   private func readLoop() async {
@@ -129,7 +142,7 @@ public actor FileCaptureSource: CaptureSource {
     var previousEmitInstant: ContinuousClock.Instant?
 
     while !Task.isCancelled {
-      guard let output = trackOutput, let sampleBuffer = output.copyNextSampleBuffer() else {
+      guard let output = readerBox?.output, let sampleBuffer = output.copyNextSampleBuffer() else {
         break
       }
       guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { continue }
@@ -244,4 +257,21 @@ public actor FileCaptureSource: CaptureSource {
 public enum FileCaptureSourceError: Error, Sendable, Equatable {
   case noVideoTrack
   case readerFailed(String)
+}
+
+/// Ownership-transfer wrapper for the non-`Sendable` `AVAssetReader`
+/// pipeline, mirroring `CameraCaptureSource`'s `SessionBox` pattern: the
+/// reader and output are constructed entirely inside the nonisolated
+/// `makeReader(url:)` helper, handed to the actor exactly once, and from
+/// then on touched only from actor-isolated code (`readLoop()`/`stop()`).
+/// `@unchecked Sendable` here describes a transfer of exclusive ownership
+/// across an isolation boundary, not concurrent sharing.
+private final class ReaderBox: @unchecked Sendable {
+  let reader: AVAssetReader
+  let output: AVAssetReaderTrackOutput
+
+  init(reader: AVAssetReader, output: AVAssetReaderTrackOutput) {
+    self.reader = reader
+    self.output = output
+  }
 }
