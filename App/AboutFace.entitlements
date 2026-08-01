@@ -16,5 +16,14 @@
 	<true/>
 	<key>com.apple.security.device.camera</key>
 	<true/>
+	<!--
+	  Powers the debug panel's Export/Import (spec §9): NSSavePanel/NSOpenPanel
+	  need this entitlement to actually read/write the file the user picks,
+	  even though the panel itself is always shown. This is the standard
+	  "user-selected file" sandbox exception, not a network entitlement — it
+	  does not weaken the §2 no-network privacy claim the CI guard checks.
+	-->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
 </dict>
 </plist>
