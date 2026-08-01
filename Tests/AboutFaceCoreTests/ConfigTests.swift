@@ -17,7 +17,13 @@ struct ConfigTests {
       deadZone: Config.DeadZone(horizontal: 0.07, vertical: 0.045),
       hysteresisExitRatio: 1.6,
       dwellMs: 900,
-      smoothingWindow: 10
+      smoothingWindow: 10,
+      lighting: Config.Lighting(
+        clippedHighlightThreshold: 0.97,
+        clippedShadowThreshold: 0.03,
+        maxAnalysisWidth: 256,
+        sharpnessNormalizationDivisor: 0.015
+      )
     )
 
     let data = try JSONEncoder().encode(original)
@@ -66,5 +72,26 @@ struct ConfigTests {
   @Test("Default smoothing window matches §4")
   func defaultSmoothingWindow() {
     #expect(Config.defaults.smoothingWindow == 8)
+  }
+
+  @Test("Default lighting thresholds match §3.3 starting points")
+  func defaultLighting() {
+    #expect(Config.defaults.lighting.clippedHighlightThreshold == 0.98)
+    #expect(Config.defaults.lighting.clippedShadowThreshold == 0.02)
+    #expect(Config.defaults.lighting.maxAnalysisWidth == 320)
+    #expect(Config.defaults.lighting.sharpnessNormalizationDivisor == 0.02)
+  }
+
+  @Test("Lighting sub-struct round-trips through Codable independently")
+  func lightingRoundTrip() throws {
+    let original = Config.Lighting(
+      clippedHighlightThreshold: 0.95,
+      clippedShadowThreshold: 0.05,
+      maxAnalysisWidth: 480,
+      sharpnessNormalizationDivisor: 0.03
+    )
+    let data = try JSONEncoder().encode(original)
+    let decoded = try JSONDecoder().decode(Config.Lighting.self, from: data)
+    #expect(decoded == original)
   }
 }
