@@ -13,6 +13,13 @@ import ArgumentParser
 /// executable semantics of a file literally named `main.swift` are mutually
 /// exclusive, and `AsyncParsableCommand`'s generated `static func main()
 /// async` is the entry point here.
+///
+/// Two more subcommands support building the §14 test corpus itself:
+///
+/// - `record-corpus` — interactive guided recording session for the 20-clip
+///   list (also the accessible, `--speak`-driven recording path).
+/// - `verify-corpus` — replays recorded clips and prints a CHECK/LOOK
+///   triage table against each clip's expected condition.
 @main
 struct AboutFaceCLI: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
@@ -20,6 +27,6 @@ struct AboutFaceCLI: AsyncParsableCommand {
     abstract: "About Face headless harness (§13 Phase 1): replay a corpus clip or run a live "
       + "camera through AnalysisEngine and print FrameAnalysis to the console.",
     version: "0.0.0-phase1 (Config schema v\(Config.defaults.version))",
-    subcommands: [Replay.self, Live.self]
+    subcommands: [Replay.self, Live.self, RecordCorpus.self, VerifyCorpus.self]
   )
 }
