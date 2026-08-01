@@ -24,6 +24,15 @@ struct SetupWindowView: View {
         captureTargetRow
       }
 
+      Section("Feedback") {
+        feedbackToggleRow
+        silenceToggleRow
+        if let message = model.audioUnavailableMessage {
+          Text(message)
+            .foregroundStyle(.secondary)
+        }
+      }
+
       Section("Signals") {
         ForEach(model.accessibilitySnapshot.rows) { row in
           SignalRow(row: row)
@@ -126,6 +135,39 @@ struct SetupWindowView: View {
       }
     }
     .disabled(!model.isRunning)
+  }
+
+  // MARK: - Feedback (§5.1, §7.5, §13 Phase 3)
+
+  /// "A 'Feedback' toggle (on by default when pipeline runs)" (task brief).
+  private var feedbackToggleRow: some View {
+    Toggle(
+      "Feedback",
+      isOn: Binding(
+        get: { model.feedbackEnabled },
+        set: { model.setFeedbackEnabled($0) }
+      )
+    )
+    .accessibilityHint(
+      "Turns audio and speech feedback on or off. Analysis keeps running either way.")
+  }
+
+  /// §7.5's "someone just started talking to me" instant mute — cuts audio
+  /// within one render buffer while analysis keeps running. ⌘⌃⇧/ here is an
+  /// in-app SwiftUI `.keyboardShortcut` stand-in for the GLOBAL
+  /// `RegisterEventHotKey` binding §8 requires (so this also works while
+  /// About Face isn't focused) — that global binding is Phase 4/5 scope; see
+  /// `PipelineModel+Audio.swift`'s `toggleSilence()` doc comment.
+  private var silenceToggleRow: some View {
+    Button(model.isSilenced ? "Unsilence" : "Silence") {
+      model.toggleSilence()
+    }
+    .keyboardShortcut("/", modifiers: [.command, .control, .shift])
+    .accessibilityLabel(model.isSilenced ? "Unsilence feedback" : "Silence feedback")
+    .accessibilityHint(
+      "Command Control Shift Slash. Immediately cuts audio and speech feedback; analysis keeps "
+        + "running. This is a temporary in-app stand-in for the global shortcut planned for a "
+        + "later release.")
   }
 
   private func configLoadIssueRow(_ issue: ConfigStore.LoadIssue) -> some View {

@@ -37,10 +37,10 @@ public actor AudioRenderer: AudioRendering {
     case offline
   }
 
-  private let config: Config.Audio
+  private var config: Config.Audio
   private let mode: RenderingMode
   private let engine = AVAudioEngine()
-  private let renderState: RenderState
+  private var renderState: RenderState
   private var sourceNode: AVAudioSourceNode?
   private var isRunning = false
 
@@ -101,6 +101,39 @@ public actor AudioRenderer: AudioRendering {
 
   public func play(_ event: AudioEvent) async {
     renderState.enqueue(event)
+  }
+
+  /// Applies a new `Config.Audio` live — the `AudioRenderer` analog of
+  /// `AnalysisEngine.updateConfig(_:)` (§9's "changing any slider visibly
+  /// changes engine behavior" precedent), used by `PipelineModel`'s debug
+  /// panel Audio section and by the CLI's `--config` profile loading.
+  ///
+  /// `RenderState`'s own `config` is deliberately an immutable `let` (see
+  /// its type doc comment: the real-time render thread reads it with no
+  /// synchronization at all, which is only sound because it never changes
+  /// after construction), so there is no single field to swap in place.
+  /// This method instead builds a fresh `RenderState` for the new config and
+  /// — if the engine is currently running — stops and restarts around it.
+  /// That makes a config change non-glitch-free (a brief gap, well under a
+  /// second, while `AVAudioEngine` restarts) rather than sample-accurate;
+  /// acceptable for a live-tuning debug panel or a CLI profile switch
+  /// between corpus runs, and deliberately not the occasion to redesign
+  /// `RenderState`'s real-time-safety contract (out of scope for this
+  /// additive change — see the task brief's "do not modify existing core
+  /// types' behavior").
+  ///
+  /// If the renderer was never started, this just records the new config
+  /// (and a matching fresh `RenderState`) for the next `start()` call. If
+  /// the restart itself fails (e.g. the audio device disappeared between
+  /// calls), the renderer is left stopped rather than throwing — matching
+  /// this type's existing posture that an audio device problem degrades
+  /// gracefully rather than propagating as a hard failure.
+  public func updateConfig(_ newConfig: Config.Audio) async {
+    config = newConfig
+    renderState = RenderState(config: newConfig)
+    guard isRunning else { return }
+    await stop()
+    try? await start()
   }
 
   public func setSilenced(_ silenced: Bool) async {
