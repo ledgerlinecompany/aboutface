@@ -33,6 +33,18 @@ struct DebugPanelView: View {
           title: "Interocular width",
           value: model.binding(\.targetFraming.interocularWidth),
           range: 0.02...0.5, step: 0.005, format: Format.percent)
+        ConfigSliderRow(
+          title: "Neutral yaw",
+          value: model.binding(\.targetFraming.neutralYawDegrees),
+          range: -45...45, step: 1, format: Format.degrees)
+        ConfigSliderRow(
+          title: "Neutral pitch",
+          value: model.binding(\.targetFraming.neutralPitchDegrees),
+          range: -45...45, step: 1, format: Format.degrees)
+        ConfigSliderRow(
+          title: "Neutral roll",
+          value: model.binding(\.targetFraming.neutralRollDegrees),
+          range: -45...45, step: 1, format: Format.degrees)
       } onReset: {
         model.resetToDefault(\.targetFraming)
       }

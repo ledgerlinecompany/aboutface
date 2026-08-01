@@ -30,12 +30,17 @@ Vision API (`DetectFaceRectanglesRequest`), Swift 6.3.3 / Xcode 26.6, using
 the two turned-head images above (ground truth established by visual
 inspection) plus a horizontally flipped copy as a mirror-consistency check:
 
-- **Yaw:** positive = subject's head turned toward **their own right**
-  (face pointing toward image-left in an unmirrored image). Vande Hei
-  (own right) → **+20.5°**; McClain (own left) → **−17.1°**. This
-  **contradicts** the community-reported convention for the legacy
-  `VNFaceObservation` API ("positive = toward the image's right edge")
-  that `VisionBackend`'s doc comment records as a starting hypothesis.
+- **Yaw:** positive = subject's head turned toward **their own LEFT**
+  (CORRECTED 2026-08-01, second correction of the day). The original
+  photo-derived reading ("positive = own right", from Vande Hei +20.5° /
+  McClain −17.1°) was wrong: the masked three-quarter faces were misread
+  visually. The correction comes from a controlled live test — nose turned
+  deliberately toward the right shoulder read "own left" under the old
+  mapping while a slide-left test confirmed horizontal position was
+  correct, isolating the error to the pose convention rather than the
+  capture/mirror path. LESSON (now proven twice, pitch then yaw):
+  photo-inferred sign ground truth is not acceptable; only controlled
+  live movement counts.
 - **Pitch:** positive = **chin down** (CORRECTED 2026-08-01). The original
   reading here ("positive = chin up," from McClain → +22.6°) was wrong: that
   image shows a masked subject *looking* upward, and eye gaze was conflated
@@ -55,7 +60,8 @@ frames Vision's yaw/roll signs already match `FaceGeometry`'s egocentric
 conventions and pass through unchanged; for **mirrored** frames yaw and roll
 must be **negated**; pitch is mirror-invariant either way.
 
-Caveats: n=2 turned-head samples, both masked; roll ground truth is from the
-synthetic flip only (no strongly head-tilted fixture yet). Re-verify with
-purpose-recorded clips before Phase 3 tuning, per `VisionBackend`'s
-doc-comment warning.
+Roll: assumed positive = tilt toward own LEFT (same in-image-plane logic as
+the corrected yaw); still unverified by controlled live tilt — pending the
+maintainer's ear-to-shoulder check and the §14 head-tilt clip. The
+turned-head stills above remain useful as detection/degradation fixtures,
+but are explicitly NOT sign ground truth.

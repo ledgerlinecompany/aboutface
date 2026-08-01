@@ -47,6 +47,16 @@ extension PipelineModel {
     updated.targetFraming.eyeMidpointX += Double(framing.error.x)
     updated.targetFraming.eyeMidpointY -= Double(framing.error.y)
     updated.targetFraming.interocularWidth += Double(framing.distanceError)
+    // §4 extension (2026-08-01): capture the current pose as the neutral
+    // baseline too. Pose is camera-ray-relative and laptop cameras sit off
+    // the natural eyeline, so gaze judgments measure deviation from THIS
+    // pose, not from absolute zero. Instantaneous (unsmoothed) geometry is
+    // fine here: the user is deliberately holding their natural position.
+    if let geometry = latestOutput?.analysis.primary {
+      updated.targetFraming.neutralYawDegrees = Double(geometry.yaw)
+      updated.targetFraming.neutralPitchDegrees = Double(geometry.pitch)
+      updated.targetFraming.neutralRollDegrees = Double(geometry.roll)
+    }
     updateConfig(updated)
 
     AccessibilityNotification.Announcement("Target captured").post()
