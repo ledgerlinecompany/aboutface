@@ -41,7 +41,9 @@ struct AnalysisEngineEgocentricBoundaryTests {
 
   private static let tolerance: Float = 1e-4
 
-  private func rawObservation(rawCenterX: CGFloat, rawYaw: Float) -> RawFaceObservation {
+  private func rawObservation(
+    rawCenterX: CGFloat, rawYaw: Float, rawPitch: Float = 0
+  ) -> RawFaceObservation {
     let halfWidth: CGFloat = 0.1
     let boundingBox = CGRect(
       x: rawCenterX - halfWidth, y: 0.4, width: halfWidth * 2, height: 0.3)
@@ -58,7 +60,7 @@ struct AnalysisEngineEgocentricBoundaryTests {
       boundingBox: boundingBox,
       eyePoints: eyePoints,
       yaw: rawYaw,
-      pitch: 0,
+      pitch: rawPitch,
       roll: 0,
       confidence: 0.9,
       faceCount: 1
@@ -93,6 +95,25 @@ struct AnalysisEngineEgocentricBoundaryTests {
     #expect(errorX < 0)
     let yaw = try #require(output.analysis.primary?.yaw)
     #expect(abs(yaw - 20) < Self.tolerance)
+  }
+
+  @Test("Pitch is negated in BOTH mirror states: Vision raw + (chin down) becomes §3.3 − (chin down)")
+  func pitchNegatedBothMirrorStates() async throws {
+    // Vision raw pitch positive = chin DOWN (corrected 2026-08-01 by a
+    // controlled live head-movement test; see ATTRIBUTION.md). §3.3 wants
+    // + = chin up, so a raw +10° (subject chin-down) must surface as −10°
+    // regardless of mirror state — a horizontal flip does not affect pitch,
+    // so unlike yaw/roll the negation is mirror-independent.
+    for mirror in [MirrorState.notMirrored, .mirrored] {
+      let rawX: CGFloat = mirror == .notMirrored ? 0.8 : 0.2
+      let rawYaw: Float = mirror == .notMirrored ? 20 : -20
+      let engine = AnalysisEngine(
+        backend: ScriptedBackend([rawObservation(rawCenterX: rawX, rawYaw: rawYaw, rawPitch: 10)]))
+      let output = try await engine.process(
+        testFrame(pixelBuffer: gradientPixelBuffer(), mirror: mirror))
+      let pitch = try #require(output.analysis.primary?.pitch)
+      #expect(abs(pitch - (-10)) < Self.tolerance, "mirror=\(mirror): expected −10, got \(pitch)")
+    }
   }
 
   @Test("Both mirror configs agree on error.x and yaw for the same physical scene")

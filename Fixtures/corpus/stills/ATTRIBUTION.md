@@ -36,7 +36,14 @@ inspection) plus a horizontally flipped copy as a mirror-consistency check:
   **contradicts** the community-reported convention for the legacy
   `VNFaceObservation` API ("positive = toward the image's right edge")
   that `VisionBackend`'s doc comment records as a starting hypothesis.
-- **Pitch:** positive = **chin up**. McClain (visibly chin-up) → +22.6°.
+- **Pitch:** positive = **chin down** (CORRECTED 2026-08-01). The original
+  reading here ("positive = chin up," from McClain → +22.6°) was wrong: that
+  image shows a masked subject *looking* upward, and eye gaze was conflated
+  with head pitch. A controlled live-camera test (maintainer deliberately
+  tilting chin up while watching the raw value fall, e.g. −20° → −26° before
+  correction) has no gaze confound and supersedes the photo inference.
+  Consequence: the AnalysisEngine boundary negates pitch in both mirror
+  states to satisfy §3.3's "+ = chin up".
 - **Mirror consistency:** horizontally flipping the Vande Hei image negates
   yaw (+20.5° → −17.0°) and roll (+5.4° → −11.3°) while leaving pitch
   essentially unchanged (+26.5° → +29.3°), exactly as mirror geometry
