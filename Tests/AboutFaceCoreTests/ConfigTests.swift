@@ -45,6 +45,21 @@ struct ConfigTests {
     #expect(decoded == original)
   }
 
+  @Test("Feedback and speech sub-configs round-trip on Config")
+  func feedbackAndSpeechRoundTrip() throws {
+    var config = Config.defaults
+    config.feedback.heartbeatIntervalMs = 9000
+    config.feedback.monitor.minAnnouncementIntervalMs = 25000
+    config.speech.rate = 0.7
+    config.speech.voiceIdentifier = "com.apple.voice.compact.en-GB.Daniel"
+
+    let data = try JSONEncoder().encode(config)
+    let decoded = try JSONDecoder().decode(Config.self, from: data)
+    #expect(decoded == config)
+    #expect(decoded.feedback.heartbeatIntervalMs == 9000)
+    #expect(decoded.speech.rate == 0.7)
+  }
+
   @Test("Defaults round-trip through Codable")
   func defaultsRoundTrip() throws {
     let data = try JSONEncoder().encode(Config.defaults)

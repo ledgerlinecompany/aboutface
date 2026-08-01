@@ -65,6 +65,15 @@ public struct Config: Codable, Sendable, Equatable {
   /// `TargetFraming`'s `neutralYawDegrees` et al.
   public var audio: Audio
 
+  /// FeedbackRouter suppression/state-machine tunables (§7) — dwell is the
+  /// existing top-level `dwellMs`; everything else lives here. Defined in
+  /// Feedback/FeedbackConfig.swift; held on Config so §11's "one Config
+  /// struct, versioned, Codable" stays true.
+  public var feedback: FeedbackConfig
+
+  /// Own-TTS parameters (§6.3). Defined in Feedback/FeedbackConfig.swift.
+  public var speech: SpeechConfig
+
   public struct TargetFraming: Codable, Sendable, Equatable {
     /// Eye midpoint, fraction of frame height from top (§4: "upper third,
     /// modest headroom").
@@ -213,7 +222,9 @@ public struct Config: Codable, Sendable, Equatable {
     signal: Signal,
     gaze: Gaze,
     display: Display,
-    audio: Audio = .defaults
+    audio: Audio = .defaults,
+    feedback: FeedbackConfig = .defaults,
+    speech: SpeechConfig = .defaults
   ) {
     self.version = version
     self.targetFraming = targetFraming
@@ -226,6 +237,8 @@ public struct Config: Codable, Sendable, Equatable {
     self.gaze = gaze
     self.display = display
     self.audio = audio
+    self.feedback = feedback
+    self.speech = speech
   }
 
   /// The spec's §4 starting-point defaults. `Config.defaults` MUST remain
@@ -263,6 +276,8 @@ public struct Config: Codable, Sendable, Equatable {
       percentStep: 2,
       normalizedStep: 0.02
     ),
-    audio: .defaults
+    audio: .defaults,
+    feedback: .defaults,
+    speech: .defaults
   )
 }
