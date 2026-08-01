@@ -6,14 +6,22 @@
 /// ## Concurrency
 ///
 /// Per §3.1, the capture queue is one of the app's four concurrency domains
-/// and "must never block." Conformances MUST back `frames` with an
-/// `AsyncStream` configured with a buffering policy that drops stale
-/// elements when the consumer falls behind — `.bufferingNewest(1)` — rather
-/// than the default unbounded buffer. This is a correctness requirement, not
-/// a performance nicety: an unbounded buffer would let a slow analysis actor
-/// build an ever-growing backlog, so that by the time a frame is finally
-/// processed it no longer reflects what the camera currently sees. Analysis
-/// wants the freshest frame, not a queue of history.
+/// and "must never block." No conformance may ever block the producer; the
+/// right buffering policy depends on which half of `(camera|file)` a
+/// conformance implements:
+///
+/// - **Live sources** (`CameraCaptureSource`) MUST drop stale frames when
+///   the consumer falls behind — `.bufferingNewest(1)` — rather than buffer
+///   unboundedly. This is a correctness requirement, not a performance
+///   nicety: a backlog would mean that by the time a frame is processed it
+///   no longer reflects what the camera currently sees. Live analysis wants
+///   the freshest frame, not a queue of history.
+/// - **Replay sources** (`FileCaptureSource`) MUST be lossless and
+///   deterministic — `.unbounded`, in practice bounded by clip length. The
+///   corpus (§14) exists to feed *identical* input to the pipeline on every
+///   run; a dropping policy would make the delivered frame sequence depend
+///   on consumer scheduling, which is exactly the noise corpus replay is
+///   meant to eliminate.
 ///
 /// ## Mirror state
 ///
@@ -33,8 +41,9 @@ public protocol CaptureSource: Sendable {
   /// once, in `init`, rather than regenerating it per access — so multiple
   /// callers observing `frames` share one underlying stream.
   ///
-  /// Buffering policy MUST drop stale frames rather than block the producer
-  /// or grow unboundedly; see the type-level documentation.
+  /// Buffering policy MUST never block the producer: live sources drop
+  /// stale frames, replay sources buffer losslessly; see the type-level
+  /// documentation.
   var frames: AsyncStream<CapturedFrame> { get }
 
   /// Starts producing frames onto `frames`. Idempotent: calling `start()`

@@ -68,8 +68,15 @@ public actor FileCaptureSource: CaptureSource {
     self.simulateMirrored = simulateMirrored
     self.mirrorState = simulateMirrored ? .mirrored : .notMirrored
 
+    // Unbounded, unlike the live camera source's `.bufferingNewest(1)`:
+    // corpus replay exists to produce *deterministic* regression input
+    // (§14 — "the only sane way to verify hysteresis does not chatter"),
+    // and a dropping policy would make delivered-frame counts depend on
+    // consumer scheduling. The buffer is bounded in practice by clip
+    // length (a few hundred frames); see `CaptureSource`'s type-level
+    // documentation for the live-vs-replay buffering distinction.
     let (stream, continuation) = AsyncStream<CapturedFrame>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
+      bufferingPolicy: .unbounded
     )
     self.frames = stream
     self.continuation = continuation
@@ -145,7 +152,18 @@ public actor FileCaptureSource: CaptureSource {
 
       let outputBuffer: CVPixelBuffer
       if simulateMirrored {
-        outputBuffer = Self.horizontallyFlipped(imageBuffer) ?? imageBuffer
+        guard let flipped = Self.horizontallyFlipped(imageBuffer) else {
+          // A flip failure (allocation failure in practice) must NOT fall
+          // back to yielding the unflipped buffer: the frame is stamped
+          // `.mirrored`, and delivering pixels that don't match their
+          // stamp is precisely the silent-inversion failure mode §3.4
+          // exists to prevent — it would corrupt the mirror acceptance
+          // test into passing against untransformed data. Ending the
+          // stream early is loud (consumers observe a truncated replay);
+          // wrong-stamped pixels are silent. Prefer loud.
+          break
+        }
+        outputBuffer = flipped
       } else {
         outputBuffer = imageBuffer
       }
