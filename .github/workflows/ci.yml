@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  package-build-and-test:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,7 +62,7 @@ jobs:
       - name: Format check
         run: swift format lint --strict --recursive Sources Tests App
 
-  app-build:
+  app-generate-and-build:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
