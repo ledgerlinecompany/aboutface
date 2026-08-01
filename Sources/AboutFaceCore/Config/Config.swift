@@ -57,6 +57,14 @@ public struct Config: Codable, Sendable, Equatable {
   /// changes no engine behavior, only how values are rendered/spoken.
   public var display: Display
 
+  /// Every tunable number for `AudioRenderer` (§6, §13 Phase 3): positional
+  /// sonification (Schemes A/B/C), distance pulse rate, and the §6.1
+  /// silence-ambiguity earcon set. Added 2026-08-01 (Phase 3); default value
+  /// on `init` keeps this additive for anyone still constructing `Config`
+  /// with the pre-Phase-3 field list, matching the precedent set by
+  /// `TargetFraming`'s `neutralYawDegrees` et al.
+  public var audio: Audio
+
   public struct TargetFraming: Codable, Sendable, Equatable {
     /// Eye midpoint, fraction of frame height from top (§4: "upper third,
     /// modest headroom").
@@ -204,7 +212,8 @@ public struct Config: Codable, Sendable, Equatable {
     lighting: Lighting,
     signal: Signal,
     gaze: Gaze,
-    display: Display
+    display: Display,
+    audio: Audio = .defaults
   ) {
     self.version = version
     self.targetFraming = targetFraming
@@ -216,6 +225,7 @@ public struct Config: Codable, Sendable, Equatable {
     self.signal = signal
     self.gaze = gaze
     self.display = display
+    self.audio = audio
   }
 
   /// The spec's §4 starting-point defaults. `Config.defaults` MUST remain
@@ -252,6 +262,7 @@ public struct Config: Codable, Sendable, Equatable {
       degreesStep: 2,
       percentStep: 2,
       normalizedStep: 0.02
-    )
+    ),
+    audio: .defaults
   )
 }
