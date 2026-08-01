@@ -72,7 +72,13 @@ jobs:
       - name: Verify no network entitlements (§2)
         run: |
           set -euo pipefail
-          if grep -E "com\.apple\.security\.network\.(client|server)" App/AboutFace.entitlements; then
+          # Parse actual plist KEYS via plutil (which strips XML comments)
+          # rather than grepping raw text — the entitlements file's own
+          # documentation comment names the forbidden keys, so a raw-text
+          # grep false-positives on the very comment that bans them.
+          keys=$(plutil -convert json -o - App/AboutFace.entitlements | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).keys()))")
+          echo "Entitlement keys present:"; echo "$keys"
+          if echo "$keys" | grep -E "^com\.apple\.security\.network\.(client|server)$"; then
             echo "::error file=App/AboutFace.entitlements::Network entitlements are forbidden by design (spec §2)."
             exit 1
           fi
