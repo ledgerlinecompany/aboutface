@@ -1,0 +1,201 @@
+import CoreGraphics
+import CoreMedia
+
+// MARK: - Spec §3.3 signal types (verbatim shapes — do not reshape without
+// updating docs/spec.md; field names and doc comments below are taken
+// directly from the spec).
+
+public struct FrameAnalysis: Sendable {
+  public let timestamp: CMTime
+  public let signalState: SignalState
+  public let faceCount: Int
+  public let primary: FaceGeometry?
+  public let lighting: LightingMetrics
+
+  public init(
+    timestamp: CMTime,
+    signalState: SignalState,
+    faceCount: Int,
+    primary: FaceGeometry?,
+    lighting: LightingMetrics
+  ) {
+    self.timestamp = timestamp
+    self.signalState = signalState
+    self.faceCount = faceCount
+    self.primary = primary
+    self.lighting = lighting
+  }
+}
+
+public enum SignalState: Sendable, Equatable {
+  case ok
+  /// Face probably there, detector unsure — often = too dark.
+  case lowConfidence
+  /// Frame looks normal, no face in it.
+  case noFace
+  /// Near-uniform frame: lens covered, camera asleep, feed dead.
+  case noSignal
+}
+
+public struct FaceGeometry: Sendable {
+  /// Normalized, EGOCENTRIC (see §3.4).
+  public let boundingBox: CGRect
+  /// Normalized.
+  public let eyeMidpoint: CGPoint
+  /// Normalized to frame width.
+  public let interocularDistance: CGFloat
+  /// Degrees, + = subject's head turned to their right.
+  public let yaw: Float
+  /// Degrees, + = chin up.
+  public let pitch: Float
+  /// Degrees, + = subject's head tilted to their right.
+  public let roll: Float
+  /// Vision's scalar, 0...1, nil if unsupported.
+  public let captureQuality: Float?
+  public let confidence: Float
+
+  public init(
+    boundingBox: CGRect,
+    eyeMidpoint: CGPoint,
+    interocularDistance: CGFloat,
+    yaw: Float,
+    pitch: Float,
+    roll: Float,
+    captureQuality: Float?,
+    confidence: Float
+  ) {
+    self.boundingBox = boundingBox
+    self.eyeMidpoint = eyeMidpoint
+    self.interocularDistance = interocularDistance
+    self.yaw = yaw
+    self.pitch = pitch
+    self.roll = roll
+    self.captureQuality = captureQuality
+    self.confidence = confidence
+  }
+}
+
+public struct LightingMetrics: Sendable {
+  /// Mean luma, face ROI, 0...1.
+  public let faceLuma: Float
+  /// Mean luma, frame minus face ROI.
+  public let backgroundLuma: Float
+  /// backgroundLuma - faceLuma; high = backlit.
+  public let backlightDelta: Float
+  public let clippedHighlightFraction: Float
+  public let clippedShadowFraction: Float
+  /// -1 (cool) ... +1 (warm).
+  public let colorTempSkew: Float
+  /// Variance of Laplacian, face ROI, normalized.
+  public let sharpness: Float
+  /// For noSignal detection.
+  public let frameLumaVariance: Float
+
+  public init(
+    faceLuma: Float,
+    backgroundLuma: Float,
+    backlightDelta: Float,
+    clippedHighlightFraction: Float,
+    clippedShadowFraction: Float,
+    colorTempSkew: Float,
+    sharpness: Float,
+    frameLumaVariance: Float
+  ) {
+    self.faceLuma = faceLuma
+    self.backgroundLuma = backgroundLuma
+    self.backlightDelta = backlightDelta
+    self.clippedHighlightFraction = clippedHighlightFraction
+    self.clippedShadowFraction = clippedShadowFraction
+    self.colorTempSkew = colorTempSkew
+    self.sharpness = sharpness
+    self.frameLumaVariance = frameLumaVariance
+  }
+}
+
+/// Derived by `AnalysisEngine` from `FaceGeometry` and `Config`'s target
+/// framing (§3.3).
+public struct FramingState: Sendable {
+  /// Normalized offset from target, egocentric.
+  /// x: + = subject is right of target.
+  /// y: + = subject is above target.
+  public let error: SIMD2<Float>
+  /// + = too close.
+  public let distanceError: Float
+  public let inDeadZone: Bool
+  /// From yaw/pitch magnitude, or true gaze if available.
+  public let gazeOnCamera: Bool
+
+  public init(error: SIMD2<Float>, distanceError: Float, inDeadZone: Bool, gazeOnCamera: Bool) {
+    self.error = error
+    self.distanceError = distanceError
+    self.inDeadZone = inDeadZone
+    self.gazeOnCamera = gazeOnCamera
+  }
+}
+
+// MARK: - Backend-neutral raw observation
+
+/// A `FaceAnalysisBackend`'s raw, pre-normalization output.
+///
+/// The spec (§3.2) references this type as `FaceAnalysisBackend.analyze(_:)`'s
+/// return value but does not define its shape, so it is defined here to be
+/// deliberately backend-neutral:
+///
+/// - `boundingBox`, `landmarks`, and `eyePoints` are in the **backend's own
+///   native normalized coordinate space** — origin corner, axis direction,
+///   and any mirroring are backend-specific and NOT assumed here. This is
+///   *pre*-egocentric-normalization output; see
+///   `Analysis/EgocentricTransform.swift` and spec §3.4 for the one place
+///   these get converted to egocentric `FaceGeometry` coordinates.
+/// - `landmarks`/`eyePoints` are optional and backend-specific in count and
+///   topology (per §3.2, `FaceAnalysisBackend` must not assume Vision's
+///   landmark topology); a backend that does not expose per-landmark detail
+///   should leave these `nil` even if it has the `.headPose` capability.
+/// - `yaw`/`pitch`/`roll` are each optional and in whatever sign convention
+///   the backend natively reports; mapping to `FaceGeometry`'s documented
+///   egocentric sign conventions is `AnalysisEngine`'s job, not this type's.
+public struct RawFaceObservation: Sendable {
+  /// Backend-native normalized bounding box. Not yet egocentric.
+  public let boundingBox: CGRect
+
+  /// Backend-native landmark points, if the backend exposes them. Topology
+  /// (count, ordering, meaning) is backend-specific.
+  public let landmarks: [CGPoint]?
+
+  /// Backend-native eye center point(s), if the backend distinguishes eye
+  /// detection from general landmarks.
+  public let eyePoints: [CGPoint]?
+
+  /// Degrees, backend-native sign convention.
+  public let yaw: Float?
+  /// Degrees, backend-native sign convention.
+  public let pitch: Float?
+  /// Degrees, backend-native sign convention.
+  public let roll: Float?
+
+  /// Backend's own scalar capture-quality estimate, 0...1, if supported.
+  public let captureQuality: Float?
+
+  /// Backend's confidence that this observation is a face.
+  public let confidence: Float
+
+  public init(
+    boundingBox: CGRect,
+    landmarks: [CGPoint]? = nil,
+    eyePoints: [CGPoint]? = nil,
+    yaw: Float? = nil,
+    pitch: Float? = nil,
+    roll: Float? = nil,
+    captureQuality: Float? = nil,
+    confidence: Float
+  ) {
+    self.boundingBox = boundingBox
+    self.landmarks = landmarks
+    self.eyePoints = eyePoints
+    self.yaw = yaw
+    self.pitch = pitch
+    self.roll = roll
+    self.captureQuality = captureQuality
+    self.confidence = confidence
+  }
+}

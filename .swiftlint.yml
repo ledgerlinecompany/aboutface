@@ -1,0 +1,19 @@
+included:
+  - Sources
+  - Tests
+
+disabled_rules:
+  - todo
+
+opt_in_rules:
+  - empty_count
+  - sorted_imports
+  - closure_spacing
+  - contains_over_filter_is_empty
+
+line_length:
+  warning: 120
+  error: 160
+
+identifier_name:
+  min_length: 1

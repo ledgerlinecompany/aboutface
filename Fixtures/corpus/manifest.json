@@ -1,0 +1,122 @@
+[
+  {
+    "file": "",
+    "description": "Well-lit, centered, looking at camera (the reference)",
+    "expectedCondition": "ok",
+    "notes": "Baseline. signalState == ok, framing in dead zone, gazeOnCamera == true. Every other clip is a deviation from this one."
+  },
+  {
+    "file": "",
+    "description": "Backlit against a bright window",
+    "expectedCondition": "lighting-backlit",
+    "notes": "High backlightDelta (backgroundLuma - faceLuma). Should not be misread as lowConfidence unless faceLuma is low enough to actually impair detection."
+  },
+  {
+    "file": "",
+    "description": "Single lamp hard from one side",
+    "expectedCondition": "lighting-hard-side",
+    "notes": "Expect elevated clippedHighlightFraction and/or clippedShadowFraction on one side; framing/state otherwise ok."
+  },
+  {
+    "file": "",
+    "description": "Dim room, overall underexposed",
+    "expectedCondition": "lowConfidence",
+    "notes": "Low faceLuma and backgroundLuma. This is the 'too dark to detect a face' case (§6.1) which MUST be distinguishable from noFace."
+  },
+  {
+    "file": "",
+    "description": "Too close",
+    "expectedCondition": "framing-too-close",
+    "notes": "distanceError > 0, large interocularDistance relative to Config.defaults.targetFraming.interocularWidth."
+  },
+  {
+    "file": "",
+    "description": "Too far",
+    "expectedCondition": "framing-too-far",
+    "notes": "distanceError < 0, small interocularDistance relative to target."
+  },
+  {
+    "file": "",
+    "description": "Off to the subject's left",
+    "expectedCondition": "framing-left",
+    "notes": "MUST produce error.x < 0 and instruction 'right' under both MirrorState.mirrored and MirrorState.notMirrored capture configuration. This is the spec §3.4 MUST-have test; see EgocentricTransformTests for the unit-level version of this invariant."
+  },
+  {
+    "file": "",
+    "description": "Off to the subject's right",
+    "expectedCondition": "framing-right",
+    "notes": "Symmetric case to clip 7: error.x > 0 and instruction 'left', both mirror configurations."
+  },
+  {
+    "file": "",
+    "description": "Too high in frame (only forehead)",
+    "expectedCondition": "framing-too-high",
+    "notes": "error.y > 0 (subject above target); likely also partially out of frame at the chin."
+  },
+  {
+    "file": "",
+    "description": "Too low in frame",
+    "expectedCondition": "framing-too-low",
+    "notes": "error.y < 0 (subject below target)."
+  },
+  {
+    "file": "",
+    "description": "Looking down at a second monitor",
+    "expectedCondition": "gaze-off-camera",
+    "notes": "gazeOnCamera == false via pitch magnitude (chin down); framing itself may be fine."
+  },
+  {
+    "file": "",
+    "description": "Looking off to the side",
+    "expectedCondition": "gaze-off-camera",
+    "notes": "gazeOnCamera == false via yaw magnitude."
+  },
+  {
+    "file": "",
+    "description": "Head tilted (roll)",
+    "expectedCondition": "pose-roll",
+    "notes": "Elevated |roll| in FaceGeometry; should not itself be conflated with yaw-driven gaze-off-camera."
+  },
+  {
+    "file": "",
+    "description": "Second person walking through behind",
+    "expectedCondition": "multi-face-transient",
+    "notes": "faceCount briefly > 1; primary face selection and framing for the primary subject must remain stable through the transient. Suppression/hysteresis should prevent a spurious announcement for a brief background transit."
+  },
+  {
+    "file": "",
+    "description": "Second person seated in frame",
+    "expectedCondition": "multi-face-sustained",
+    "notes": "faceCount == 2 sustained; requires the .multiFace capability path. Priority ladder (§7.4) determines what, if anything, is announced about the second person."
+  },
+  {
+    "file": "",
+    "description": "Glasses with strong glare",
+    "expectedCondition": "lighting-glare",
+    "notes": "Elevated clippedHighlightFraction localized near the eyes; watch for spurious lowConfidence if glare confuses landmark/quality detection."
+  },
+  {
+    "file": "",
+    "description": "Lens covered / camera asleep",
+    "expectedCondition": "noSignal",
+    "notes": "Near-uniform frame -> high frameLumaVariance suppression (low variance). Own message per §6.1, distinct from noFace and lowConfidence."
+  },
+  {
+    "file": "",
+    "description": "Blinking and normal fidgeting (suppression test)",
+    "expectedCondition": "suppressed-no-announcement",
+    "notes": "Frame-level suppression (§7.2): blink state / N-consecutive-frame requirement must prevent any announcement from a normal blink or fidget."
+  },
+  {
+    "file": "",
+    "description": "Hand raised to face briefly",
+    "expectedCondition": "suppressed-no-announcement",
+    "notes": "Brief occlusion/interference must be absorbed by the N-frame requirement (§7.2) and 800ms dwell (§7.1); no face-lost escalation should trigger."
+  },
+  {
+    "file": "",
+    "description": "Subject leaves frame entirely and returns",
+    "expectedCondition": "face-lost-escalation-and-recovery",
+    "notes": "Exercises the full §7.3 escalation ladder (silence 0-1.5s, earcon at 1.5s, speech at ~5s) and, if absence is long enough, the userLikelyAway stop at ~30s plus the single 'Back, centered'-style recovery announcement on reacquisition."
+  }
+]
