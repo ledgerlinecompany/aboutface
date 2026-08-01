@@ -97,7 +97,9 @@ extension SignalFormatter {
     let degrees = quantizedDegrees(yaw, display: display)
     guard degrees != 0 else { return "0° (facing camera)" }
     let direction = degrees > 0 ? "own right" : "own left"
-    return "\(signedDegrees(degrees))° (turned toward \(direction))"
+    // Unsigned magnitude: the direction word carries the sign. "−4° toward
+    // own left" read as a double negative in the Phase 2 VO pass.
+    return "\(abs(degrees))° toward \(direction)"
   }
 
   /// Pitch (§9): `FaceGeometry.pitch` is "+ = chin up" (§3.3).
@@ -105,7 +107,7 @@ extension SignalFormatter {
     let degrees = quantizedDegrees(pitch, display: display)
     guard degrees != 0 else { return "0° (level)" }
     let direction = degrees > 0 ? "chin up" : "chin down"
-    return "\(signedDegrees(degrees))° (\(direction))"
+    return "\(abs(degrees))° \(direction)"
   }
 
   /// Roll (§9): `FaceGeometry.roll` is "+ = subject's head tilted to their
@@ -114,7 +116,7 @@ extension SignalFormatter {
     let degrees = quantizedDegrees(roll, display: display)
     guard degrees != 0 else { return "0° (level)" }
     let direction = degrees > 0 ? "own right" : "own left"
-    return "\(signedDegrees(degrees))° (tilted toward \(direction))"
+    return "\(abs(degrees))° tilted toward \(direction)"
   }
 
   static func formatFaceCount(_ count: Int) -> String {
@@ -167,10 +169,6 @@ extension SignalFormatter {
   static func quantized(_ value: Double, step: Double) -> Double {
     guard step > 0 else { return value }
     return (value / step).rounded() * step
-  }
-
-  static func signedDegrees(_ degrees: Int) -> String {
-    degrees > 0 ? "+\(degrees)" : "\(degrees)"
   }
 
   static func fixed(_ value: Double, decimals: Int) -> String {

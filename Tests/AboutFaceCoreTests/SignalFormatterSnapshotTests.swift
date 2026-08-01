@@ -84,10 +84,10 @@ struct SignalFormatterSnapshotTests {
     #expect(byField[.horizontalOffset] == "6% left of target")
     #expect(byField[.faceLuma] == "60%")
     #expect(byField[.backlightDelta] == "20 points brighter face")
-    #expect(byField[.yaw] == "+10° (turned toward own right)")
+    #expect(byField[.yaw] == "10° toward own right")
     // 5° quantized to the 2° step.
-    #expect(byField[.pitch] == "-6° (chin down)")
-    #expect(byField[.roll] == "+2° (tilted toward own right)")
+    #expect(byField[.pitch] == "6° chin down")
+    #expect(byField[.roll] == "2° tilted toward own right")
     // 94.5 quantized to the 2% step (47.25 -> 47 -> 94).
     #expect(byField[.backendConfidence] == "94%")
     #expect(byField[.captureFormat] == "1280×720 @ 30fps")
