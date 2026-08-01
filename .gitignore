@@ -12,3 +12,6 @@ DerivedData/
 
 # About Face fixtures
 Fixtures/corpus/clips/
+
+# Claude Code agent worktrees
+.claude/worktrees/
