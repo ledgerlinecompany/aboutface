@@ -86,13 +86,16 @@ public actor FeedbackRouter {
     audio: any AudioRendering,
     speech: any SpeechRendering,
     config: Config = .defaults,
-    feedbackConfig: FeedbackConfig = .defaults,
+    feedbackConfig: FeedbackConfig? = nil,
     mode: FeedbackMode = .setup
   ) {
     self.audio = audio
     self.speech = speech
     self.config = config
-    self.feedbackConfig = feedbackConfig
+    // `Config` carries the feedback tunables (§11: one Config struct); the
+    // separate parameter exists only for tests that want to vary router
+    // behavior without building a whole Config.
+    self.feedbackConfig = feedbackConfig ?? config.feedback
     self.mode = mode
   }
 

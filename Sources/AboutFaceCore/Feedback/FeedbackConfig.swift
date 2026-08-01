@@ -9,14 +9,12 @@
 /// since duplicating it here would violate §0/§11's "no numeric threshold is
 /// hardcoded [twice]" spirit.
 ///
-/// **Follow-up for the integrator, after both `phase3/feedback-router` and
-/// `phase3/audio-renderer` merge:** fold `FeedbackConfig` and `SpeechConfig`
-/// in as new fields on `Config` (e.g. `Config.feedback: FeedbackConfig`,
-/// `Config.speech: SpeechConfig`), bump `Config.version`, and delete this
-/// file's `static let defaults` split in favor of `Config.defaults`
-/// composing them. That is a small, mechanical follow-up, not a redesign —
-/// every field here is already `Codable`/`Sendable`/`Equatable` and shaped
-/// like every other `Config` sub-struct.
+/// Both types are held on `Config` (`Config.feedback` / `Config.speech`) so
+/// §11's "one Config struct, versioned, Codable" holds; they are defined in
+/// this file, beside the router that consumes them. No `Config.version`
+/// bump was needed: `ConfigStore`'s lenient decode fills newly added keys
+/// from defaults per-key, and the version field is reserved for genuinely
+/// breaking migrations.
 public struct FeedbackConfig: Codable, Sendable, Equatable {
   /// §7.2 "general N-frame requirement" — how many CONSECUTIVE frames a new
   /// discrete condition must be observed for before `FeedbackRouter` treats
@@ -111,9 +109,9 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   )
 }
 
-/// Tunables for `SpeechRenderer` (§6.3). Additive/out-of-`Config` for the
-/// same reason as `FeedbackConfig` above — see that type's doc comment for
-/// the fold-in follow-up.
+/// Tunables for `SpeechRenderer` (§6.3). Held on `Config.speech`
+/// (§11: one Config struct); defined here beside the router that consumes
+/// its sibling `FeedbackConfig`.
 public struct SpeechConfig: Codable, Sendable, Equatable {
   /// §6.3: "Default rate well above `AVSpeechUtteranceDefaultSpeechRate`...
   /// Default 0.62, exposed as a slider." Deliberately far above Apple's
