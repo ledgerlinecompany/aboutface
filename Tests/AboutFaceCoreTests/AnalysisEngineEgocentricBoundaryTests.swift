@@ -41,7 +41,7 @@ struct AnalysisEngineEgocentricBoundaryTests {
   private static let tolerance: Float = 1e-4
 
   private func rawObservation(
-    rawCenterX: CGFloat, rawYaw: Float, rawPitch: Float = 0
+    rawCenterX: CGFloat, rawYaw: Float, rawPitch: Float = 0, rawRoll: Float = 0
   ) -> RawFaceObservation {
     let halfWidth: CGFloat = 0.1
     let boundingBox = CGRect(
@@ -60,7 +60,7 @@ struct AnalysisEngineEgocentricBoundaryTests {
       eyePoints: eyePoints,
       yaw: rawYaw,
       pitch: rawPitch,
-      roll: 0,
+      roll: rawRoll,
       confidence: 0.9,
       faceCount: 1
     )
@@ -113,6 +113,29 @@ struct AnalysisEngineEgocentricBoundaryTests {
         testFrame(pixelBuffer: gradientPixelBuffer(), mirror: mirror))
       let pitch = try #require(output.analysis.primary?.pitch)
       #expect(abs(pitch - (-10)) < Self.tolerance, "mirror=\(mirror): expected −10, got \(pitch)")
+    }
+  }
+
+  @Test("Roll: raw + (own right, live-verified) passes through unmirrored, negates mirrored")
+  func rollConvention() async throws {
+    // Vision raw roll positive = tilt toward the subject's OWN RIGHT,
+    // verified by controlled live tilt (ear toward right shoulder,
+    // 2026-08-01) — the opposite baseline sense from yaw. Same physical
+    // own-right tilt: raw +18 on unmirrored frames (pass through), raw -18
+    // on mirrored frames (the pixel flip negated it; boundary negates it
+    // back). Both must surface as egocentric +18.
+    for mirror in [MirrorState.notMirrored, .mirrored] {
+      let rawX: CGFloat = mirror == .notMirrored ? 0.8 : 0.2
+      let rawYaw: Float = mirror == .notMirrored ? -20 : 20
+      let rawRoll: Float = mirror == .notMirrored ? 18 : -18
+      let engine = AnalysisEngine(
+        backend: ScriptedBackend([
+          rawObservation(rawCenterX: rawX, rawYaw: rawYaw, rawRoll: rawRoll)
+        ]))
+      let output = try await engine.process(
+        testFrame(pixelBuffer: gradientPixelBuffer(), mirror: mirror))
+      let roll = try #require(output.analysis.primary?.roll)
+      #expect(abs(roll - 18) < Self.tolerance, "mirror=\(mirror): expected +18, got \(roll)")
     }
   }
 

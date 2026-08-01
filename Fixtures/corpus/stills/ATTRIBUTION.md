@@ -60,8 +60,10 @@ frames Vision's yaw/roll signs already match `FaceGeometry`'s egocentric
 conventions and pass through unchanged; for **mirrored** frames yaw and roll
 must be **negated**; pitch is mirror-invariant either way.
 
-Roll: assumed positive = tilt toward own LEFT (same in-image-plane logic as
-the corrected yaw); still unverified by controlled live tilt — pending the
-maintainer's ear-to-shoulder check and the §14 head-tilt clip. The
-turned-head stills above remain useful as detection/degradation fixtures,
-but are explicitly NOT sign ground truth.
+Roll: positive = tilt toward own RIGHT — verified by controlled live tilt
+(ear toward right shoulder, 2026-08-01). Notably the OPPOSITE baseline sense
+from yaw; the brief "same in-image-plane logic as yaw" assumption lasted one
+commit before the live check corrected it. With this, ALL THREE axes are
+established by controlled live movement. The turned-head stills above remain
+useful as detection/degradation fixtures, but are explicitly NOT sign ground
+truth.
