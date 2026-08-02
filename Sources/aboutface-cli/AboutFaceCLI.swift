@@ -40,6 +40,7 @@ struct AboutFaceCLI: AsyncParsableCommand {
     version: "0.0.0-phase3 (Config schema v\(Config.defaults.version))",
     subcommands: [
       Replay.self, Live.self, Audition.self, RecordCorpus.self, VerifyCorpus.self, Trial.self,
+      ConfigDefaults.self,
     ]  // swiftlint:disable:previous trailing_comma
   )
 }

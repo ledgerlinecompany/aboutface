@@ -42,7 +42,7 @@ extension RenderState {
     signMultiplier: Float, minHz: Double, maxHz: Double, sampleRate: Double
   ) -> (Float, Float) {
     let cfg = config.positional
-    let pitchRaw = signMultiplier * currentTarget.errorY
+    let pitchRaw = quantizedError(signMultiplier * currentTarget.errorY)
     let freq = AudioSynthesis.exponentialFrequency(
       normalized: pitchRaw, range: Float(cfg.errorRange), minHz: minHz, maxHz: maxHz)
     positionalPhase = advancedPhase(positionalPhase, freqHz: freq, sampleRate: sampleRate)
@@ -53,7 +53,7 @@ extension RenderState {
       sampleRate: sampleRate)
     let sample = carrier * amplitude
 
-    let panRaw = signMultiplier * currentTarget.errorX
+    let panRaw = quantizedError(signMultiplier * currentTarget.errorX)
     var panNormalized: Float =
       cfg.errorRange > 0 ? max(-1, min(1, panRaw / Float(cfg.errorRange))) : 0
     if config.outputMode == .speakers {
@@ -77,7 +77,8 @@ extension RenderState {
       sequentialOnHorizontal = true
     }
 
-    let axisRaw = sequentialOnHorizontal ? horizontalRaw : signMultiplier * currentTarget.errorY
+    let axisRaw = quantizedError(
+      sequentialOnHorizontal ? horizontalRaw : signMultiplier * currentTarget.errorY)
     let freq = AudioSynthesis.exponentialFrequency(
       normalized: axisRaw, range: Float(cfg.errorRange), minHz: minHz, maxHz: maxHz)
     positionalPhase = advancedPhase(positionalPhase, freqHz: freq, sampleRate: sampleRate)
@@ -385,5 +386,14 @@ extension RenderState {
     if next >= 2 * .pi { next -= 2 * .pi }
     if next < 0 { next += 2 * .pi }
     return next
+  }
+  /// Snaps a post-polarity error to `errorQuantizationStep` multiples
+  /// (`0` = continuous pass-through). Applied AFTER the polarity sign, so
+  /// quantization can never flip the beacon's side; round-to-nearest makes
+  /// zero a step center, so near-center snaps to true purity.
+  private func quantizedError(_ value: Float) -> Float {
+    let step = Float(config.positional.errorQuantizationStep)
+    guard step > 0 else { return value }
+    return (value / step).rounded() * step
   }
 }

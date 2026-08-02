@@ -1,0 +1,144 @@
+{
+  "audio": {
+    "distance": {
+      "audibleRampMultiplier": 2,
+      "audibleRampStartError": 0.02,
+      "closePulseDepth": 0.95,
+      "closePulseSharpness": 3.5,
+      "directionalPulseEnabled": true,
+      "errorRange": 0.3,
+      "farPulseDepth": 0.4,
+      "pulseRateMaxHz": 8,
+      "pulseRateMinHz": 1
+    },
+    "earcons": {
+      "enteredGoodZone": {
+        "gain": 0.35,
+        "gapMs": 30,
+        "note1Hz": 660,
+        "note2Hz": 990,
+        "noteDurationMs": 70
+      },
+      "faceLost": {
+        "durationMs": 300,
+        "gain": 0.25
+      },
+      "faceReacquired": {
+        "durationMs": 250,
+        "endHz": 700,
+        "gain": 0.3,
+        "startHz": 350
+      },
+      "lowConfidence": {
+        "durationMs": 350,
+        "endHz": 340,
+        "gain": 0.3,
+        "startHz": 520
+      },
+      "noSignal": {
+        "durationMs": 500,
+        "freqHz": 220,
+        "gain": 0.3,
+        "modHz": 12
+      }
+    },
+    "engine": {
+      "bufferFrameSize": 256,
+      "sampleRate": 48000
+    },
+    "gazeTrim": {
+      "deadBandDegrees": 3,
+      "deviationRangeDegrees": 20,
+      "enabled": false,
+      "gain": 0.05,
+      "maxHz": 3200,
+      "minHz": 1400,
+      "onsetRampMs": 300,
+      "smoothingWindow": 8
+    },
+    "heartbeat": {
+      "durationMs": 40,
+      "freqHz": 880,
+      "gain": 0.05
+    },
+    "outputMode": "headphones",
+    "positional": {
+      "beaconPolarity": true,
+      "brightnessStyle": "saw",
+      "errorQuantizationStep": 0,
+      "errorRange": 0.35,
+      "maxBrightnessMix": 0.5,
+      "maxDarknessMix": 0.5,
+      "maxToneHz": 880,
+      "minToneHz": 220,
+      "overdriveMaxDrive": 6,
+      "panSpeakerAttenuation": 0.5,
+      "pitchSpeakerRangeExpansion": 1.5,
+      "referenceToneHz": 440,
+      "sequentialAxisThreshold": 0.15,
+      "timbreOnsetExponent": 2,
+      "toneGain": 0.2,
+      "verticalTimbreEnabled": true
+    },
+    "scheme": {
+      "positional": "panPitch",
+      "schemeBEnabled": false,
+      "schemeBMaxBeatHz": 8,
+      "schemeBRefinementFraction": 0.2
+    }
+  },
+  "deadZone": {
+    "distance": 0.02,
+    "horizontal": 0.06,
+    "vertical": 0.05
+  },
+  "display": {
+    "degreesStep": 2,
+    "normalizedStep": 0.02,
+    "percentStep": 2
+  },
+  "dwellMs": 800,
+  "feedback": {
+    "faceLostEarconDelayMs": 1500,
+    "faceLostSpeechDelayMs": 5000,
+    "faceLostStopDelayMs": 30000,
+    "heartbeatIntervalMs": 7000,
+    "monitor": {
+      "minAnnouncementIntervalMs": 20000,
+      "minSameConditionIntervalMs": 180000
+    },
+    "nFrameMonitor": 3,
+    "nFrameSetup": 5,
+    "setup": {}
+  },
+  "gaze": {
+    "maxPitchDegrees": 15,
+    "maxYawDegrees": 15
+  },
+  "hysteresisExitRatio": 1.4,
+  "lighting": {
+    "clippedHighlightThreshold": 0.98,
+    "clippedShadowThreshold": 0.02,
+    "maxAnalysisWidth": 320,
+    "sharpnessNormalizationDivisor": 0.02
+  },
+  "signal": {
+    "lowConfidenceThreshold": 0.5,
+    "noSignalLumaVarianceThreshold": 0.0005
+  },
+  "smoothingWindow": 4,
+  "speech": {
+    "pitchMultiplier": 1,
+    "rate": 0.62,
+    "volume": 1
+  },
+  "targetFraming": {
+    "eyeMidpointX": 0.5,
+    "eyeMidpointY": 0.38,
+    "interocularWidth": 0.11,
+    "neutralPitchDegrees": 0,
+    "neutralRollDegrees": 0,
+    "neutralYawDegrees": 0
+  },
+  "version": 1
+}

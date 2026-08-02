@@ -322,6 +322,12 @@ extension Config {
     /// curve must be too, or one side would still jump more sharply than
     /// the other.
     public var timbreOnsetExponent: Double
+    /// Sonification quantization (2026-08-02 experiment): `0` (default) =
+    /// continuous beacon; `> 0` snaps the post-polarity error driving
+    /// pan/pitch to multiples of this step — discrete audible levels.
+    /// Trials measure centering ease vs settle steadiness. Unrelated to
+    /// `Config.Display` (which steps the DISPLAY, not the sound).
+    public var errorQuantizationStep: Double
     /// `.overdrive` style only: the `tanh` drive coefficient at full
     /// brightness intensity (`brightnessMix == maxBrightnessMix`); drive
     /// ramps from `1` at zero intensity up to this value. Capped (default
@@ -348,7 +354,8 @@ extension Config {
       maxDarknessMix: Double,
       brightnessStyle: BrightnessStyle,
       timbreOnsetExponent: Double,
-      overdriveMaxDrive: Double
+      overdriveMaxDrive: Double,
+      errorQuantizationStep: Double = 0
     ) {
       self.errorRange = errorRange
       self.minToneHz = minToneHz
@@ -365,6 +372,7 @@ extension Config {
       self.brightnessStyle = brightnessStyle
       self.timbreOnsetExponent = timbreOnsetExponent
       self.overdriveMaxDrive = overdriveMaxDrive
+      self.errorQuantizationStep = errorQuantizationStep
     }
   }
 
