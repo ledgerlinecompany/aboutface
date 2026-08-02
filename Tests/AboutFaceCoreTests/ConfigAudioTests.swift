@@ -62,6 +62,17 @@ struct ConfigAudioTests {
     #expect(Config.Audio.defaults.positional.beaconPolarity == true)
   }
 
+  @Test("Vertical timbre differentiation ships enabled, per 2026-08-02 tuning directive")
+  func verticalTimbreEnabledByDefault() {
+    #expect(Config.Audio.defaults.positional.verticalTimbreEnabled == true)
+  }
+
+  @Test("Brightness/darkness mix defaults are sensible fractions, not full-scale or silent")
+  func timbreMixDefaultsAreModerate() {
+    #expect(Config.Audio.defaults.positional.maxBrightnessMix == 0.5)
+    #expect(Config.Audio.defaults.positional.maxDarknessMix == 0.5)
+  }
+
   @Test("Engine format defaults to 48kHz / 256-frame buffer")
   func engineDefaults() {
     #expect(Config.Audio.defaults.engine.sampleRate == 48000)
@@ -97,7 +108,10 @@ struct ConfigAudioTests {
       panSpeakerAttenuation: 0.4,
       pitchSpeakerRangeExpansion: 1.6,
       sequentialAxisThreshold: 0.12,
-      beaconPolarity: false
+      beaconPolarity: false,
+      verticalTimbreEnabled: false,
+      maxBrightnessMix: 0.6,
+      maxDarknessMix: 0.4
     )
     let data = try JSONEncoder().encode(original)
     let decoded = try JSONDecoder().decode(Config.AudioPositional.self, from: data)

@@ -98,6 +98,12 @@ final class RenderState: @unchecked Sendable {
   /// instance (`config.scheme.positional` is fixed at construction), so one
   /// field suffices.
   var positionalPhase: Double = 0
+  /// §6.2 vertical-axis timbre differentiation's "darkness" ingredient: a
+  /// sub-octave (`f/2`) component. Needs its own accumulator rather than
+  /// deriving from `positionalPhase / 2` because halving a *wrapped* phase
+  /// is discontinuous (unlike integer-multiple harmonics — see
+  /// `RenderState+Positional.swift`'s `verticalTimbreMix` doc comment).
+  var subOctavePhase: Double = 0
   var schemeBReferencePhase: Double = 0
   var schemeBMovingPhase: Double = 0
   var pulsePhase: Double = 0
