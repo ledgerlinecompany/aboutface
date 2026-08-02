@@ -29,6 +29,10 @@ extension Config {
     public var distance: AudioDistance
     public var heartbeat: AudioHeartbeat
     public var earcons: AudioEarcons
+    /// Tuning round 5 (maintainer-designed audition prototype, §6.1/§6.2-
+    /// adjacent): the gaze-trim continuous cue. See `AudioGazeTrim`'s own
+    /// doc comment.
+    public var gazeTrim: AudioGazeTrim
 
     public init(
       engine: AudioEngine,
@@ -37,7 +41,8 @@ extension Config {
       positional: AudioPositional,
       distance: AudioDistance,
       heartbeat: AudioHeartbeat,
-      earcons: AudioEarcons
+      earcons: AudioEarcons,
+      gazeTrim: AudioGazeTrim
     ) {
       self.engine = engine
       self.scheme = scheme
@@ -46,6 +51,7 @@ extension Config {
       self.distance = distance
       self.heartbeat = heartbeat
       self.earcons = earcons
+      self.gazeTrim = gazeTrim
     }
 
     /// Starting-point defaults (§16: "tuned by ear later against corpus
@@ -95,7 +101,17 @@ extension Config {
         freqHz: 880,
         durationMs: 40
       ),
-      earcons: .defaults
+      earcons: .defaults,
+      gazeTrim: AudioGazeTrim(
+        enabled: false,
+        gain: 0.05,
+        minHz: 1600,
+        maxHz: 2400,
+        deviationRangeDegrees: 20,
+        deadBandDegrees: 3,
+        smoothingWindow: 8,
+        onsetRampMs: 300
+      )
     )
   }
 

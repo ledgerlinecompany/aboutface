@@ -385,13 +385,23 @@ extension RenderState {
     return (referenceSample + movingSample) * 0.5 * Float(positionalCfg.toneGain) * 0.5
   }
 
-  private func triangleWave(phase: Double) -> Double {
+  // Not `private`: read from `RenderState+GazeTrim.swift`'s extension too
+  // (a different file — see `RenderState.swift`'s stored-property doc
+  // comment for why cross-file sharing within this module uses plain
+  // `internal` rather than `private`, which is file-scoped). The trim
+  // ingredient reuses this exact waveform (crossfaded in as its own
+  // "impurity" ingredient) so it needs no accumulator or synthesis
+  // primitive of its own beyond the phase it already tracks.
+  func triangleWave(phase: Double) -> Double {
     let unitPhase = (phase / (2 * .pi)).truncatingRemainder(dividingBy: 1)
     let wrapped = unitPhase < 0 ? unitPhase + 1 : unitPhase
     return 4 * abs(wrapped - 0.5) - 1
   }
 
-  private func advancedPhase(_ phase: Double, freqHz: Double, sampleRate: Double) -> Double {
+  // Not `private`: same reasoning as `triangleWave` above —
+  // `RenderState+GazeTrim.swift` needs the identical phase-wrapping
+  // arithmetic for its own (disjoint) phase accumulator.
+  func advancedPhase(_ phase: Double, freqHz: Double, sampleRate: Double) -> Double {
     var next = phase + 2 * .pi * freqHz / sampleRate
     if next >= 2 * .pi { next -= 2 * .pi }
     if next < 0 { next += 2 * .pi }

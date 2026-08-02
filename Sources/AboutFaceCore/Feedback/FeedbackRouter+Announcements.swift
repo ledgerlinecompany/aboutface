@@ -33,6 +33,11 @@ extension FeedbackRouter {
     if case .goodZone = previous, next != .goodZone {
       goodZoneConfirmedAt = nil
       nextHeartbeatAt = nil
+      // Tuning round 5 gaze trim: reset the deviation EMA so a later
+      // placement never inherits a stale trend from this episode — see
+      // `FeedbackRouter.smoothedYawDeviationDegrees`'s doc comment.
+      smoothedYawDeviationDegrees = nil
+      smoothedPitchDeviationDegrees = nil
     }
 
     if case .problem(.faceLost) = previous, next != previous {

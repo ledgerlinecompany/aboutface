@@ -69,6 +69,17 @@ public actor FeedbackRouter {
   var goodZoneConfirmedAt: ContinuousClock.Instant?
   var nextHeartbeatAt: ContinuousClock.Instant?
 
+  // MARK: - Gaze trim (tuning round 5, maintainer-designed prototype,
+  // default OFF — see `Config.AudioGazeTrim` and
+  // `FeedbackRouter+GazeTrim.swift`). EMA state for the yaw/pitch
+  // deviation smoothing, mirroring `AnalysisEngine`'s own
+  // seed-with-first-sample convention: `nil` means "no prior sample,"
+  // reset whenever `confirmedState` leaves `.goodZone` (see
+  // `onConfirmedStateChanged`) so a fresh placement never inherits a
+  // stale trend from an earlier episode.
+  var smoothedYawDeviationDegrees: Float?
+  var smoothedPitchDeviationDegrees: Float?
+
   // MARK: - §7.3 face-lost ladder
   //
   // `faceLostRung`: 0 = nothing fired yet, 1 = the §7.3 "1.5s" earcon has
@@ -192,12 +203,32 @@ public actor FeedbackRouter {
   /// signal is not trustworthy enough to sonify in real time, even though
   /// it exists. This is the continuous channel's own application of that
   /// same priority judgment — it has no ladder of its own to consult.
+  ///
+  /// **Tuning round 5 addition (gaze trim, default OFF):** inside the dead
+  /// zone, this used to simply stop calling `audio.update` at all (the
+  /// legacy "silence + heartbeat" posture — §6.1). It still does exactly
+  /// that when `gazeTrimTarget(output:framing:)` returns `nil` (flag off,
+  /// wrong mode, not yet confirmed good-zone, etc. — see that method's own
+  /// gating), so flag-off behavior is bit-for-bit unchanged. When it
+  /// returns a target, that target is published INSTEAD of halting —
+  /// always with `inDeadZone: true`, which is what keeps the beacon branch
+  /// above (`!currentTarget.inDeadZone` in `RenderState.mixedSample`) from
+  /// also firing, so the two continuous cues are mutually exclusive by
+  /// construction, never layered.
   func updateContinuousSonification(_ output: EngineOutput, at time: ContinuousClock.Instant) async
   {
     // swiftlint:enable opening_brace
     guard !isSilenced else { return }
     guard output.analysis.signalState == .ok else { return }
-    guard let framing = output.framing, !framing.inDeadZone else { return }
+    guard let framing = output.framing else { return }
+
+    guard !framing.inDeadZone else {
+      if let trimTarget = gazeTrimTarget(output: output, framing: framing) {
+        await audio.update(trimTarget)
+      }
+      return
+    }
+
     let target = SonificationTarget(
       errorX: framing.error.x,
       errorY: framing.error.y,
