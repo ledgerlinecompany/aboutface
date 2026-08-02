@@ -79,7 +79,7 @@ extension Config {
         verticalTimbreEnabled: true,
         maxBrightnessMix: 0.5,
         maxDarknessMix: 0.5,
-        brightnessStyle: .overdrive,
+        brightnessStyle: .saw,
         overdriveMaxDrive: 6
       ),
       distance: AudioDistance(
@@ -270,8 +270,14 @@ extension Config {
     /// approaches 0. Metaphor-congruent with "darker/lower."
     public var maxDarknessMix: Double
     /// Which synthesis character the brightness ingredient above uses.
-    /// Default `.overdrive` (2026-08-02 round-2 maintainer lean — see
-    /// `BrightnessStyle`'s doc comment for the full context).
+    /// Default `.saw` — chosen BY EAR in the 2026-08-02 round-3 A/B
+    /// (`audition sweep --axis y --brightness <style>`): "Saw is by far
+    /// the clearest; I couldn't even notice the difference in brightness
+    /// overdrive." Acoustically consistent: tanh's odd harmonics roll off
+    /// steeply and are near-inaudible on a few-hundred-Hz carrier through
+    /// built-in speakers, while polyBLEP saw carries the full harmonic
+    /// series. `.overdrive`/`.harmonics` remain selectable for
+    /// re-audition on other output hardware.
     public var brightnessStyle: BrightnessStyle
     /// `.overdrive` style only: the `tanh` drive coefficient at full
     /// brightness intensity (`brightnessMix == maxBrightnessMix`); drive
