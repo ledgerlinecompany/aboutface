@@ -119,8 +119,44 @@ final class RenderState: @unchecked Sendable {
   /// is discontinuous (unlike integer-multiple harmonics — see
   /// `RenderState+Positional.swift`'s `verticalTimbreMix` doc comment).
   var subOctavePhase: Double = 0
-  var schemeBReferencePhase: Double = 0
-  var schemeBMovingPhase: Double = 0
+  /// Quantization glide state (2026-08-02 action round, item 2): one linear
+  /// slew accumulator per positional axis — `X` for pan (Scheme A) and the
+  /// horizontal axis (Scheme C), `Y` for pitch (Scheme A) and the vertical
+  /// axis (Scheme C) — `RenderState`-owned, same no-allocation stored-state
+  /// pattern as the phase accumulators here. See `RenderState+
+  /// Positional.swift`'s `quantizedError`/`glidedToward` for the slew math
+  /// and `Config.AudioPositional.quantizationGlideMs` for the design. Not
+  /// `private`: read/written from `RenderState+Positional.swift`'s
+  /// extension, same cross-file-internal precedent as `positionalPhase` et
+  /// al. above.
+  var quantizationGlideX: Float = 0
+  var quantizationGlideY: Float = 0
+  /// §6.2 Scheme B click train (2026-08-02 percussive redesign, see
+  /// `RenderState+SchemeB.swift`): phase accumulator driving the click
+  /// repetition rate — a click (re)triggers each time this phase wraps.
+  var schemeBClickPhase: Double = 0
+  /// Samples elapsed since the current (or most recent) click's trigger —
+  /// the click transient's envelope/noise are a pure function of this,
+  /// mirroring `Voice.elapsedFrames`'s role for earcons but kept as
+  /// `RenderState`-owned state directly rather than going through the
+  /// cross-thread `Voice`/`RingBuffer` machinery, since Scheme B's trigger
+  /// rate is continuously derived from `currentTarget` on the render
+  /// thread itself, not a discrete cross-thread event.
+  ///
+  /// Defaults to `Int.max`, not `0`: `0` would be indistinguishable from
+  /// "a click just triggered," so a fresh `RenderState`'s very first
+  /// render sample (before any real phase wrap has ever happened) would
+  /// spuriously play a click even at zero error, where a click should
+  /// never sound at all. `Int.max` guarantees `t > durationSeconds` (see
+  /// `RenderState.clickSample`) until the first genuine wrap sets this to
+  /// a real `0`.
+  var schemeBClickElapsedSamples: Int = .max
+  /// xorshift32 noise state for the click transient's noise carrier —
+  /// separate from `noiseSeedCounter` (earcons' own state) since Scheme B's
+  /// clicks are an independent, continuously-advancing noise stream, not a
+  /// per-activation reseed. Seeded with a distinct nonzero constant (`0`
+  /// would leave xorshift32 stuck at `0` forever).
+  var schemeBClickRng: UInt32 = 0x9E37_79B9
   var pulsePhase: Double = 0
   /// Tuning round 5 gaze-trim prototype (§6.1/§6.2-adjacent, default OFF —
   /// see `Config.AudioGazeTrim`). Own phase accumulator — the trim tone's

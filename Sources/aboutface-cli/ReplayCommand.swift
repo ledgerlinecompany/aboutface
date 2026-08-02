@@ -99,7 +99,7 @@ struct Replay: AsyncParsableCommand {
   @Option(
     name: .customLong("scheme-b"),
     help: ArgumentHelp(
-      "Override the Scheme B (zero-beat refinement) enable flag for --audio: 'on' or 'off'.")
+      "Override the Scheme B (percussive click refinement) enable flag for --audio: 'on' or 'off'.")
   )
   var schemeB: AudioCLISupport.OnOffFlag?
 

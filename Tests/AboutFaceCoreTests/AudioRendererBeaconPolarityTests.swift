@@ -12,6 +12,20 @@ import Testing
 /// — these tests derive the expected direction by hand from
 /// `Config.Audio.defaults` rather than relying on a relative comparison.
 struct AudioRendererBeaconPolarityTests {
+  /// `Config.Audio.defaults` with `errorQuantizationStep` pinned to `0`
+  /// (2026-08-02 action round, item 1: the shipped default moved to
+  /// `0.03`). Every `errorX`/`errorY` value below happens to be an exact
+  /// multiple of `0.03` already, so quantization wouldn't change the
+  /// SNAPPED value here — but this file's whole point is exact hand-derived
+  /// frequency/pan arithmetic against the CONTINUOUS mapping, so pinning
+  /// keeps that derivation exact and independent of whatever
+  /// `errorQuantizationStep`'s default becomes next, rather than relying on
+  /// the coincidence.
+  private static var pinnedConfig: Config.Audio {
+    var config = Config.Audio.defaults
+    config.positional.errorQuantizationStep = 0
+    return config
+  }
 
   // MARK: - Pan (horizontal)
 
@@ -33,7 +47,14 @@ struct AudioRendererBeaconPolarityTests {
   )
   func beaconPolarity_subjectRightOfTarget_producesLeftDominantTone() async throws {
     let target = SonificationTarget(errorX: 0.3, errorY: 0, distanceError: 0, inDeadZone: false)
-    let renderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    // swift-format requires the closure's `renderer in` onto its own line
+    // once the opening-brace line is too long; swiftlint's
+    // closure_parameter_position rule wants it on the same line as `{`.
+    // Format wins (see ConfigStore.swift for the same kind of workaround).
+    // swiftlint:disable closure_parameter_position
+    let renderer = try await AudioRendererTestSupport.makeRenderer(config: Self.pinnedConfig) {
+      renderer in
+      // swiftlint:enable closure_parameter_position
       await renderer.update(target)
     }
 
@@ -56,7 +77,14 @@ struct AudioRendererBeaconPolarityTests {
   )
   func beaconPolarity_subjectLeftOfTarget_producesRightDominantTone() async throws {
     let target = SonificationTarget(errorX: -0.3, errorY: 0, distanceError: 0, inDeadZone: false)
-    let renderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    // swift-format requires the closure's `renderer in` onto its own line
+    // once the opening-brace line is too long; swiftlint's
+    // closure_parameter_position rule wants it on the same line as `{`.
+    // Format wins (see ConfigStore.swift for the same kind of workaround).
+    // swiftlint:disable closure_parameter_position
+    let renderer = try await AudioRendererTestSupport.makeRenderer(config: Self.pinnedConfig) {
+      renderer in
+      // swiftlint:enable closure_parameter_position
       await renderer.update(target)
     }
 
@@ -84,7 +112,14 @@ struct AudioRendererBeaconPolarityTests {
   @Test("Beacon polarity (default): subject above target (errorY = +0.3) produces LOW-pitched tone")
   func beaconPolarity_subjectAboveTarget_producesLowPitch() async throws {
     let target = SonificationTarget(errorX: 0, errorY: 0.3, distanceError: 0, inDeadZone: false)
-    let renderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    // swift-format requires the closure's `renderer in` onto its own line
+    // once the opening-brace line is too long; swiftlint's
+    // closure_parameter_position rule wants it on the same line as `{`.
+    // Format wins (see ConfigStore.swift for the same kind of workaround).
+    // swiftlint:disable closure_parameter_position
+    let renderer = try await AudioRendererTestSupport.makeRenderer(config: Self.pinnedConfig) {
+      renderer in
+      // swiftlint:enable closure_parameter_position
       await renderer.update(target)
     }
 
@@ -102,7 +137,14 @@ struct AudioRendererBeaconPolarityTests {
     "Beacon polarity (default): subject below target (errorY = -0.3) produces HIGH-pitched tone")
   func beaconPolarity_subjectBelowTarget_producesHighPitch() async throws {
     let target = SonificationTarget(errorX: 0, errorY: -0.3, distanceError: 0, inDeadZone: false)
-    let renderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    // swift-format requires the closure's `renderer in` onto its own line
+    // once the opening-brace line is too long; swiftlint's
+    // closure_parameter_position rule wants it on the same line as `{`.
+    // Format wins (see ConfigStore.swift for the same kind of workaround).
+    // swiftlint:disable closure_parameter_position
+    let renderer = try await AudioRendererTestSupport.makeRenderer(config: Self.pinnedConfig) {
+      renderer in
+      // swiftlint:enable closure_parameter_position
       await renderer.update(target)
     }
 
@@ -123,7 +165,7 @@ struct AudioRendererBeaconPolarityTests {
   /// above — proving the flag actually controls the sign and isn't a no-op.
   @Test("beaconPolarity = false flips pan polarity (error-marker convention)")
   func errorMarkerPolarity_subjectRightOfTarget_producesRightDominantTone() async throws {
-    var config = Config.Audio.defaults
+    var config = Self.pinnedConfig
     config.positional.beaconPolarity = false
     let target = SonificationTarget(errorX: 0.3, errorY: 0, distanceError: 0, inDeadZone: false)
     let renderer = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in

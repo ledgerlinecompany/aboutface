@@ -65,7 +65,7 @@
     "positional": {
       "beaconPolarity": true,
       "brightnessStyle": "saw",
-      "errorQuantizationStep": 0.03,
+      "errorQuantizationStep": 0,
       "errorRange": 0.35,
       "maxBrightnessMix": 0.5,
       "maxDarknessMix": 0.5,
@@ -85,7 +85,7 @@
       "positional": "panPitch",
       "schemeBClickDurationMs": 6,
       "schemeBClickGain": 0.35,
-      "schemeBEnabled": false,
+      "schemeBEnabled": true,
       "schemeBMaxBeatHz": 8,
       "schemeBRefinementFraction": 0.2
     }
@@ -129,7 +129,7 @@
     "lowConfidenceThreshold": 0.5,
     "noSignalLumaVarianceThreshold": 0.0005
   },
-  "smoothingWindow": 4,
+  "smoothingWindow": 8,
   "speech": {
     "pitchMultiplier": 1,
     "rate": 0.62,

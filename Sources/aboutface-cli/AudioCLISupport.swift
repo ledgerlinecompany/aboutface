@@ -17,8 +17,9 @@ enum AudioCLISupport {
     case c
   }
 
-  /// `--scheme-b <on|off>` — enables/disables the Scheme B zero-beat
-  /// refinement layer (§6.2), independent of `--scheme`.
+  /// `--scheme-b <on|off>` — enables/disables the Scheme B percussive
+  /// click-train refinement layer (§6.2, 2026-08-02 redesign — see
+  /// `RenderState+SchemeB.swift`), independent of `--scheme`.
   enum OnOffFlag: String, ExpressibleByArgument, CaseIterable {
     case on
     case off

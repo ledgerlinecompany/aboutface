@@ -166,6 +166,13 @@ struct AudioRendererBrightnessStyleTests {
     if let style {
       config.positional.brightnessStyle = style
     }
+    // Pinned to 0 (2026-08-02 action round, item 1): the shipped default
+    // moved to `0.03`, and this file's `errorY` values (`±0.1`, `±0.3`)
+    // aren't all exact multiples of it — `fundamentalHz` below is derived
+    // independently from the RAW `pitchRaw`, not the renderer's own
+    // (potentially quantized) value, so quantization would probe the wrong
+    // frequency bin. Pin rather than re-derive.
+    config.positional.errorQuantizationStep = 0
     let target = SonificationTarget(
       errorX: errorX, errorY: errorY, distanceError: 0, inDeadZone: false)
     let renderer = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in

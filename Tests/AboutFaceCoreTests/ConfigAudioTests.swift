@@ -57,6 +57,16 @@ struct ConfigAudioTests {
     #expect(Config.Audio.defaults.scheme.schemeBRefinementFraction == 0.2)
   }
 
+  /// 2026-08-02 action round, item 3 (percussive Scheme B redesign — see
+  /// `RenderState+SchemeB.swift`): the click train's own gain/duration
+  /// fields, defaulted rather than left at the struct init's `0`-ish
+  /// additive-field fallback.
+  @Test("Scheme B click gain/duration default to an audible, percussive-length starting point")
+  func schemeBClickDefaults() {
+    #expect(Config.Audio.defaults.scheme.schemeBClickGain == 0.35)
+    #expect(Config.Audio.defaults.scheme.schemeBClickDurationMs == 6)
+  }
+
   @Test("Beacon polarity is enabled by default (2026-08-01 maintainer directive)")
   func beaconPolarityDefaultsTrue() {
     #expect(Config.Audio.defaults.positional.beaconPolarity == true)
@@ -91,6 +101,25 @@ struct ConfigAudioTests {
   @Test("Timbre onset exponent defaults to a superlinear 2.0, not the old linear 1.0")
   func timbreOnsetExponentDefaultIsSuperlinear() {
     #expect(Config.Audio.defaults.positional.timbreOnsetExponent == 2.0)
+  }
+
+  /// 2026-08-02 action round, item 1: the 2026-08-02 convergence experiment
+  /// (`docs/tuning/2026-08-02-convergence-experiment.md`) found the
+  /// quantized-fine profile (`p5`, step `0.03`) swept both speed and
+  /// steadiness, with the practiced control run LAST and still losing on
+  /// both — see `Config.AudioPositional.errorQuantizationStep`'s doc
+  /// comment for the full numbers.
+  @Test("Error quantization step defaults to 0.03 (fine quantized beacon), not continuous")
+  func errorQuantizationStepDefaultIsQuantizedFine() {
+    #expect(Config.Audio.defaults.positional.errorQuantizationStep == 0.03)
+  }
+
+  /// 2026-08-02 action round, item 2: both quantized trial profiles were
+  /// "jumpy" — see `Config.AudioPositional.quantizationGlideMs`'s doc
+  /// comment.
+  @Test("Quantization glide defaults to 80ms per step, not an instant jump")
+  func quantizationGlideMsDefault() {
+    #expect(Config.Audio.defaults.positional.quantizationGlideMs == 80)
   }
 
   @Test("BrightnessStyle round-trips through Codable, including the raw value")
