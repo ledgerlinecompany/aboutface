@@ -101,7 +101,13 @@ enum AuditionAxis: String, ExpressibleByArgument, CaseIterable {
   case x
   case y
 
-  var label: String { self == .x ? "horizontal (pan)" : "vertical (pitch)" }
+  // "pitch + timbre": `sweep --axis y` drives the real `AudioRenderer`
+  // (`AuditionSupport.sweep` calls `audio.update(_:)` directly), so §6.2's
+  // vertical-axis timbre differentiation (brightness above center,
+  // darkness below, pure sine at center) is already audible in this sweep
+  // with no code change beyond this label — it was only ever wired through
+  // `positional.errorY`, which the sweep already drives end to end.
+  var label: String { self == .x ? "horizontal (pan)" : "vertical (pitch + timbre)" }
 }
 
 /// Shared config-loading/scheme-override/sweep plumbing for the three

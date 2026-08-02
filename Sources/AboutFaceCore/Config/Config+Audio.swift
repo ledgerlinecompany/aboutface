@@ -75,7 +75,10 @@ extension Config {
         panSpeakerAttenuation: 0.5,
         pitchSpeakerRangeExpansion: 1.5,
         sequentialAxisThreshold: 0.15,
-        beaconPolarity: true
+        beaconPolarity: true,
+        verticalTimbreEnabled: true,
+        maxBrightnessMix: 0.5,
+        maxDarknessMix: 0.5
       ),
       distance: AudioDistance(
         errorRange: 0.3,
@@ -208,6 +211,33 @@ extension Config {
     /// dedicated polarity tests rather than left to the general direction
     /// tests to catch incidentally.
     public var beaconPolarity: Bool
+    /// **Vertical-axis timbre differentiation (2026-08-02 maintainer tuning
+    /// directive, first audition session).** "It's obvious when sounds are
+    /// off-center, but I'm not sure if it's obvious what pitch we're aiming
+    /// to center on vertically" — stereo center is self-evident, a target
+    /// PITCH is not (it relies on memory). When enabled, the vertical tone
+    /// (Scheme A's pitch tone; Scheme C's tone while resolving the vertical
+    /// axis) stays a pure sine at zero vertical error and blends in a
+    /// distinct timbral ingredient — growing with `|errorY|` — on each side,
+    /// so purity itself (pre-attentively detectable, like Scheme B's
+    /// zero-beat null) marks the target rather than a remembered pitch. See
+    /// `maxBrightnessMix`/`maxDarknessMix` and
+    /// `RenderState.verticalTimbreMix` for the synthesis, and
+    /// `AudioRendererVerticalTimbreTests` for the hand-derived acceptance
+    /// cases. Default `true`.
+    public var verticalTimbreEnabled: Bool
+    /// Ingredient added when the TARGET is ABOVE the subject (beacon pitch
+    /// goes high): brightness, i.e. added upper harmonics (2nd/3rd) of the
+    /// pitch tone. Gain of the harmonic blend at the outer edge of
+    /// `errorRange`, 0...1; scales linearly (down to 0) as the post-polarity
+    /// pitch value approaches 0. Metaphor-congruent with "brighter/higher."
+    public var maxBrightnessMix: Double
+    /// Ingredient added when the TARGET is BELOW the subject (beacon pitch
+    /// goes low): darkness, i.e. an added sub-octave (`f/2`) component.
+    /// Gain of the sub-octave blend at the outer edge of `errorRange`,
+    /// 0...1; scales linearly (down to 0) as the post-polarity pitch value
+    /// approaches 0. Metaphor-congruent with "darker/lower."
+    public var maxDarknessMix: Double
 
     public init(
       errorRange: Double,
@@ -218,7 +248,10 @@ extension Config {
       panSpeakerAttenuation: Double,
       pitchSpeakerRangeExpansion: Double,
       sequentialAxisThreshold: Double,
-      beaconPolarity: Bool
+      beaconPolarity: Bool,
+      verticalTimbreEnabled: Bool,
+      maxBrightnessMix: Double,
+      maxDarknessMix: Double
     ) {
       self.errorRange = errorRange
       self.minToneHz = minToneHz
@@ -229,6 +262,9 @@ extension Config {
       self.pitchSpeakerRangeExpansion = pitchSpeakerRangeExpansion
       self.sequentialAxisThreshold = sequentialAxisThreshold
       self.beaconPolarity = beaconPolarity
+      self.verticalTimbreEnabled = verticalTimbreEnabled
+      self.maxBrightnessMix = maxBrightnessMix
+      self.maxDarknessMix = maxDarknessMix
     }
   }
 

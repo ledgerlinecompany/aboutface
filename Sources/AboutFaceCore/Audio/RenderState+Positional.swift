@@ -48,7 +48,10 @@ extension RenderState {
     positionalPhase = advancedPhase(positionalPhase, freqHz: freq, sampleRate: sampleRate)
 
     let amplitude = Float(cfg.toneGain) * distanceGate(sampleRate: sampleRate)
-    let sample = Float(sin(positionalPhase)) * amplitude
+    let carrier = verticalTimbreMix(
+      pureCarrier: Float(sin(positionalPhase)), timbreRaw: pitchRaw, freqHz: freq,
+      sampleRate: sampleRate)
+    let sample = carrier * amplitude
 
     let panRaw = signMultiplier * currentTarget.errorX
     var panNormalized: Float =
@@ -82,13 +85,76 @@ extension RenderState {
     // Distinct waveform per axis (sine horizontal, triangle vertical) so a
     // mono listener can tell which axis is currently "live" without
     // relying on absolute pitch memory — a structural cue on top of the
-    // numeric one (§6.2: mono fallback must be "unambiguous").
-    let carrier: Float =
+    // numeric one (§6.2: mono fallback must be "unambiguous"). The vertical
+    // axis's "pure" carrier for timbre purposes is this triangle, not a
+    // sine — purity-at-center (§6.2 vertical timbre) means "no added
+    // brightness/darkness ingredient," not "sine specifically."
+    let pureCarrier: Float =
       sequentialOnHorizontal
       ? Float(sin(positionalPhase)) : Float(triangleWave(phase: positionalPhase))
+    // Timbre ingredients apply only while the vertical axis is live — while
+    // resolving horizontal, `timbreRaw` is pinned to 0 so
+    // `verticalTimbreMix` contributes nothing (axis isolation), same as
+    // Scheme A's errorX-only case being naturally zero via `pitchRaw`.
+    let timbreRaw: Float = sequentialOnHorizontal ? 0 : axisRaw
+    let carrier = verticalTimbreMix(
+      pureCarrier: pureCarrier, timbreRaw: timbreRaw, freqHz: freq, sampleRate: sampleRate)
     let amplitude = Float(cfg.toneGain) * distanceGate(sampleRate: sampleRate)
     let sample = carrier * amplitude
     return (sample, sample)
+  }
+
+  /// §6.2 vertical-axis timbre differentiation (2026-08-02 maintainer
+  /// tuning-session directive): "purity for center, an ingredient that
+  /// grows with error for each direction" — a bare target PITCH relies on
+  /// memory, but stereo center (and now timbral purity) is pre-attentively
+  /// obvious without it. A timbre SWITCH at center would be exactly as
+  /// unlearnable as the bare pitch it replaces (the 50/50 point has no
+  /// identity); purity-at-center gives the target an intrinsic sonic
+  /// identity instead, the same trick Scheme B's zero-beat null uses.
+  ///
+  /// `timbreRaw` MUST be the same post-polarity, pre-clamp quantity the
+  /// frequency mapping above derives its `normalized`/`t` from
+  /// (`signMultiplier * errorY`, i.e. `pitchRaw`/vertical-axis `axisRaw`) —
+  /// never raw `errorY` — so the timbral ingredient can never disagree with
+  /// the pitch direction, including when `beaconPolarity` is flipped for
+  /// A/B tuning (see `Config.AudioPositional.beaconPolarity`). Hand-derived
+  /// sign chain, mirroring the beacon polarity tests:
+  ///
+  /// `timbreRaw > 0` ⇒ (exponential mapping above) pitch is pushed toward
+  /// `maxHz`, i.e. HIGH ⇒ per the beacon principle that means the TARGET is
+  /// ABOVE the subject ⇒ blend in BRIGHTNESS (added upper harmonics).
+  /// `timbreRaw < 0` ⇒ pitch LOW ⇒ target BELOW ⇒ blend in DARKNESS (added
+  /// sub-octave). `timbreRaw == 0` ⇒ both mixes are 0 ⇒ pure carrier only.
+  ///
+  /// Harmonics (2nd/3rd) need no separate phase accumulator: multiplying an
+  /// already-wrapped phase by an integer stays continuous, because
+  /// `sin(k · (phase - 2π)) == sin(k · phase - 2πk) == sin(k · phase)` for
+  /// integer `k`. The sub-octave is the opposite case — `phase / 2` is
+  /// NOT continuous across a wrap (`sin((phase - 2π) / 2) == -sin(phase /
+  /// 2)`), so it gets its own independently-advanced `subOctavePhase`
+  /// (same pattern as `schemeBReferencePhase`/`schemeBMovingPhase` being
+  /// separate accumulators rather than one derived from the other).
+  private func verticalTimbreMix(
+    pureCarrier: Float, timbreRaw: Float, freqHz: Double, sampleRate: Double
+  ) -> Float {
+    let cfg = config.positional
+    // Always advanced (even when this sample's mixes are both 0) so the
+    // sub-octave stays phase-continuous with the tracked frequency instead
+    // of jumping when an ingredient re-engages — the same reasoning
+    // `positionalPhase`/`pulsePhase` always advancing already relies on
+    // elsewhere in this file.
+    subOctavePhase = advancedPhase(subOctavePhase, freqHz: freqHz / 2, sampleRate: sampleRate)
+    guard cfg.verticalTimbreEnabled, cfg.errorRange > 0 else { return pureCarrier }
+
+    let normalized = max(-1, min(1, timbreRaw / Float(cfg.errorRange)))
+    let brightnessMix = Float(cfg.maxBrightnessMix) * max(0, normalized)
+    let darknessMix = Float(cfg.maxDarknessMix) * max(0, -normalized)
+
+    let harmonics =
+      0.6 * Float(sin(2 * positionalPhase)) + 0.4 * Float(sin(3 * positionalPhase))
+    let subOctave = Float(sin(subOctavePhase))
+    return pureCarrier + brightnessMix * harmonics + darknessMix * subOctave
   }
 
   /// §6.2: "speakers mode narrows pan and widens pitch range to
