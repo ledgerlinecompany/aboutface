@@ -14,7 +14,7 @@ struct ConfigTests {
         eyeMidpointX: 0.52,
         interocularWidth: 0.13
       ),
-      deadZone: Config.DeadZone(horizontal: 0.07, vertical: 0.045),
+      deadZone: Config.DeadZone(horizontal: 0.07, vertical: 0.045, distance: 0.025),
       hysteresisExitRatio: 1.6,
       dwellMs: 900,
       smoothingWindow: 10,
@@ -85,6 +85,17 @@ struct ConfigTests {
   func defaultDeadZone() {
     #expect(Config.defaults.deadZone.horizontal == 0.06)
     #expect(Config.defaults.deadZone.vertical == 0.05)
+  }
+
+  /// §4 extension (2026-08-02 first live convergence-trial finding):
+  /// distance joined the dead zone so the tone (and its only distance cue,
+  /// §6.2's tremolo) doesn't stop the instant x/y center. `0.02` is a
+  /// deliberately tight starting point against `interocularWidth`'s 0.11
+  /// default (§0: tune by ear, not a fixed constant) — see
+  /// `Config.DeadZone.distance`'s doc comment.
+  @Test("Default dead-zone distance is a tight starting fraction of interocular width")
+  func defaultDeadZoneDistance() {
+    #expect(Config.defaults.deadZone.distance == 0.02)
   }
 
   @Test("Default hysteresis exit ratio matches §4")

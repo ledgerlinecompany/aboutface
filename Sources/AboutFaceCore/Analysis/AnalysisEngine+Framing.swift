@@ -48,7 +48,8 @@ extension AnalysisEngine {
     }
     smoothedDistanceError = newSmoothedDistanceError
 
-    let inDeadZone = updatedDeadZoneLatch(error: newSmoothedError)
+    let inDeadZone = updatedDeadZoneLatch(
+      error: newSmoothedError, distanceError: newSmoothedDistanceError)
 
     // Deviation from the captured neutral pose (§4 extension), not
     // absolute camera-ray angles: a laptop camera views the face from off
@@ -117,35 +118,52 @@ extension AnalysisEngine {
   }
 
   /// Hysteresis-latched dead-zone membership (§4, §7.1's "hysteresis on
-  /// every threshold"): enters when BOTH axes are within `Config.DeadZone`'s
-  /// entry thresholds; exits only when EITHER axis exceeds the entry
-  /// threshold scaled by `Config.hysteresisExitRatio`. Stateful and
-  /// monotonic between crossings — an error sequence that oscillates
-  /// between the entry and exit thresholds cannot chatter, because nothing
-  /// strictly between those two thresholds can flip the latch in either
-  /// direction.
+  /// every threshold"): enters when ALL THREE axes — horizontal, vertical,
+  /// AND distance — are within `Config.DeadZone`'s entry thresholds; exits
+  /// when ANY of the three exceeds its entry threshold scaled by
+  /// `Config.hysteresisExitRatio`. Stateful and monotonic between
+  /// crossings — an error sequence that oscillates between the entry and
+  /// exit thresholds on any single axis cannot chatter, because nothing
+  /// strictly between those two thresholds on that axis can flip the latch
+  /// in either direction, and the other two axes' state is untouched by it.
   ///
-  /// Operates on the SMOOTHED error (`newSmoothedError`, computed just
-  /// above in `framingState(for:)`), not the raw per-frame value: pairing
-  /// smoothing with hysteresis — both introduced together in §4 — further
-  /// damps noise-driven flicker beyond what the hysteresis band alone
-  /// would. This does not conflict with §4's "smoothing... never [applied]
-  /// to state transitions": that clause is about dwell/announcement timing
-  /// (§7.1), a downstream, explicitly out-of-scope concern here, not about
-  /// which numeric signal a spatial hysteresis comparison reads.
-  private func updatedDeadZoneLatch(error: SIMD2<Float>) -> Bool {
+  /// **Distance joined this latch 2026-08-02** (§4 extension, first live
+  /// convergence-trial finding): distance used to be entirely outside it —
+  /// only x/y gated `inDeadZone` — so a subject who centered laterally went
+  /// silent (the positional tone, and with it the ONLY distance cue §6.2
+  /// has: tremolo/pulse-rate on that same tone) even when distance was still
+  /// far off target. Every downstream consumer of `FramingState.inDeadZone`
+  /// (the router's good-zone/`enteredGoodZone`/heartbeat/framingError/
+  /// gazeOff gates, gaze-trim activation, `RenderState.mixedSample`'s
+  /// tone-stop gate) inherits this automatically and gets strictly stricter:
+  /// the tone (and its distance tremolo) now keeps playing until distance is
+  /// ALSO within threshold, which is the whole point of this fix — see
+  /// `Config.DeadZone.distance`'s doc comment.
+  ///
+  /// Operates on the SMOOTHED error/distance-error (`newSmoothedError`/
+  /// `newSmoothedDistanceError`, computed just above in `framingState(for:)`
+  /// ), not the raw per-frame values: pairing smoothing with hysteresis —
+  /// both introduced together in §4 — further damps noise-driven flicker
+  /// beyond what the hysteresis band alone would. This does not conflict
+  /// with §4's "smoothing... never [applied] to state transitions": that
+  /// clause is about dwell/announcement timing (§7.1), a downstream,
+  /// explicitly out-of-scope concern here, not about which numeric signal a
+  /// spatial hysteresis comparison reads.
+  private func updatedDeadZoneLatch(error: SIMD2<Float>, distanceError: Float) -> Bool {
     let deadZone = config.deadZone
     let ratio = Float(config.hysteresisExitRatio)
     let entryX = Float(deadZone.horizontal)
     let entryY = Float(deadZone.vertical)
+    let entryDistance = Float(deadZone.distance)
 
     if inDeadZoneLatched {
       let exitX = entryX * ratio
       let exitY = entryY * ratio
-      if abs(error.x) > exitX || abs(error.y) > exitY {
+      let exitDistance = entryDistance * ratio
+      if abs(error.x) > exitX || abs(error.y) > exitY || abs(distanceError) > exitDistance {
         inDeadZoneLatched = false
       }
-    } else if abs(error.x) <= entryX && abs(error.y) <= entryY {
+    } else if abs(error.x) <= entryX, abs(error.y) <= entryY, abs(distanceError) <= entryDistance {
       inDeadZoneLatched = true
     }
     return inDeadZoneLatched

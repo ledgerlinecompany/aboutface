@@ -37,10 +37,18 @@ struct AudioRendererVerticalTimbreTests {
 
   /// `Config.Audio.defaults` with `brightnessStyle` pinned to `.harmonics`
   /// — see the type-level doc comment above for why every test in this file
-  /// uses this instead of the bare default.
+  /// uses this instead of the bare default. Also pins `timbreOnsetExponent`
+  /// to `1.0` (linear): this file's hand-derived comments (the
+  /// `normalized`/`brightnessMix ≈ ...` arithmetic throughout) were written
+  /// against the pre-2026-08-02 linear onset behavior, and pinning keeps
+  /// those derivations exact regardless of what `Config.Audio.defaults`'
+  /// own default (`2.0`, superlinear — see
+  /// `Config.AudioPositional.timbreOnsetExponent`) is. The superlinear
+  /// default itself is covered by `AudioRendererTimbreOnsetTests`.
   private static var harmonicsConfig: Config.Audio {
     var config = Config.Audio.defaults
     config.positional.brightnessStyle = .harmonics
+    config.positional.timbreOnsetExponent = 1.0
     return config
   }
 
