@@ -52,14 +52,42 @@ struct ConfigAudioTests {
     #expect(Config.Audio.defaults.scheme.schemeBEnabled == false)
   }
 
-  @Test("Scheme B refinement fraction: 0.5, tuned from §6.2's 0.2 starting point")
+  @Test("Scheme B refinement fraction: 0.8, widened again by round-2d pacing feedback")
   func schemeBRefinementFractionMatchesSpec() {
     // §6.2 suggested 0.2 as a starting point (§0: every number is
     // tunable). Round-2c measurement: at 0.2 the refinement zone (0.07)
     // barely exceeded the dead-zone corner (~0.078), so the click
     // crescendo could never develop — observed ~2 clicks/sec ceiling and
-    // zero-click trials. 0.5 gives the parking-model ramp a real runway.
-    #expect(Config.Audio.defaults.scheme.schemeBRefinementFraction == 0.5)
+    // zero-click trials, which round-2c fixed by widening to 0.5. Round-2d
+    // ("arrival herald" redesign): maintainer, on hearing round-2c's
+    // crescendo, "I got them almost indistinguishably fast pretty quickly
+    // and didn't spend much time hearing them very slow. Maybe start even
+    // further out with the clicks and converge them" — widened again to
+    // 0.8 for more approach distance, paired with the new
+    // `schemeBRateCurve` to pace how that distance is spent (see
+    // `RenderState+SchemeB.swift`).
+    #expect(Config.Audio.defaults.scheme.schemeBRefinementFraction == 0.8)
+  }
+
+  @Test("Scheme B distance-engage error: 0.15, half of distance.errorRange (round-2d)")
+  func schemeBDistanceEngageErrorMatchesSpec() {
+    // NEW field (round-2d "arrival herald" redesign): the distance half of
+    // the lagging-axis-governance pair, `min(xyCloseness,
+    // distanceCloseness)`. Default 0.15 is half of
+    // `AudioDistance.errorRange` (0.3), engaging roughly as far out,
+    // proportionally, as the widened XY envelope does.
+    #expect(Config.Audio.defaults.scheme.schemeBDistanceEngageError == 0.15)
+  }
+
+  @Test("Scheme B rate curve: 2.0, same superlinear-onset device as timbreOnsetExponent (round-2d)")
+  func schemeBRateCurveMatchesSpec() {
+    // NEW field (round-2d pacing feedback): `beatHz = maxBeatHz ×
+    // closeness ^ rateCurve`. Default 2.0 keeps the click rate low/
+    // countable through most of the approach and compresses the
+    // near-maximum blur into the final instants before arrival — the same
+    // psychoacoustic lesson `Config.AudioPositional.timbreOnsetExponent`
+    // already applies to the vertical-timbre crossing.
+    #expect(Config.Audio.defaults.scheme.schemeBRateCurve == 2.0)
   }
 
   /// 2026-08-02 action round, item 3 (percussive Scheme B redesign — see

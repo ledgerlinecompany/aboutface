@@ -133,3 +133,48 @@ for those fields stand.
   layered on the new quantized-fine default, testing whether the two
   "you're there" channels — tonal purity and rhythmic silence — compose or
   clutter).
+
+## Round 2d (2026-08-02, "arrival herald" redesign)
+
+Round 2c's percussive click train shipped with a fine-XY-only refinement
+gate: Scheme B stayed silent until DISTANCE was already inside its own
+audible-ramp-start threshold, and only then did the crescendo track the
+2D horizontal/vertical error down to arrival.
+
+- **The zero-click trial.** A live trial whose DISTANCE axis happened to be
+  the LAST one to settle (horizontal/vertical already dead-center, distance
+  still resolving) produced a trial with no clicks at all — the crescendo
+  never got a chance to engage, because the old gate demanded distance be
+  right FIRST. The dead-zone-entry cut and good-zone chime still fired
+  normally, so the trial "worked," but the arrival signature the crescendo
+  exists to build never sounded. Maintainer's verdict, on hearing this:
+  **"A cue that sometimes doesn't fire teaches you not to trust it."** A
+  cue that is reliable only when one particular axis happens to finish
+  last is not a reliable cue.
+- **Option B decision.** Rather than pick a single axis to gate on (Option
+  A, e.g. "gate on whichever of XY/distance is farther" as a discrete
+  switch), the maintainer approved **Option B: continuous lagging-axis
+  governance** — `closeness = min(xyCloseness, distanceCloseness)`, each
+  term its own `0...1` ramp between an engagement threshold and a
+  full-rate threshold (see `Config.AudioScheme.schemeBDistanceEngageError`
+  and `RenderState+SchemeB.swift`'s top-level doc comment for the exact
+  formulas). The old binary "distance must already be right" guard is
+  deleted outright — it is subsumed by the `min`: distance far now drives
+  `distanceCloseness` to `0` the same way it always silenced the layer,
+  but smoothly, and the SAME machinery now also holds the layer back when
+  XY (not distance) is the lagging axis. Scheme B's identity changes
+  accordingly: it no longer heralds fine-XY refinement alone — it heralds
+  proximity to the full three-axis settle, reliably, regardless of which
+  axis happens to finish last.
+- **Pacing change.** Separately, on hearing round 2c's crescendo: **"I got
+  them almost indistinguishably fast pretty quickly and didn't spend much
+  time hearing them very slow. Maybe start even further out with the
+  clicks and converge them."** Two changes follow: `schemeBRefinementFraction`
+  widened `0.5 → 0.8` (the XY engagement envelope starts much further from
+  center, giving more approach distance to hear the rate actually climb),
+  and a new `schemeBRateCurve` (default `2.0`) reshapes the ramp itself —
+  `beatHz = maxBeatHz × closeness ^ rateCurve` — so the rate stays low and
+  countable through most of the approach and only blurs into its fastest,
+  least-distinguishable clicks in the final instants before arrival. Same
+  device as `Config.AudioPositional.timbreOnsetExponent`'s superlinear
+  onset curve, applied to a different signal.

@@ -60,7 +60,7 @@ extension DebugPanelView {
       ConfigSliderRow(
         title: "Scheme B refinement zone",
         value: model.binding(\.audio.scheme.schemeBRefinementFraction),
-        range: 0.05...0.5, step: 0.01, format: Format.percent)
+        range: 0.05...0.9, step: 0.01, format: Format.percent)
 
       Picker("Output device", selection: model.rawValueBinding(\.audio.outputMode)) {
         Text("Headphones").tag(Config.AudioOutputMode.headphones.rawValue)
