@@ -57,8 +57,14 @@ extension RenderState {
     // as the error approaches the dead zone, where zone entry cuts all
     // positional sound and fires the good-zone earcon: the arrival is a
     // crescendo → cut → chime, produced entirely by existing structure.
-    let closeness = 1 - Double(magnitude / zoneLimit)
-    let beatHz = Double(config.scheme.schemeBMaxBeatHz) * max(0, closeness)
+    // Round-2c: ramp from 0 at the zone's outer edge to FULL rate at
+    // `schemeBFullRateAtError` (≈ the dead-zone corner) — not at the exact
+    // center, which dead-zone entry always cuts before the crescendo could
+    // complete (observed: ~2 clicks/sec ceiling, zero-click trials).
+    let fullRateAt = Float(config.scheme.schemeBFullRateAtError)
+    let rampSpan = max(0.001, zoneLimit - fullRateAt)
+    let closeness = Double(min(1, max(0, (zoneLimit - magnitude) / rampSpan)))
+    let beatHz = Double(config.scheme.schemeBMaxBeatHz) * closeness
 
     let previousPhase = schemeBClickPhase
     schemeBClickPhase = advancedPhase(schemeBClickPhase, freqHz: beatHz, sampleRate: sampleRate)

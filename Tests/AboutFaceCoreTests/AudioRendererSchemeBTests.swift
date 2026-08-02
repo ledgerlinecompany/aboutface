@@ -17,7 +17,7 @@ struct AudioRendererSchemeBTests {
   private static let sampleRate = 48000.0
 
   private func schemeBOnlyConfig(
-    refinementFraction: Double = 0.2, maxBeatHz: Double = 8
+    refinementFraction: Double = 0.5, maxBeatHz: Double = 10
   ) -> Config.Audio {
     var config = Config.Audio.defaults
     config.positional.toneGain = 0
@@ -50,22 +50,22 @@ struct AudioRendererSchemeBTests {
 
   @Test("PARKING polarity: click rate rises as error falls within the zone")
   func clickRateTracksClosenessWithinZone() async throws {
-    // errorRange 0.35, refinementFraction 0.2 ⇒ zoneLimit 0.07.
-    // Parking-sensor mapping (round-2 maintainer directive): closeness =
-    // 1 − magnitude/zoneLimit; near-null (0.015 → closeness ≈ 0.79) must
-    // click much faster than near-edge (0.065 → closeness ≈ 0.07).
+    // errorRange 0.35, refinementFraction 0.5 ⇒ zoneLimit 0.175; full
+    // rate at 0.08 (round-2c: crescendo completes at the dead-zone corner,
+    // not the unreachable exact center). Ramp span 0.08…0.175:
+    // 0.09 → closeness ≈ 0.89 (fast); 0.16 → ≈ 0.16 (sparse).
     let config = schemeBOnlyConfig()
 
     let nearNull = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in
       await renderer.update(
-        SonificationTarget(errorX: 0, errorY: 0.015, distanceError: 0, inDeadZone: false))
+        SonificationTarget(errorX: 0, errorY: 0.09, distanceError: 0, inDeadZone: false))
     }
     let (nearLeft, _) = try await AudioRendererTestSupport.renderFrames(nearNull, total: 48000)
     let nearClicks = clickCount(nearLeft)
 
     let nearEdge = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in
       await renderer.update(
-        SonificationTarget(errorX: 0, errorY: 0.065, distanceError: 0, inDeadZone: false))
+        SonificationTarget(errorX: 0, errorY: 0.16, distanceError: 0, inDeadZone: false))
     }
     let (edgeLeft, _) = try await AudioRendererTestSupport.renderFrames(nearEdge, total: 48000)
     let edgeClicks = clickCount(edgeLeft)
@@ -111,11 +111,11 @@ struct AudioRendererSchemeBTests {
 
   @Test("Error outside the refinement zone produces no B-layer output at all")
   func outsideRefinementZoneProducesNoOutput() async throws {
-    // zoneLimit 0.07; 0.2 is well outside it.
+    // zoneLimit 0.175; 0.3 is well outside it.
     let config = schemeBOnlyConfig()
     let renderer = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in
       await renderer.update(
-        SonificationTarget(errorX: 0, errorY: 0.2, distanceError: 0, inDeadZone: false))
+        SonificationTarget(errorX: 0, errorY: 0.3, distanceError: 0, inDeadZone: false))
     }
     let (left, right) = try await AudioRendererTestSupport.renderFrames(renderer, total: 48000)
 

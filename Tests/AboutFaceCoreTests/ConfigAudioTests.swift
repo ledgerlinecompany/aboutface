@@ -52,9 +52,14 @@ struct ConfigAudioTests {
     #expect(Config.Audio.defaults.scheme.schemeBEnabled == false)
   }
 
-  @Test("Scheme B refinement fraction matches §6.2's 'inside 20% of error range'")
+  @Test("Scheme B refinement fraction: 0.5, tuned from §6.2's 0.2 starting point")
   func schemeBRefinementFractionMatchesSpec() {
-    #expect(Config.Audio.defaults.scheme.schemeBRefinementFraction == 0.2)
+    // §6.2 suggested 0.2 as a starting point (§0: every number is
+    // tunable). Round-2c measurement: at 0.2 the refinement zone (0.07)
+    // barely exceeded the dead-zone corner (~0.078), so the click
+    // crescendo could never develop — observed ~2 clicks/sec ceiling and
+    // zero-click trials. 0.5 gives the parking-model ramp a real runway.
+    #expect(Config.Audio.defaults.scheme.schemeBRefinementFraction == 0.5)
   }
 
   /// 2026-08-02 action round, item 3 (percussive Scheme B redesign — see

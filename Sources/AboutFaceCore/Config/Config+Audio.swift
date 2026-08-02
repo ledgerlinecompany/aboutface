@@ -68,8 +68,9 @@ extension Config {
       scheme: AudioScheme(
         positional: .panPitch,
         schemeBEnabled: false,
-        schemeBRefinementFraction: 0.2,
-        schemeBMaxBeatHz: 8,
+        schemeBRefinementFraction: 0.5,
+        schemeBMaxBeatHz: 10,
+        schemeBFullRateAtError: 0.08,
         schemeBClickGain: 0.18,
         schemeBClickDurationMs: 6
       ),
@@ -193,6 +194,14 @@ extension Config {
     /// `Fixtures/tuning-profiles/README.md`'s `p6`/`p7` for the re-trial
     /// this composition motivates.
     public var schemeBMaxBeatHz: Double
+    /// Error magnitude at (and inside) which the parking-model click train
+    /// reaches full rate. Default `0.08` ≈ the dead-zone corner
+    /// (hypot(0.06, 0.05)) — the crescendo completes exactly as dead-zone
+    /// entry cuts everything (round-2c fix: with the old mapping, max rate
+    /// sat at the zone's exact center, which arrival always cut before
+    /// reaching — observed ceiling ~2 clicks/sec and zero-click trials).
+    /// Twin of the engine dead zone (renderer sees only the audio block).
+    public var schemeBFullRateAtError: Double
     /// Scheme B click train's own gain (2026-08-02 percussive redesign) —
     /// deliberately a separate field from `AudioPositional.toneGain`: the
     /// click train is a distinct signal path (noise transient, not a tonal
@@ -211,6 +220,7 @@ extension Config {
       schemeBEnabled: Bool,
       schemeBRefinementFraction: Double,
       schemeBMaxBeatHz: Double,
+      schemeBFullRateAtError: Double = 0.08,
       schemeBClickGain: Double = 0.18,
       schemeBClickDurationMs: Double = 6
     ) {
@@ -218,6 +228,7 @@ extension Config {
       self.schemeBEnabled = schemeBEnabled
       self.schemeBRefinementFraction = schemeBRefinementFraction
       self.schemeBMaxBeatHz = schemeBMaxBeatHz
+      self.schemeBFullRateAtError = schemeBFullRateAtError
       self.schemeBClickGain = schemeBClickGain
       self.schemeBClickDurationMs = schemeBClickDurationMs
     }
