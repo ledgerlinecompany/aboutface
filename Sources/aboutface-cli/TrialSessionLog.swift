@@ -59,8 +59,23 @@ struct TrialSessionLog: Codable {
     var overshootsTotal: Int
     var pathIntegral: Double
     var meanAbsErrorDuringSettle: Double?
+    /// Filenames (relative to `trial --snapshots <dir>`) of the JPEGs
+    /// captured at the go-signal / settle / timeout moments — see
+    /// `TrialSnapshots.swift`. All three are `nil` for a session run
+    /// without `--snapshots`, or if a particular write failed. Additive
+    /// `Optional` fields: `Codable`'s synthesized `init(from:)` already
+    /// decodes an absent key as `nil` for an `Optional` property, so an
+    /// older on-disk log (written before these keys existed) still decodes
+    /// with no custom migration logic — see
+    /// `TrialSelfTest.checkSnapshotFieldsBackwardCompatible`.
+    var startSnapshot: String?
+    var settledSnapshot: String?
+    var timeoutSnapshot: String?
 
-    init(index: Int, metrics: TrialOutcomeMetrics) {
+    init(
+      index: Int, metrics: TrialOutcomeMetrics, startSnapshot: String? = nil,
+      settledSnapshot: String? = nil, timeoutSnapshot: String? = nil
+    ) {
       self.index = index
       self.outcome = metrics.timedOut ? "timedOut" : "settled"
       self.tEnterSeconds = metrics.tEnterSeconds
@@ -70,6 +85,9 @@ struct TrialSessionLog: Codable {
       self.overshootsTotal = metrics.overshootsTotal
       self.pathIntegral = metrics.pathIntegral
       self.meanAbsErrorDuringSettle = metrics.meanAbsErrorDuringSettle
+      self.startSnapshot = startSnapshot
+      self.settledSnapshot = settledSnapshot
+      self.timeoutSnapshot = timeoutSnapshot
     }
   }
 

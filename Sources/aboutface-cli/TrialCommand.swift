@@ -62,6 +62,13 @@ struct Trial: AsyncParsableCommand {
       log already holds a prior session under a different label, the end-of-session summary \
       also speaks a brief comparison against it (median settle time and total overshoots only).
 
+      --snapshots <dir> saves a JPEG at each trial's go signal, SETTLED, and timeout/failure -- \
+      not for this harness's own use, but so a sighted reviewer can look at the pictures and \
+      judge, independently of the numbers, whether "SETTLED" actually corresponds to good \
+      framing. Filenames and relative paths are recorded in --json's per-trial record; nothing \
+      is spoken per shot, only a one-line summary at session end. Without --snapshots, no frame \
+      is retained anywhere in the loop.
+
       --self-test-metrics runs a battery of hand-computed scripted-sequence checks against the \
       pure convergence/aggregate math -- no camera or audio needed -- and exits; with --json, \
       it also appends one synthetic demonstration session so the on-disk schema can be inspected \
@@ -117,6 +124,17 @@ struct Trial: AsyncParsableCommand {
       "Path to an append-mode JSON session log. Successive `trial` sessions (e.g. one per "
         + "tuning profile) accumulate into this one file so they stay comparable."))
   var jsonPath: String?
+
+  @Option(
+    name: .customLong("snapshots"),
+    help: ArgumentHelp(
+      "Directory to save per-trial JPEG snapshots into, for a sighted reviewer to audit "
+        + "whether SETTLED actually looks well-framed. Three per trial: <label>-trial<N>-"
+        + "start.jpg (the displaced starting pose), -settled.jpg (the frame at the moment "
+        + "SETTLED fires), -timeout.jpg (diagnosis material on failure). Created if needed; "
+        + "existing files from a prior run under the same label/trial number are overwritten. "
+        + "Omit this to retain no frames and write no snapshots."))
+  var snapshotsDir: String?
 
   @Option(
     help:
