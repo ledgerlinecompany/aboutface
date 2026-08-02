@@ -58,6 +58,16 @@ extension Config {
     /// deliberately tuning the audibility threshold apart from the
     /// announcement/settle threshold (the renderer sees only the audio
     /// block, hence the twin field rather than a cross-reference).
+    ///
+    /// **Reused by Scheme B (round-2d "arrival herald" redesign):**
+    /// `RenderState.schemeBSampleIfActive` reads this field directly as
+    /// `distanceCloseness`'s full-rate threshold — the error level at
+    /// which the click-train crescendo's distance term reaches `1` — rather
+    /// than duplicating a third "distance is settled" constant. Both
+    /// consumers mean the same thing ("distance is genuinely close"), so
+    /// sharing the field keeps them in lockstep by construction; see
+    /// `Config.AudioScheme.schemeBDistanceEngageError`'s doc comment for
+    /// the engagement (outer) end of that same ramp.
     public var audibleRampStartError: Double
     /// **Directional pulse character (§6.2 round-4 maintainer tuning
     /// directive).** `true` (default): the gate's dip SHAPE differs by the

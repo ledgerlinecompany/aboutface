@@ -68,11 +68,13 @@ extension Config {
       scheme: AudioScheme(
         positional: .panPitch,
         schemeBEnabled: false,
-        schemeBRefinementFraction: 0.5,
+        schemeBRefinementFraction: 0.8,
         schemeBMaxBeatHz: 10,
         schemeBFullRateAtError: 0.08,
         schemeBClickGain: 0.18,
-        schemeBClickDurationMs: 6
+        schemeBClickDurationMs: 6,
+        schemeBDistanceEngageError: 0.15,
+        schemeBRateCurve: 2.0
       ),
       outputMode: .headphones,
       positional: AudioPositional(
@@ -157,15 +159,27 @@ extension Config {
     /// flag, default OFF, until tuned against the corpus; the decision to
     /// flip the default is deferred). See `schemeBMaxBeatHz`'s doc comment
     /// for what Scheme B actually sounds like as of the 2026-08-02
-    /// percussive redesign.
+    /// percussive redesign, and `RenderState+SchemeB.swift`'s top-level doc
+    /// comment for the round-2d "arrival herald" identity change (no longer
+    /// XY-only refinement — heralds the full three-axis settle).
     public var schemeBEnabled: Bool
-    /// Scheme B is active only inside this fraction of `positional.errorRange`
-    /// (§6.2: "final approach only — inside 20% of error range"). Unchanged
-    /// by the 2026-08-02 percussive redesign — still the refinement-zone
-    /// gate, just gating a click train now instead of a beat tone.
+    /// The XY engagement envelope: Scheme B's `xyCloseness` term (see
+    /// `RenderState.schemeBSampleIfActive`) starts ramping in once the 2D
+    /// error norm falls inside this fraction of `positional.errorRange`.
+    /// **Round-2d pacing feedback, widened `0.5 → 0.8`** — maintainer, on
+    /// round-2c's crescendo: "I got them almost indistinguishably fast
+    /// pretty quickly and didn't spend much time hearing them very slow.
+    /// Maybe start even further out with the clicks and converge them."
+    /// Starting the envelope much further from center gives far more
+    /// approach distance over which the rate audibly climbs, before
+    /// `schemeBRateCurve` further paces how that distance is spent. Overall
+    /// closeness is `min` with `distanceCloseness` (the NEW
+    /// `schemeBDistanceEngageError`-driven term) — this field only
+    /// controls the XY half of that pair.
     public var schemeBRefinementFraction: Double
     /// **Percussive redesign (2026-08-02 convergence-experiment action
-    /// round, item 3).** Round 1's Scheme B trial (`p1-scheme-b`,
+    /// round, item 3), then ARRIVAL HERALD redesign (round 2d).** Round 1's
+    /// Scheme B trial (`p1-scheme-b`,
     /// `docs/tuning/2026-08-02-convergence-experiment.md`) shipped the
     /// original design this field's name still describes — a fixed
     /// reference tone plus a moving tone whose BEAT frequency tracked
@@ -180,27 +194,30 @@ extension Config {
     /// Scheme B is now a CLICK TRAIN, not a tone: `RenderState
     /// .schemeBSample` (`RenderState+SchemeB.swift`) fires a short,
     /// non-tonal noise transient (`schemeBClickDurationMs`) at a repetition
-    /// rate equal to what this field's beat frequency would have been —
-    /// this field keeps its name and its mapping (linear over the
-    /// refinement zone, reaching this value at the outer edge and 0 —  i.e.
-    /// no clicks at all, true silence — at zero error) unchanged; only what
-    /// happens AT that rate changed. The clicks are non-tonal by
-    /// construction (filtered noise, no carrier pitch), so — unlike the old
-    /// beat tone — they can never be mistaken for Scheme A's beacon: two
-    /// orthogonal "you're there" channels once paired with the quantized
-    /// beacon's tonal-purity snap (`AudioPositional.errorQuantizationStep`,
-    /// default `0.03` as of this same action round) — timbre says "pure,"
-    /// rhythm says "silent," and both now mean the same thing at once. See
+    /// rate equal to what this field's beat frequency would have been at
+    /// full (overall) closeness — this field keeps its name and its
+    /// ceiling (reached once BOTH the XY and distance closeness terms are
+    /// at 1, i.e. genuinely at arrival) unchanged; only what happens AT
+    /// that rate, and what drives closeness, changed. The clicks are
+    /// non-tonal by construction (filtered noise, no carrier pitch), so —
+    /// unlike the old beat tone — they can never be mistaken for Scheme
+    /// A's beacon: two orthogonal "you're there" channels once paired with
+    /// the quantized beacon's tonal-purity snap
+    /// (`AudioPositional.errorQuantizationStep`, default `0.03` as of the
+    /// 2026-08-02 action round) — timbre says "pure," rhythm says
+    /// "silent," and both now mean the same thing at once. See
     /// `Fixtures/tuning-profiles/README.md`'s `p6`/`p7` for the re-trial
-    /// this composition motivates.
+    /// this composition motivated.
     public var schemeBMaxBeatHz: Double
-    /// Error magnitude at (and inside) which the parking-model click train
-    /// reaches full rate. Default `0.08` ≈ the dead-zone corner
-    /// (hypot(0.06, 0.05)) — the crescendo completes exactly as dead-zone
-    /// entry cuts everything (round-2c fix: with the old mapping, max rate
-    /// sat at the zone's exact center, which arrival always cut before
-    /// reaching — observed ceiling ~2 clicks/sec and zero-click trials).
-    /// Twin of the engine dead zone (renderer sees only the audio block).
+    /// XY error magnitude at (and inside) which `xyCloseness` reaches `1`.
+    /// Default `0.08` ≈ the dead-zone corner (hypot(0.06, 0.05)) — the
+    /// crescendo completes exactly as dead-zone entry cuts everything
+    /// (round-2c fix: with the old mapping, max rate sat at the zone's
+    /// exact center, which arrival always cut before reaching — observed
+    /// ceiling ~2 clicks/sec and zero-click trials). Twin of the engine
+    /// dead zone (renderer sees only the audio block). Unchanged by the
+    /// round-2d redesign — still the XY half of the `min` pair with
+    /// `distanceCloseness`.
     public var schemeBFullRateAtError: Double
     /// Scheme B click train's own gain (2026-08-02 percussive redesign) —
     /// deliberately a separate field from `AudioPositional.toneGain`: the
@@ -214,6 +231,38 @@ extension Config {
     /// click must read as a percussive tick, not a burst. See
     /// `RenderState.schemeBSample`'s doc comment.
     public var schemeBClickDurationMs: Double
+    /// **NEW (round 2d "arrival herald" redesign).** The distance
+    /// engagement envelope: Scheme B's `distanceCloseness` term (see
+    /// `RenderState.schemeBSampleIfActive`) starts ramping in once
+    /// `|distanceError|` falls inside this threshold. Default `0.15` — half
+    /// of `AudioDistance.errorRange` (`0.3`), so distance engages roughly
+    /// as far out, proportionally, as the widened XY envelope
+    /// (`schemeBRefinementFraction`, `0.8` of `positional.errorRange`)
+    /// does. `distanceCloseness` reaches `1` at
+    /// `distance.audibleRampStartError` (read directly from
+    /// `config.distance`, not duplicated here — see that field's doc
+    /// comment: it already marks "distance is genuinely settled," the same
+    /// boundary this term needs, so reusing it keeps the two in lockstep
+    /// by construction). Overall closeness is `min(xyCloseness,
+    /// distanceCloseness)` — this is the term that closes the round-2c
+    /// zero-click gap: a distance-last convergence now still rings the
+    /// crescendo, governed by whichever axis is lagging.
+    public var schemeBDistanceEngageError: Double
+    /// **NEW (round 2d pacing feedback).** `beatHz = schemeBMaxBeatHz ×
+    /// closeness ^ schemeBRateCurve` (`RenderState.schemeBSample`).
+    /// Default `2.0` — the same psychoacoustic device
+    /// `AudioPositional.timbreOnsetExponent` already uses for the vertical-
+    /// timbre crossing (see that field's doc comment): squaring keeps the
+    /// rate low (sparse, individually countable clicks) through most of
+    /// the approach and compresses the near-maximum blur into the final
+    /// instants right before arrival, instead of the clicks blurring
+    /// together too early. Maintainer: "I got them almost
+    /// indistinguishably fast pretty quickly and didn't spend much time
+    /// hearing them very slow." `1.0` reproduces the exact old linear
+    /// mapping (`closeness ^ 1 == closeness`); `0` and `1` are fixed
+    /// points for any exponent, so the silent-at-engagement and full-rate-
+    /// at-arrival boundaries are unchanged regardless of curve choice.
+    public var schemeBRateCurve: Double
 
     public init(
       positional: AudioPositionalScheme,
@@ -222,7 +271,9 @@ extension Config {
       schemeBMaxBeatHz: Double,
       schemeBFullRateAtError: Double = 0.08,
       schemeBClickGain: Double = 0.18,
-      schemeBClickDurationMs: Double = 6
+      schemeBClickDurationMs: Double = 6,
+      schemeBDistanceEngageError: Double = 0.15,
+      schemeBRateCurve: Double = 2.0
     ) {
       self.positional = positional
       self.schemeBEnabled = schemeBEnabled
@@ -231,6 +282,8 @@ extension Config {
       self.schemeBFullRateAtError = schemeBFullRateAtError
       self.schemeBClickGain = schemeBClickGain
       self.schemeBClickDurationMs = schemeBClickDurationMs
+      self.schemeBDistanceEngageError = schemeBDistanceEngageError
+      self.schemeBRateCurve = schemeBRateCurve
     }
   }
 
