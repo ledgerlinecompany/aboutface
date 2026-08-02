@@ -78,7 +78,9 @@ extension Config {
         beaconPolarity: true,
         verticalTimbreEnabled: true,
         maxBrightnessMix: 0.5,
-        maxDarknessMix: 0.5
+        maxDarknessMix: 0.5,
+        brightnessStyle: .overdrive,
+        overdriveMaxDrive: 6
       ),
       distance: AudioDistance(
         errorRange: 0.3,
@@ -161,6 +163,35 @@ extension Config {
     case speakers
   }
 
+  /// The "target above" brightness ingredient's synthesis CHARACTER
+  /// (2026-08-02 round-2 audition feedback): "The below indicator [the
+  /// sub-octave darkness ingredient] is clear, the above indicator is a
+  /// little less clear. I think maybe something a little more overdriven?
+  /// Or mix in a saw or something?" — round 1's additive 2nd/3rd-harmonic
+  /// blend was judged too subtle. Rather than guess which replacement reads
+  /// better, all three are shipped and selectable (§0/§16: sound design is
+  /// tuned by ear against the corpus, not decided up front) so the
+  /// maintainer can audition and pick — see `AuditionSweep`'s `--brightness`
+  /// override for the exact A/B workflow this exists for. Every style obeys
+  /// the same purity-at-center invariant: at zero vertical error the
+  /// ingredient's contribution is exactly zero, not merely small — see
+  /// `RenderState.brightnessComponent`.
+  public enum BrightnessStyle: String, Codable, Sendable, Equatable, CaseIterable {
+    /// Round 1's baseline: additive blend of the 2nd and 3rd harmonic of
+    /// the vertical carrier. Kept verbatim (not retuned) so it stays an
+    /// honest comparison point against the two round-2 alternatives below.
+    case harmonics
+    /// Round-2 default (the maintainer's stated lean): waveshapes the
+    /// carrier itself with a gain-normalized `tanh` drive that grows with
+    /// brightness intensity, crossfaded in from a clean identity pass at
+    /// zero intensity. See `RenderState.overdriveComponent` and
+    /// `AudioPositional.overdriveMaxDrive`.
+    case overdrive
+    /// Crossfades the carrier toward a band-limited (polyBLEP) sawtooth at
+    /// the same frequency/phase. See `RenderState.polyBlepSaw`.
+    case saw
+  }
+
   /// §6.2 continuous positional mapping (Schemes A and C share these
   /// numbers; Scheme C applies them sequentially per axis instead of
   /// simultaneously).
@@ -238,6 +269,20 @@ extension Config {
     /// 0...1; scales linearly (down to 0) as the post-polarity pitch value
     /// approaches 0. Metaphor-congruent with "darker/lower."
     public var maxDarknessMix: Double
+    /// Which synthesis character the brightness ingredient above uses.
+    /// Default `.overdrive` (2026-08-02 round-2 maintainer lean — see
+    /// `BrightnessStyle`'s doc comment for the full context).
+    public var brightnessStyle: BrightnessStyle
+    /// `.overdrive` style only: the `tanh` drive coefficient at full
+    /// brightness intensity (`brightnessMix == maxBrightnessMix`); drive
+    /// ramps from `1` at zero intensity up to this value. Capped (default
+    /// `6`) rather than left unbounded — `tanh`'s odd-harmonic content
+    /// rolls off fast, but it is not literally band-limited, and this
+    /// renderer's vertical tone lives in a few-hundred-Hz range against a
+    /// 48kHz sample rate, so even the harshest harmonics this cap produces
+    /// sit comfortably below Nyquist (see `RenderState.overdriveComponent`
+    /// for the full aliasing-tradeoff reasoning).
+    public var overdriveMaxDrive: Double
 
     public init(
       errorRange: Double,
@@ -251,7 +296,9 @@ extension Config {
       beaconPolarity: Bool,
       verticalTimbreEnabled: Bool,
       maxBrightnessMix: Double,
-      maxDarknessMix: Double
+      maxDarknessMix: Double,
+      brightnessStyle: BrightnessStyle,
+      overdriveMaxDrive: Double
     ) {
       self.errorRange = errorRange
       self.minToneHz = minToneHz
@@ -265,6 +312,8 @@ extension Config {
       self.verticalTimbreEnabled = verticalTimbreEnabled
       self.maxBrightnessMix = maxBrightnessMix
       self.maxDarknessMix = maxDarknessMix
+      self.brightnessStyle = brightnessStyle
+      self.overdriveMaxDrive = overdriveMaxDrive
     }
   }
 

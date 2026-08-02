@@ -26,6 +26,28 @@ enum AudioCLISupport {
     var boolValue: Bool { self == .on }
   }
 
+  /// `--brightness <harmonics|overdrive|saw>` (round 2, 2026-08-02): a CLI
+  /// mirror of `Config.BrightnessStyle`, kept as its own type rather than
+  /// making `Config.BrightnessStyle` itself `ExpressibleByArgument` because
+  /// `AboutFaceCore` doesn't (and shouldn't) depend on `ArgumentParser` —
+  /// same reasoning as `SchemeFlag`/`OnOffFlag` mirroring
+  /// `Config.AudioPositionalScheme`/`Bool` above. Raw values match
+  /// `Config.BrightnessStyle`'s exactly so `--brightness <name>` reads as
+  /// the same vocabulary the Config file and the doc comments use.
+  enum BrightnessFlag: String, ExpressibleByArgument, CaseIterable {
+    case harmonics
+    case overdrive
+    case saw
+
+    var style: Config.BrightnessStyle {
+      switch self {
+      case .harmonics: return .harmonics
+      case .overdrive: return .overdrive
+      case .saw: return .saw
+      }
+    }
+  }
+
   /// Loads `Config` from `--config <path>` (a `ConfigStore.export`ed JSON
   /// tuning profile) if given, else `Config.defaults`. This is the same
   /// file format the Debug panel's Export/Import round-trips (§9) — running
@@ -38,17 +60,24 @@ enum AudioCLISupport {
     return try ConfigStore.importConfig(from: url)
   }
 
-  /// Applies `--scheme`/`--scheme-b` on top of whatever `loadConfig(configPath:)`
-  /// returned, so a maintainer can A/B a scheme change without hand-editing
-  /// a profile file for every run.
+  /// Applies `--scheme`/`--scheme-b`/`--brightness` on top of whatever
+  /// `loadConfig(configPath:)` returned, so a maintainer can A/B a scheme
+  /// or brightness-style change without hand-editing a profile file for
+  /// every run — the exact workflow the 2026-08-02 round-2 brightness-style
+  /// audition session needs (§0/§16: "tuned by ear," so make it fast to
+  /// switch ears mid-session).
   static func applyOverrides(
-    _ config: inout Config, scheme: SchemeFlag?, schemeB: OnOffFlag?
+    _ config: inout Config, scheme: SchemeFlag?, schemeB: OnOffFlag?,
+    brightness: BrightnessFlag? = nil
   ) {
     if let scheme {
       config.audio.scheme.positional = scheme == .a ? .panPitch : .sequential
     }
     if let schemeB {
       config.audio.scheme.schemeBEnabled = schemeB.boolValue
+    }
+    if let brightness {
+      config.audio.positional.brightnessStyle = brightness.style
     }
   }
 

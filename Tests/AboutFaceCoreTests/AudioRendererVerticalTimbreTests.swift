@@ -20,8 +20,29 @@ import Testing
 /// distance gate also affect, and which is irrelevant to what's being
 /// tested here), matching `AudioRendererPositionalTests`' documented
 /// preference for coarse, robust, relative measurements over exact ones.
+///
+/// **Pinned to `.harmonics` (2026-08-02 round-2 audition feedback).** This
+/// file's numeric derivations (the `0.6`/`0.4` 2nd/3rd-harmonic split
+/// comments below) are specific to `Config.BrightnessStyle.harmonics`, the
+/// round-1 baseline. Round 2 made the brightness ingredient's synthesis
+/// character selectable and changed the SHIPPED DEFAULT to `.overdrive`
+/// (see `Config.AudioPositional.brightnessStyle`) — every `measure(...)`
+/// call below now explicitly pins `brightnessStyle = .harmonics` so this
+/// file keeps verifying the exact baseline behavior it was written against,
+/// independent of whatever the default is. `.overdrive`/`.saw`-specific
+/// acceptance cases, plus default-config (`.overdrive`) purity/axis-
+/// isolation coverage, live in `AudioRendererBrightnessStyleTests`.
 struct AudioRendererVerticalTimbreTests {
   private static let sampleRate = 48000.0
+
+  /// `Config.Audio.defaults` with `brightnessStyle` pinned to `.harmonics`
+  /// — see the type-level doc comment above for why every test in this file
+  /// uses this instead of the bare default.
+  private static var harmonicsConfig: Config.Audio {
+    var config = Config.Audio.defaults
+    config.positional.brightnessStyle = .harmonics
+    return config
+  }
 
   // MARK: - Above target (brightness)
 
@@ -119,7 +140,7 @@ struct AudioRendererVerticalTimbreTests {
   /// disagree with the pitch direction even when the flag flips.
   @Test("beaconPolarity = false flips which side gets brightness vs. darkness")
   func polarityFlip_ingredientFollowsPitchMapping() async throws {
-    var flipped = Config.Audio.defaults
+    var flipped = Self.harmonicsConfig
     flipped.positional.beaconPolarity = false
 
     // Default polarity: this errorY is the "above target" (brightness) case.
@@ -148,7 +169,7 @@ struct AudioRendererVerticalTimbreTests {
   /// `AudioSynthesis.exponentialFrequency` call the renderer itself makes
   /// (rather than detected), so the harmonic/sub-octave probe frequencies
   /// are exact, not estimated.
-  private func measure(errorX: Float, errorY: Float, config: Config.Audio = .defaults)
+  private func measure(errorX: Float, errorY: Float, config: Config.Audio = Self.harmonicsConfig)
     async throws -> Ratios
   {
     // swiftlint:enable opening_brace

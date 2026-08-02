@@ -28,7 +28,9 @@ struct Audition: AsyncParsableCommand {
       axes -- the default starting point for an ear-tuning session.
 
       All three take --config <path> to audition a Debug-panel-exported tuning profile instead \
-      of Config.defaults, and --scheme/--scheme-b (sweep/all only) to A/B the positional scheme.
+      of Config.defaults, and --scheme/--scheme-b (sweep/all only) to A/B the positional scheme. \
+      `sweep --axis y` additionally takes --brightness <harmonics|overdrive|saw> to A/B the \
+      vertical-timbre "target above" brightness style without editing a config file.
       """,
     subcommands: [AuditionEarcon.self, AuditionSweep.self, AuditionAll.self]
   )
@@ -212,6 +214,20 @@ struct AuditionSweep: AsyncParsableCommand {
   )
   var schemeB: AudioCLISupport.OnOffFlag?
 
+  // 2026-08-02 round-2 audition session: "make the brightness CHARACTER
+  // selectable so the maintainer auditions all three and picks by ear."
+  // `sweep --axis y` is exactly where the above-target brightness
+  // ingredient is audible (the vertical tone's timbre), so this override
+  // lets the maintainer A/B `.harmonics`/`.overdrive`/`.saw` back to back
+  // without hand-editing/re-exporting a `--config` profile between runs.
+  @Option(
+    name: .customLong("brightness"),
+    help: ArgumentHelp(
+      "Override the vertical-timbre brightness ('target above') style: "
+        + "'harmonics' (round-1 baseline), 'overdrive' (shipped default), or 'saw'.")
+  )
+  var brightness: AudioCLISupport.BrightnessFlag?
+
   @Option(
     name: .customLong("config"),
     help: ArgumentHelp(
@@ -222,7 +238,8 @@ struct AuditionSweep: AsyncParsableCommand {
 
   func run() async throws {
     var config = try AudioCLISupport.loadConfig(configPath: configPath)
-    AudioCLISupport.applyOverrides(&config, scheme: scheme, schemeB: schemeB)
+    AudioCLISupport.applyOverrides(
+      &config, scheme: scheme, schemeB: schemeB, brightness: brightness)
     let audio = try await AuditionSupport.startRenderer(config: config)
 
     print(
