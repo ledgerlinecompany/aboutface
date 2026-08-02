@@ -125,7 +125,7 @@ struct ConfigAudioTests {
     // at least visible in a diff.
     let distance = Config.AudioDistance(
       errorRange: 0.4, pulseRateMinHz: 2, pulseRateMaxHz: 10, closePulseDepth: 0.9,
-      farPulseDepth: 0.5,
+      farPulseDepth: 0.5, audibleRampMultiplier: 2.5, audibleRampStartError: 0.03,
       directionalPulseEnabled: false, closePulseSharpness: 4)
     #expect(distance.errorRange == 0.4)
     #expect(distance.pulseRateMinHz == 2)

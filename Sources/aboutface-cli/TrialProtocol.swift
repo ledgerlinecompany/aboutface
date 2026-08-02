@@ -35,15 +35,13 @@ extension Trial {
     let context = TrialContext(
       hub: hub, chain: chain, speech: speech, displacementThreshold: displacementThreshold,
       deadZone: config.deadZone, snapshotWriter: snapshotWriter)
-    let jsonURL = jsonPath.map { URL(fileURLWithPath: $0) }
+    let jsonURL = URL(fileURLWithPath: jsonPath)
 
-    var log = jsonURL.map { TrialSessionStore.load(from: $0) } ?? .empty
+    var log = TrialSessionStore.load(from: jsonURL)
     var session = makeSessionRecord(
       config: config, label: sessionLabel, displacementThreshold: Double(displacementThreshold))
-    if let jsonURL {
-      log.sessions.append(session)
-      persist(log, to: jsonURL)
-    }
+    log.sessions.append(session)
+    persist(log, to: jsonURL)
 
     await announce(
       "About Face trial harness. \(trials) trial\(trials == 1 ? "" : "s"). "
@@ -206,6 +204,21 @@ extension Trial {
     case displaced(startSnapshot: String?)
   }
 
+  /// Rotating displacement suggestions: session 2 field finding — the
+  /// maintainer's natural displacements were lateral/vertical only, so
+  /// distance feedback went unexercised across an entire session. Every
+  /// third trial explicitly suggests a distance displacement. All remain
+  /// suggestions; the displacement gate only checks magnitude.
+  func displacementSuggestion(_ index: Int) -> String {
+    switch index % 3 {
+    case 2:
+      return "Move well out of position — this time lean IN close to the camera, or push far "
+        + "back from it."
+    default:
+      return "Move well out of position — lean left, right, up, down, closer, or farther."
+    }
+  }
+
   /// Step 1 of the protocol: "Move well out of position... press Return
   /// when set up," re-prompted (task brief) until the current smoothed
   /// error actually clears `context.displacementThreshold`. That instant —
@@ -216,8 +229,8 @@ extension Trial {
     index: Int, context: TrialContext
   ) async -> DisplacementOutcome {
     await announce(
-      "Trial \(index) of \(trials). Move well out of position — lean left, right, back, or "
-        + "slouch. Say when: press Return.", speech: context.speech)
+      "Trial \(index) of \(trials). \(displacementSuggestion(index)) "
+        + "Say when: press Return.", speech: context.speech)
 
     while true {
       _ = await StdinInput.readLineAsync()

@@ -84,6 +84,36 @@ struct AudioRendererDistanceDirectionTests {
     #expect(closeFloor < farFloor)
   }
 
+  @Test("Round-4c audibility: full depth by 2x the ramp start, flat at the start threshold")
+  func nearThresholdErrorsAreFullyAudible() async throws {
+    // The fix for "still didn't hear any of the cuing for distance": with
+    // defaults (audibleRampStartError 0.02, multiplier 2), an error of
+    // 0.04 — barely outside the distance dead zone — must already carry
+    // FULL chop depth (previously depth ∝ 0.04/0.3 ≈ 13% of max: silent).
+    let justOutside = try await AudioRendererTestSupport.makeRenderer { renderer in
+      await renderer.update(
+        SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.04, inDeadZone: false))
+    }
+    let (outsideLeft, _) = try await AudioRendererTestSupport.renderFrames(
+      justOutside, total: 48000)
+    let windows = AudioRendererTestSupport.windowedRMS(outsideLeft, windows: 96)
+    let floorRatio = (windows.min() ?? 1) / (windows.max() ?? 1)
+    #expect(floorRatio < 0.25, "near-threshold chops should cut hard, floor=\(floorRatio)")
+
+    // At the ramp start itself (== default distance dead-zone edge), the
+    // tone must be steady: "steady = distance is right."
+    let atThreshold = try await AudioRendererTestSupport.makeRenderer { renderer in
+      await renderer.update(
+        SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.02, inDeadZone: false))
+    }
+    let (thresholdLeft, _) = try await AudioRendererTestSupport.renderFrames(
+      atThreshold, total: 48000)
+    let thresholdWindows = AudioRendererTestSupport.windowedRMS(thresholdLeft, windows: 96)
+    let thresholdFloor = (thresholdWindows.min() ?? 1) / (thresholdWindows.max() ?? 1)
+    #expect(
+      thresholdFloor > 0.9, "at the ramp start the tone stays steady, floor=\(thresholdFloor)")
+  }
+
   @Test("Zero distance error produces no amplitude modulation (flat envelope)")
   func zeroErrorIsSteady() async throws {
     let renderer = try await AudioRendererTestSupport.makeRenderer { renderer in

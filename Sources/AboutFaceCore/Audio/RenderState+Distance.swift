@@ -62,6 +62,24 @@ extension RenderState {
       shaped = oscillation
       depth = cfg.directionalPulseEnabled ? cfg.farPulseDepth : cfg.closePulseDepth
     }
-    return Float(1 - depth * t * shaped)
+    // Round-4c audibility law: depth ramps 0→1 between the audible-ramp
+    // start (≈ the distance dead-zone edge) and start × multiplier, NOT
+    // proportionally over the full errorRange — a near-threshold error
+    // now sounds like the real thing, not a 6% wobble (maintainer trial
+    // session 2: "Still didn't hear any of the cuing for distance").
+    // Rate (above) still spans the full errorRange as the urgency cue.
+    // Continuity: rampT is 0 at/below the start threshold — which covers
+    // the sign flip at zero — and piecewise-linear, so no jumps.
+    let start = max(0.0, cfg.audibleRampStartError)
+    let span = start * (max(1.0, cfg.audibleRampMultiplier) - 1.0)
+    let rampT: Double
+    if Double(magnitude) <= start {
+      rampT = 0
+    } else if span <= 0 {
+      rampT = 1
+    } else {
+      rampT = min(1, (Double(magnitude) - start) / span)
+    }
+    return Float(1 - depth * rampT * shaped)
   }
 }
