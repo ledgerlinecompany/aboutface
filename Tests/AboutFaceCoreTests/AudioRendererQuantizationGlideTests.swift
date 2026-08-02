@@ -72,8 +72,13 @@ struct AudioRendererQuantizationGlideTests {
     let initial = SonificationTarget(errorX: 0, errorY: 0.09, distanceError: 0, inDeadZone: false)
     let changed = SonificationTarget(errorX: 0, errorY: 0.3, distanceError: 0, inDeadZone: false)
 
+    // swift-format puts the brace on its own line after the long return
+    // type; swiftlint's opening_brace disagrees. Format wins (established
+    // conflict — see ConfigStore.swift).
+    // swiftlint:disable opening_brace
     func renderTwoPhases(_ config: Config.Audio) async throws -> (phase1: [Float], phase2: [Float])
     {
+      // swiftlint:enable opening_brace
       let renderer = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in
         await renderer.update(initial)
       }
