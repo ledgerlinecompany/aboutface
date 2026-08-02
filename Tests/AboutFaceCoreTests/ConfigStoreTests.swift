@@ -88,6 +88,82 @@ struct ConfigStoreTests {
     #expect(result.config.lighting == Config.defaults.lighting)  // missing block defaulted
   }
 
+  @Test(
+    "Lenient decode: absent brightnessStyle key fills in the default (.overdrive) via deep merge"
+  )
+  func lenientDecodeMissingBrightnessStyleDefaults() throws {
+    let url = temporaryURL()
+    try prepare(url)
+    defer { cleanUp(url) }
+
+    var config = Config.defaults
+    config.audio.positional.maxBrightnessMix = 0.7  // a tuned value elsewhere in the same block
+    try ConfigStore.save(config, to: url)
+
+    // Simulate a file written before `brightnessStyle` existed (round-1
+    // shape): strip only that key out of the nested `positional` object,
+    // leaving its siblings (including the tuned `maxBrightnessMix`) intact
+    // — exactly the "older file, newer app" shape §11's lenient load must
+    // handle for an additive field nested inside an existing block, not
+    // just at the top level (`lenientDecodeOlderFile` above already covers
+    // a whole missing top-level block).
+    var stored = try #require(
+      try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    var audio = try #require(stored["audio"] as? [String: Any])
+    var positional = try #require(audio["positional"] as? [String: Any])
+    positional.removeValue(forKey: "brightnessStyle")
+    audio["positional"] = positional
+    stored["audio"] = audio
+    try JSONSerialization.data(withJSONObject: stored).write(to: url)
+
+    let result = ConfigStore.load(from: url)
+    #expect(result.issue == nil)
+    #expect(result.config.audio.positional.maxBrightnessMix == 0.7)  // tuned value preserved
+    #expect(result.config.audio.positional.brightnessStyle == .overdrive)  // missing key defaulted
+  }
+
+  /// **Documented decision (2026-08-02, brightness-style round):** an
+  /// UNKNOWN `brightnessStyle` raw string (not merely absent — present but
+  /// invalid, e.g. from a future app version's since-removed style, or
+  /// hand-edited/corrupted JSON) is a genuine decode failure:
+  /// `Config.BrightnessStyle`'s synthesized `Decodable` conformance throws
+  /// on an unrecognized raw value, which fails `decodeLeniently` entirely
+  /// (not just that one field), and `ConfigStore.load` already treats any
+  /// whole-file decode failure as corrupt — backed up, never silently
+  /// dropped, defaults returned (§11's actual guarantee is "never destroy
+  /// the user's bytes," not "always decode something"). This is judged
+  /// acceptable rather than adding a custom lenient single-enum decoder:
+  /// the failure mode this guards against (a hand-edited or truncated
+  /// enum string) is rare, the fallback is safe and recoverable, and a
+  /// custom decoder would add real complexity (hand-written `init(from:)`
+  /// for `AudioPositional`, bypassing `Equatable`/`Codable` synthesis) for
+  /// a case §11 already has a working answer for.
+  @Test("Unknown brightnessStyle raw value fails the whole decode; treated as corrupt, backed up")
+  func unknownBrightnessStyleTreatedAsCorrupt() throws {
+    let url = temporaryURL()
+    try prepare(url)
+    defer { cleanUp(url) }
+
+    try ConfigStore.save(.defaults, to: url)
+    var stored = try #require(
+      try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    var audio = try #require(stored["audio"] as? [String: Any])
+    var positional = try #require(audio["positional"] as? [String: Any])
+    positional["brightnessStyle"] = "wobble"  // not a valid Config.BrightnessStyle case
+    audio["positional"] = positional
+    stored["audio"] = audio
+    try JSONSerialization.data(withJSONObject: stored).write(to: url)
+
+    let result = ConfigStore.load(from: url)
+    #expect(result.config == .defaults)
+    guard case .corruptBackedUp(let backupURL) = try #require(result.issue) else {
+      Issue.record("expected .corruptBackedUp, got \(String(describing: result.issue))")
+      return
+    }
+    #expect(FileManager.default.fileExists(atPath: backupURL.path))
+    #expect(!FileManager.default.fileExists(atPath: url.path))
+  }
+
   @Test("Save preserves unknown top-level and nested keys (§11)")
   func savePreservesUnknownKeys() throws {
     let url = temporaryURL()

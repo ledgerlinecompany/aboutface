@@ -73,6 +73,31 @@ struct ConfigAudioTests {
     #expect(Config.Audio.defaults.positional.maxDarknessMix == 0.5)
   }
 
+  @Test("Brightness style defaults to .overdrive, per 2026-08-02 round-2 maintainer lean")
+  func brightnessStyleDefaultsToOverdrive() {
+    #expect(Config.Audio.defaults.positional.brightnessStyle == .overdrive)
+  }
+
+  @Test("Overdrive max drive default is capped, not left unbounded")
+  func overdriveMaxDriveDefault() {
+    #expect(Config.Audio.defaults.positional.overdriveMaxDrive == 6)
+  }
+
+  @Test("BrightnessStyle round-trips through Codable, including the raw value")
+  func brightnessStyleRoundTripsRawValue() throws {
+    for style in Config.BrightnessStyle.allCases {
+      let data = try JSONEncoder().encode(style)
+      let decoded = try JSONDecoder().decode(Config.BrightnessStyle.self, from: data)
+      #expect(decoded == style)
+    }
+    // The raw values are the wire format ConfigStore persists and
+    // `--brightness` accepts — pin them explicitly so a rename is a
+    // deliberate, visible diff here rather than a silent format break.
+    #expect(Config.BrightnessStyle.harmonics.rawValue == "harmonics")
+    #expect(Config.BrightnessStyle.overdrive.rawValue == "overdrive")
+    #expect(Config.BrightnessStyle.saw.rawValue == "saw")
+  }
+
   @Test("Engine format defaults to 48kHz / 256-frame buffer")
   func engineDefaults() {
     #expect(Config.Audio.defaults.engine.sampleRate == 48000)
@@ -111,7 +136,9 @@ struct ConfigAudioTests {
       beaconPolarity: false,
       verticalTimbreEnabled: false,
       maxBrightnessMix: 0.6,
-      maxDarknessMix: 0.4
+      maxDarknessMix: 0.4,
+      brightnessStyle: .saw,
+      overdriveMaxDrive: 8
     )
     let data = try JSONEncoder().encode(original)
     let decoded = try JSONDecoder().decode(Config.AudioPositional.self, from: data)
