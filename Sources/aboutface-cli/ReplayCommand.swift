@@ -44,6 +44,20 @@ struct Replay: AsyncParsableCommand {
       (the §14 workflow): run replay --audio twice, once per --config, and compare by ear. \
       --silence-at <sec> engages the §7.5 manual-silence path partway through the clip, so that \
       "cuts within one buffer, analysis keeps running" behavior is audible too.
+
+      --truth <before|after|quiz> (2026-08-02): computes this clip's ground truth -- via a \
+      SEPARATE, silent replay pass through AnalysisEngine (reusing verify-corpus's ClipStats \
+      aggregation), never the --audio pass -- and speaks/prints it as a terse declarative \
+      summary, plus a one-line "Expect: ..." preview of what the sonification should sound \
+      like. This is an independent oracle for what a clip actually contains, for a maintainer \
+      who cannot see the recording and currently has no way to check whether the audio is \
+      guiding them correctly. 'before' speaks the truth, then (with --audio) plays it; without \
+      --audio it just prints/speaks the truth, usable as a quick eyes-free clip inventory. \
+      'after' plays --audio first, then speaks the truth as an immediate self-test answer. \
+      'quiz' plays --audio, asks "What did you hear?", waits for Return, then speaks the truth \
+      -- the self-calibration loop. 'after'/'quiz' require --audio (there is nothing to quiz \
+      or self-test against otherwise). --truth-full reports every axis, including nominal \
+      ones, instead of the default "problems only." --no-truth-speak prints without speaking.
       """
   )
 
@@ -115,7 +129,50 @@ struct Replay: AsyncParsableCommand {
   )
   var verbose = false
 
+  /// `TruthMode` (below) mirrors `AudioCLISupport.SchemeFlag`/`OnOffFlag`'s
+  /// own reasoning for being its own type rather than reusing something
+  /// from `AboutFaceCore`: ground truth is a CLI-tooling concept with no
+  /// runtime counterpart (see `ReplayTruth.swift`'s doc comment), so there
+  /// is nothing in `AboutFaceCore` to mirror in the first place.
+  enum TruthMode: String, ExpressibleByArgument, CaseIterable {
+    case before
+    case after
+    case quiz
+  }
+
+  @Option(
+    name: .customLong("truth"),
+    help: ArgumentHelp(
+      "Compute and speak/print this clip's ground truth. See the command's discussion for "
+        + "'before'/'after'/'quiz' semantics."
+    )
+  )
+  var truth: TruthMode?
+
+  @Flag(
+    name: .customLong("truth-full"),
+    help: "With --truth, report every axis (including nominal/centered ones), not just problems."
+  )
+  var truthFull = false
+
+  @Flag(
+    inversion: .prefixedNo,
+    help: "With --truth, speak the summary aloud in addition to printing it. On by default."
+  )
+  var truthSpeak = true
+
+  /// Undocumented in `--help` on purpose (see `ReplayTruthSelfCheck.swift`'s
+  /// doc comment for why this exists instead of an `XCTest` target): a
+  /// maintainer-facing self-check, not part of `replay`'s normal surface.
+  @Flag(name: .customLong("truth-selfcheck"), help: .hidden)
+  var truthSelfcheck = false
+
   func run() async throws {
+    if truthSelfcheck {
+      guard ReplayTruthSelfCheck.run() else { throw ExitCode.failure }
+      return
+    }
+
     let url = URL(fileURLWithPath: path)
     let effectivePaced = paced || audioEnabled
     let pacing: FileCaptureSource.PacingMode = effectivePaced ? .realTime : .unpaced
@@ -124,7 +181,9 @@ struct Replay: AsyncParsableCommand {
 
     try await source.start()
 
-    if audioEnabled {
+    if let truth {
+      try await runWithTruth(mode: truth, url: url, source: source, engine: engine)
+    } else if audioEnabled {
       try await runWithAudio(source: source, engine: engine)
     } else {
       try await runPlain(source: source, engine: engine)
@@ -166,7 +225,11 @@ struct Replay: AsyncParsableCommand {
 
   // MARK: - --audio replay (§13 Phase 3)
 
-  private func runWithAudio(source: FileCaptureSource, engine: AnalysisEngine) async throws {
+  /// Not `private`: called from `Replay`'s `--truth` orchestration too,
+  /// which lives in `ReplayTruth.swift` (`extension Replay`) purely to keep
+  /// this file under SwiftLint's `file_length`/`type_body_length` limits —
+  /// see that extension's doc comment.
+  func runWithAudio(source: FileCaptureSource, engine: AnalysisEngine) async throws {
     var config = try AudioCLISupport.loadConfig(configPath: configPath)
     AudioCLISupport.applyOverrides(&config, scheme: scheme, schemeB: schemeB)
 
