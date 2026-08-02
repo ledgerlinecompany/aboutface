@@ -104,20 +104,30 @@ struct ConfigAudioTests {
     #expect(Config.Audio.defaults.engine.bufferFrameSize == 256)
   }
 
-  @Test("Distance never maps to a base amplitude change, only gate rate/depth")
+  @Test("Distance never maps to a base amplitude change, only gate rate/depth/character")
   func distanceConfigHasNoVolumeField() {
     // Structural assertion, not a runtime one: `Config.AudioDistance` has
-    // exactly `errorRange`/`pulseRateMinHz`/`pulseRateMaxHz`/`pulseDepth` —
-    // there is no "distance gain" field for a future implementer to wire up
-    // by mistake in violation of §6.2 ("never volume"). Encoded here as a
-    // round-trip over an independently-constructed value so a future
-    // additive field is at least visible in a diff.
+    // exactly `errorRange`/`pulseRateMinHz`/`pulseRateMaxHz`/`pulseDepth`/
+    // `directionalPulseEnabled`/`closePulseSharpness` — there is no
+    // "distance gain" field for a future implementer to wire up by mistake
+    // in violation of §6.2 ("never volume"). Encoded here as a round-trip
+    // over an independently-constructed value so a future additive field is
+    // at least visible in a diff.
     let distance = Config.AudioDistance(
-      errorRange: 0.4, pulseRateMinHz: 2, pulseRateMaxHz: 10, pulseDepth: 0.5)
+      errorRange: 0.4, pulseRateMinHz: 2, pulseRateMaxHz: 10, pulseDepth: 0.5,
+      directionalPulseEnabled: false, closePulseSharpness: 4)
     #expect(distance.errorRange == 0.4)
     #expect(distance.pulseRateMinHz == 2)
     #expect(distance.pulseRateMaxHz == 10)
     #expect(distance.pulseDepth == 0.5)
+    #expect(distance.directionalPulseEnabled == false)
+    #expect(distance.closePulseSharpness == 4)
+  }
+
+  @Test("Distance defaults enable directional pulse character with the round-4 sharpness")
+  func distanceDefaultsEnableDirectionalPulse() {
+    #expect(Config.Audio.defaults.distance.directionalPulseEnabled == true)
+    #expect(Config.Audio.defaults.distance.closePulseSharpness == 3.5)
   }
 
   // MARK: - Nested sub-struct round trips (mirrors ConfigTests' Lighting/Signal/Gaze coverage)

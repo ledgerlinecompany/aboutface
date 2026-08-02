@@ -86,7 +86,9 @@ extension Config {
         errorRange: 0.3,
         pulseRateMinHz: 1,
         pulseRateMaxHz: 8,
-        pulseDepth: 0.6
+        pulseDepth: 0.6,
+        directionalPulseEnabled: true,
+        closePulseSharpness: 3.5
       ),
       heartbeat: AudioHeartbeat(
         gain: 0.05,
@@ -340,20 +342,40 @@ extension Config {
     /// Gate rate (Hz) at `errorRange` distance error.
     public var pulseRateMaxHz: Double
     /// Gate depth, 0...1: fraction of `AudioPositional.toneGain` the tone
-    /// dips by at the bottom of each gate cycle. `0` = no gating; `1` =
-    /// full on/off gate.
+    /// dips by at the bottom of each gate cycle, at the OUTER edge of
+    /// `errorRange`. The depth actually applied scales down to `0` as
+    /// `|distanceError|` approaches `0` (see `RenderState.distanceGate`'s
+    /// "purity anchor") — `0` = no gating ever; `1` = full on/off at the
+    /// outer edge.
     public var pulseDepth: Double
+    /// **Directional pulse character (§6.2 round-4 maintainer tuning
+    /// directive).** `true` (default): the gate's dip SHAPE differs by the
+    /// sign of `distanceError` — sharp, clipped chops when too close
+    /// (`distanceError > 0`), a smooth wide swell when too far — see
+    /// `RenderState.distanceGate`. `false` restores the single-shape
+    /// (smooth swell) legacy gate for both signs.
+    public var directionalPulseEnabled: Bool
+    /// `directionalPulseEnabled` only: the exponent `k` the too-close dip's
+    /// raised cosine (`oscillation`, `0...1`) is raised to
+    /// (`oscillation ^ k`), narrowing the dip into a brief "chop" the
+    /// higher `k` goes. Default `3.5`, clamped to a `0.1` floor at the call
+    /// site against a degenerate configured value.
+    public var closePulseSharpness: Double
 
     public init(
       errorRange: Double,
       pulseRateMinHz: Double,
       pulseRateMaxHz: Double,
-      pulseDepth: Double
+      pulseDepth: Double,
+      directionalPulseEnabled: Bool,
+      closePulseSharpness: Double
     ) {
       self.errorRange = errorRange
       self.pulseRateMinHz = pulseRateMinHz
       self.pulseRateMaxHz = pulseRateMaxHz
       self.pulseDepth = pulseDepth
+      self.directionalPulseEnabled = directionalPulseEnabled
+      self.closePulseSharpness = closePulseSharpness
     }
   }
 
