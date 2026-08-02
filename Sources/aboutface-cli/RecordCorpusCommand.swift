@@ -6,8 +6,10 @@ import Foundation
 /// for the spec §14 test corpus (the 20-clip list). Walks
 /// `Fixtures/corpus/manifest.json` in order, one clip at a time: prints (and,
 /// with `--speak`, speaks) a self-contained setup instruction, waits for
-/// Return, does a 3-2-1 countdown, then records `--seconds` of video from the
-/// camera to `Fixtures/corpus/clips/<NN-slug>.mov`.
+/// Return (or S to skip, or Q to quit), does a 3-2-1 countdown, then records
+/// that clip's own duration (`--seconds` overrides every clip's duration,
+/// but only when passed explicitly) of video from the camera to
+/// `Fixtures/corpus/clips/<NN-slug>.mov`.
 ///
 /// This doubles as the accessible recording path (`--speak`, via
 /// `AVSpeechSynthesizer`) for a blind or low-vision contributor, since that
@@ -21,22 +23,47 @@ struct RecordCorpus: AsyncParsableCommand {
     discussion: """
       Walks the 20-clip list from docs/spec.md §14 / Fixtures/corpus/manifest.json one clip at a \
       time: prints (and, with --speak, speaks) a self-contained setup instruction, waits for \
-      Return, does a 3-2-1 countdown, then records --seconds (default 15) of --width x --height \
-      @ --fps video (default 1280x720@30) from the camera to \
-      Fixtures/corpus/clips/<NN-slug>.mov, e.g. 01-reference.mov.
+      Return (or S to skip, or Q to quit), does a 3-2-1 countdown, then records that clip's own \
+      duration (15 seconds for most clips; clip 14, walk-through, is 20; clip 20, \
+      leave-and-return, is 25 — see CorpusCatalog.swift) of --width x --height @ --fps video \
+      (default 1280x720@30) from the camera to Fixtures/corpus/clips/<NN-slug>.mov, e.g. \
+      01-reference.mov. --seconds overrides every clip's duration with one fixed value, but \
+      only when passed explicitly — omit it to use each clip's own duration.
 
       Resumable: a clip whose target file already exists is skipped on the next run. Use \
       --redo <n> to re-record just clip n, or --all to re-record every clip regardless of what \
-      already exists. After each take (including a failed one), choose:
+      already exists.
 
-        [Return]  keep this take (or move on despite a failure) and continue to the next clip
-        r         redo this clip now
-        s         skip this clip for now, without recording
-        q         quit — progress so far is kept; re-run to resume
+      At the setup prompt, before recording starts:
+
+        Start recording: press Return (after the countdown).
+        Skip this clip for now, without recording: press S — useful the moment you realize a \
+      clip needs staging (a second person, glasses) you don't have on hand yet.
+        Quit, resumable — progress so far is kept: press Q.
+
+      After each take (including a failed one), choose:
+
+        Keep this take (or move on, if the take failed) and continue to the next clip: press \
+      Return.
+        Discard this take and redo this clip now: press R.
+        Discard this take and continue to the next clip, without saving it: press D.
+        Quit, resumable — progress so far is kept: press Q.
+
+      Every choice prints (and, with --speak, speaks) an explicit confirmation of what just \
+      happened — e.g. "Skipped clip 14. Nothing recorded." or "Discarded clip 14. Nothing \
+      recorded." — so nothing changes silently.
 
       --speak makes this the accessible recording path (AVSpeechSynthesizer, rate 0.55, default \
-      voice): every printed instruction, countdown beat, and menu prompt is also spoken, in full \
-      sentences that do not depend on reading anything on screen.
+      voice): every printed instruction, countdown beat, menu prompt, and confirmation is also \
+      spoken, in full sentences that do not depend on reading anything on screen. Every \
+      announcement names the function before the key that triggers it (e.g. "Skip this clip: \
+      press S"), never the reverse.
+
+      While a clip is recording, only meaningful state changes are printed (and spoken) — a \
+      line when recording starts, a line each time a face is newly detected or newly lost, and \
+      a line at completion with the recorded duration and the fraction of the clip a face was \
+      detected — never a per-second tick. A per-second line reads as constant chatter to \
+      VoiceOver, which announces every new line of terminal output as it appears.
 
       Safe to interrupt with Ctrl-C at any point: an in-progress take's file is removed rather \
       than left half-written, and already-completed clips are untouched.
@@ -66,8 +93,14 @@ struct RecordCorpus: AsyncParsableCommand {
   @Option(help: "Requested capture frame rate in fps.")
   var fps: Double = 30
 
-  @Option(help: "Recording duration per clip, in seconds.")
-  var seconds = 15
+  @Option(
+    help: ArgumentHelp(
+      "Override recording duration for every clip, in seconds. Applied to ALL clips only when "
+        + "passed explicitly; otherwise each clip uses its own duration from CorpusCatalog "
+        + "(15s for most clips; clip 14, walk-through, is 20s; clip 20, leave-and-return, is 25s)."
+    )
+  )
+  var seconds: Int?
 
   @Flag(
     help: ArgumentHelp(
@@ -88,10 +121,14 @@ struct RecordCorpus: AsyncParsableCommand {
   @Flag(help: "Re-record every clip, even ones that already have a file.")
   var all = false
 
+  /// `.advance` covers every "move on to the next clip" path — a kept
+  /// take, a discarded take, and a clip skipped at the setup prompt all
+  /// return it; what actually happened was already printed/spoken by
+  /// whichever prompt produced it, so `run()`'s dispatch doesn't need to
+  /// distinguish them further.
   private enum TakeOutcome {
-    case next
+    case advance
     case redo
-    case skip
     case quit
     case cameraUnavailable
   }
@@ -136,9 +173,12 @@ struct RecordCorpus: AsyncParsableCommand {
         case .cameraUnavailable:
           throw ExitCode.failure
         case .quit:
-          print("\nStopping — re-run record-corpus to resume; completed clips are kept.")
+          print("")
+          await announce(
+            "Stopping — re-run record-corpus to resume; completed clips are kept.",
+            speech: speech)
           return
-        case .next, .skip:
+        case .advance:
           continue clipLoop
         }
       }
@@ -163,8 +203,19 @@ struct RecordCorpus: AsyncParsableCommand {
     finalURL: URL,
     speech: Speech?
   ) async -> TakeOutcome {
-    await presentInstructions(script: script, entry: entry, speech: speech)
-    _ = readLine()
+    let clipSeconds = seconds ?? script.durationSeconds
+    await presentInstructions(
+      script: script, entry: entry, clipSeconds: clipSeconds, speech: speech)
+
+    switch await readSetupInput(speech: speech) {
+    case .skip:
+      await announce("Skipped clip \(script.index). Nothing recorded.", speech: speech)
+      return .advance
+    case .quit:
+      return .quit
+    case .start:
+      break
+    }
 
     guard let source = makeSource() else {
       print(
@@ -181,103 +232,69 @@ struct RecordCorpus: AsyncParsableCommand {
       return .cameraUnavailable
     }
 
-    await countdown(speech: speech)
+    await countdown(script: script, clipSeconds: clipSeconds, speech: speech)
 
+    let outcome = await recordTake(
+      source: source, finalURL: finalURL, clipSeconds: clipSeconds, speech: speech)
+    await source.stop()
+
+    await reportOutcome(outcome, speech: speech)
+    return await handlePostRecordChoice(
+      script: script, finalURL: finalURL, outcome: outcome, speech: speech)
+  }
+
+  /// Runs one take's `CorpusRecorder.record` call under
+  /// `CorpusInterruptGuard`'s tracking — split out of `runTake` purely to
+  /// keep that function within SwiftLint's body-length/complexity limits,
+  /// not a separately reusable piece.
+  private func recordTake(
+    source: CameraCaptureSource, finalURL: URL, clipSeconds: Int, speech: Speech?
+  ) async -> Result<CorpusRecorder.Summary, Error> {
     CorpusInterruptGuard.shared.setCurrentTake(finalURL)
-    let outcome: Result<CorpusRecorder.Summary, Error>
+    defer { CorpusInterruptGuard.shared.setCurrentTake(nil) }
     do {
       let dimensions = CorpusRecorder.Dimensions(width: width, height: height)
       let summary = try await CorpusRecorder.record(
-        source: source, dimensions: dimensions, to: finalURL, seconds: seconds
-      ) { elapsedSeconds, frameCount, faces in
-        let facesText = faces.map(String.init) ?? "?"
-        print("t=\(elapsedSeconds)s frames=\(frameCount) faces=\(facesText)")
+        source: source, dimensions: dimensions, to: finalURL, seconds: clipSeconds
+      ) { faceDetected in
+        let line = faceDetected ? "Face detected." : "Face lost."
+        await announce(line, speech: speech)
       }
-      outcome = .success(summary)
+      return .success(summary)
     } catch {
-      outcome = .failure(error)
-    }
-    CorpusInterruptGuard.shared.setCurrentTake(nil)
-    await source.stop()
-
-    reportOutcome(outcome, finalURL: finalURL)
-    return await promptMenu(speech: speech)
-  }
-
-  private func presentInstructions(
-    script: CorpusCatalog.ClipScript, entry: ManifestEntry, speech: Speech?
-  ) async {
-    var lines: [String] = []
-    lines.append("Clip \(script.index) of \(CorpusCatalog.clips.count): \(entry.description)")
-    lines.append(contentsOf: script.setup)
-    lines.append("This will record \(seconds) seconds, starting after a 3-second countdown.")
-    let prompt = "Press Return when set up."
-
-    print("")
-    print(String(repeating: "-", count: 64))
-    for line in lines { print(line) }
-    print(prompt)
-    print(String(repeating: "-", count: 64))
-
-    if let speech {
-      await speech.speak((lines + [prompt]).joined(separator: " "))
+      return .failure(error)
     }
   }
 
-  private func countdown(speech: Speech?) async {
-    for n in [3, 2, 1] {
-      print("\(n)...")
-      if let speech {
-        await speech.speak("\(n).")
+  /// The post-take menu's key handling and confirmation, split out of
+  /// `runTake` purely to keep that function within SwiftLint's
+  /// body-length/complexity limits — see `promptPostRecord`'s doc comment
+  /// (`RecordCorpusPrompts.swift`) for the behavior this implements.
+  private func handlePostRecordChoice(
+    script: CorpusCatalog.ClipScript, finalURL: URL, outcome: Result<CorpusRecorder.Summary, Error>,
+    speech: Speech?
+  ) async -> TakeOutcome {
+    switch await promptPostRecord(script: script, finalURL: finalURL, speech: speech) {
+    case .keep:
+      let line: String
+      switch outcome {
+      case .success:
+        line = "Kept clip \(script.index): \(finalURL.lastPathComponent)."
+      case .failure:
+        line = "Moving on. Clip \(script.index) was not recorded."
       }
-      try? await Task.sleep(for: .seconds(1))
-    }
-    print("Recording.")
-    if let speech {
-      await speech.speak("Recording.")
-    }
-  }
-
-  private func reportOutcome(_ outcome: Result<CorpusRecorder.Summary, Error>, finalURL: URL) {
-    print("")
-    switch outcome {
-    case .success(let summary):
-      let size =
-        (try? FileManager.default.attributesOfItem(atPath: finalURL.path)[.size] as? Int64) ?? nil
-      print(
-        "Recorded \(String(format: "%.1f", summary.elapsedSeconds))s, \(summary.frameCount) "
-          + "frames, \(Self.formatBytes(size ?? 0)) -> \(finalURL.lastPathComponent)")
-    case .failure(let error):
-      print("Recording failed: \(error). The clip was not saved.")
-    }
-  }
-
-  private func promptMenu(speech: Speech?) async -> TakeOutcome {
-    let prompt = "Return: next clip. r: redo this clip. s: skip for now. q: quit, resumable."
-    print(prompt)
-    if let speech {
-      await speech.speak(prompt)
-    }
-    guard let input = readLine()?.trimmingCharacters(in: .whitespaces).lowercased() else {
-      return .quit
-    }
-    switch input {
-    case "":
-      return .next
-    case "r":
+      await announce(line, speech: speech)
+      return .advance
+    case .redo:
+      try? FileManager.default.removeItem(at: finalURL)
+      await announce("Redoing clip \(script.index).", speech: speech)
       return .redo
-    case "s":
-      return .skip
-    case "q":
+    case .discard:
+      try? FileManager.default.removeItem(at: finalURL)
+      await announce("Discarded clip \(script.index). Nothing recorded.", speech: speech)
+      return .advance
+    case .quit:
       return .quit
-    default:
-      print("Unrecognized input \"\(input)\" — treating as Return (next clip).")
-      return .next
     }
-  }
-
-  private static func formatBytes(_ bytes: Int64) -> String {
-    let megabytes = Double(bytes) / 1_048_576
-    return String(format: "%.1f MB", megabytes)
   }
 }
