@@ -11,6 +11,15 @@ struct AudioRendererQuantizationTests {
   private func config(step: Double) -> Config.Audio {
     var audio = Config.Audio.defaults
     audio.positional.errorQuantizationStep = step
+    // Pinned to 0 (2026-08-02 action round, item 2): these tests assert the
+    // hard-quantized snap itself (same-step ⇒ same pitch, near-center ⇒
+    // exact purity) over a render window that starts from silence, which a
+    // nonzero `quantizationGlideMs` would smear into a transient sweep
+    // rather than the exact snapped pitch these hand-derived assertions
+    // expect. The glide itself (including "settles to the same output as
+    // the hard-quantized case") is covered on its own terms by
+    // `AudioRendererQuantizationGlideTests`.
+    audio.positional.quantizationGlideMs = 0
     return audio
   }
 

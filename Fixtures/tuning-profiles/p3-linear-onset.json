@@ -65,7 +65,7 @@
     "positional": {
       "beaconPolarity": true,
       "brightnessStyle": "saw",
-      "errorQuantizationStep": 0,
+      "errorQuantizationStep": 0.03,
       "errorRange": 0.35,
       "maxBrightnessMix": 0.5,
       "maxDarknessMix": 0.5,
@@ -74,6 +74,7 @@
       "overdriveMaxDrive": 6,
       "panSpeakerAttenuation": 0.5,
       "pitchSpeakerRangeExpansion": 1.5,
+      "quantizationGlideMs": 80,
       "referenceToneHz": 440,
       "sequentialAxisThreshold": 0.15,
       "timbreOnsetExponent": 1.0,
@@ -82,6 +83,8 @@
     },
     "scheme": {
       "positional": "panPitch",
+      "schemeBClickDurationMs": 6,
+      "schemeBClickGain": 0.35,
       "schemeBEnabled": false,
       "schemeBMaxBeatHz": 8,
       "schemeBRefinementFraction": 0.2

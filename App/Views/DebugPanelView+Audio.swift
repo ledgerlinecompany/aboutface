@@ -50,11 +50,11 @@ extension DebugPanelView {
           + "doesn't read as a sudden pitch jump.")
 
       Toggle(
-        "Zero-beat refinement (Scheme B)",
+        "Percussive refinement (Scheme B)",
         isOn: model.boolBinding(\.audio.scheme.schemeBEnabled)
       )
       .accessibilityHint(
-        "Layers a beat tone that nulls to silence on final approach, inside the "
+        "Layers a click train that slows to silence on final approach, inside the "
           + "refinement zone below. Composes with Scheme A only.")
 
       ConfigSliderRow(

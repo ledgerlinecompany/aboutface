@@ -75,6 +75,21 @@ enum AudioSynthesis {
     return unit * 2 - 1
   }
 
+  /// Smooth "hump" envelope: 0 at `t == 0`, peak at the midpoint, 0 at
+  /// `t == duration`. Guarantees a short transient starts and ends at
+  /// exactly zero amplitude — no separate attack/decay bookkeeping needed,
+  /// and no possibility of a click at its activation or deactivation
+  /// boundary regardless of what the carrier waveform is doing at that
+  /// instant. Mirrors `EarconVoice`'s own private `envelope(t:duration:)` —
+  /// duplicated rather than shared across the two types (an `enum` and a
+  /// `RenderState` extension) purely because it is a 3-line, side-effect-
+  /// free formula; `RenderState+SchemeB.swift`'s click transient uses this
+  /// one, `EarconVoice.sample`'s one-shot earcons use their own.
+  static func humpEnvelope(t: Double, duration: Double) -> Double {
+    guard duration > 0, t >= 0, t <= duration else { return 0 }
+    return sin(.pi * t / duration)
+  }
+
   /// Naive band-limited-free square wave (sign of sine) — deliberately
   /// harmonically rich/harsh, used only for the `noSignal` buzzer earcon
   /// where "buzzer-like" is the entire point (§6.1: "own message... a

@@ -69,7 +69,9 @@ extension Config {
         positional: .panPitch,
         schemeBEnabled: false,
         schemeBRefinementFraction: 0.2,
-        schemeBMaxBeatHz: 8
+        schemeBMaxBeatHz: 8,
+        schemeBClickGain: 0.35,
+        schemeBClickDurationMs: 6
       ),
       outputMode: .headphones,
       positional: AudioPositional(
@@ -87,7 +89,9 @@ extension Config {
         maxDarknessMix: 0.5,
         brightnessStyle: .saw,
         timbreOnsetExponent: 2.0,
-        overdriveMaxDrive: 6
+        overdriveMaxDrive: 6,
+        errorQuantizationStep: 0.03,
+        quantizationGlideMs: 80
       ),
       distance: AudioDistance(
         errorRange: 0.3,
@@ -132,9 +136,11 @@ extension Config {
 
   /// §6.2: three positional sonification schemes. Scheme A ("pan/pitch") and
   /// Scheme C ("sequential axis", mono fallback) are alternatives selected
-  /// here; Scheme B ("zero-beat") is a refinement layer that composes *with*
-  /// Scheme A only (§6.2: "Schemes A and B compose"), so it is a separate
-  /// enable flag rather than a third case.
+  /// here; Scheme B (originally "zero-beat", now a percussive click train —
+  /// see `AudioScheme.schemeBMaxBeatHz`'s doc comment for the 2026-08-02
+  /// redesign) is a refinement layer that composes *with* Scheme A only
+  /// (§6.2: "Schemes A and B compose"), so it is a separate enable flag
+  /// rather than a third case.
   public enum AudioPositionalScheme: String, Codable, Sendable, Equatable, CaseIterable {
     /// Scheme A (default, §6.2): stereo pan + pitch, simultaneous.
     case panPitch
@@ -146,29 +152,74 @@ extension Config {
   public struct AudioScheme: Codable, Sendable, Equatable {
     /// Default `.panPitch` (Scheme A, §6.2).
     public var positional: AudioPositionalScheme
-    /// Scheme B (zero-beat nulling). §16 maintainer decision (2026-08-01):
-    /// ships behind this flag, default OFF, until tuned against the corpus;
-    /// the decision to flip the default is deferred.
+    /// Scheme B (§16 maintainer decision, 2026-08-01: ships behind this
+    /// flag, default OFF, until tuned against the corpus; the decision to
+    /// flip the default is deferred). See `schemeBMaxBeatHz`'s doc comment
+    /// for what Scheme B actually sounds like as of the 2026-08-02
+    /// percussive redesign.
     public var schemeBEnabled: Bool
     /// Scheme B is active only inside this fraction of `positional.errorRange`
-    /// (§6.2: "final approach only — inside 20% of error range").
+    /// (§6.2: "final approach only — inside 20% of error range"). Unchanged
+    /// by the 2026-08-02 percussive redesign — still the refinement-zone
+    /// gate, just gating a click train now instead of a beat tone.
     public var schemeBRefinementFraction: Double
-    /// Beat frequency (Hz) at the outer edge of the refinement zone
-    /// (`schemeBRefinementFraction * positional.errorRange`); scales
-    /// linearly to 0 Hz as error approaches zero, which is the whole point
-    /// of a zero-beat null (§6.2).
+    /// **Percussive redesign (2026-08-02 convergence-experiment action
+    /// round, item 3).** Round 1's Scheme B trial (`p1-scheme-b`,
+    /// `docs/tuning/2026-08-02-convergence-experiment.md`) shipped the
+    /// original design this field's name still describes — a fixed
+    /// reference tone plus a moving tone whose BEAT frequency tracked
+    /// error, nulling to 0 Hz at zero error — and it came back unjudgeable:
+    /// "I wasn't sure if I was supposed to get it to match the other one."
+    /// The two-tone beat sat in the same register as Scheme A's own tonal
+    /// beacon, so the maintainer (blind to which profile was which)
+    /// couldn't reliably tell the refinement layer apart from the thing it
+    /// was refining. Maintainer's redesign brief: "something more
+    /// percussive/clicky, since we don't use that yet."
+    ///
+    /// Scheme B is now a CLICK TRAIN, not a tone: `RenderState
+    /// .schemeBSample` (`RenderState+SchemeB.swift`) fires a short,
+    /// non-tonal noise transient (`schemeBClickDurationMs`) at a repetition
+    /// rate equal to what this field's beat frequency would have been —
+    /// this field keeps its name and its mapping (linear over the
+    /// refinement zone, reaching this value at the outer edge and 0 —  i.e.
+    /// no clicks at all, true silence — at zero error) unchanged; only what
+    /// happens AT that rate changed. The clicks are non-tonal by
+    /// construction (filtered noise, no carrier pitch), so — unlike the old
+    /// beat tone — they can never be mistaken for Scheme A's beacon: two
+    /// orthogonal "you're there" channels once paired with the quantized
+    /// beacon's tonal-purity snap (`AudioPositional.errorQuantizationStep`,
+    /// default `0.03` as of this same action round) — timbre says "pure,"
+    /// rhythm says "silent," and both now mean the same thing at once. See
+    /// `Fixtures/tuning-profiles/README.md`'s `p6`/`p7` for the re-trial
+    /// this composition motivates.
     public var schemeBMaxBeatHz: Double
+    /// Scheme B click train's own gain (2026-08-02 percussive redesign) —
+    /// deliberately a separate field from `AudioPositional.toneGain`: the
+    /// click train is a distinct signal path (noise transient, not a tonal
+    /// carrier) composited on top of Scheme A, not a variation on the
+    /// beacon's own volume.
+    public var schemeBClickGain: Double
+    /// Scheme B click transient duration in milliseconds (2026-08-02
+    /// percussive redesign) — deliberately "a few ms," much shorter than
+    /// `Config.AudioEarcons.FaceLost`'s noise burst (default 300ms): the
+    /// click must read as a percussive tick, not a burst. See
+    /// `RenderState.schemeBSample`'s doc comment.
+    public var schemeBClickDurationMs: Double
 
     public init(
       positional: AudioPositionalScheme,
       schemeBEnabled: Bool,
       schemeBRefinementFraction: Double,
-      schemeBMaxBeatHz: Double
+      schemeBMaxBeatHz: Double,
+      schemeBClickGain: Double = 0.35,
+      schemeBClickDurationMs: Double = 6
     ) {
       self.positional = positional
       self.schemeBEnabled = schemeBEnabled
       self.schemeBRefinementFraction = schemeBRefinementFraction
       self.schemeBMaxBeatHz = schemeBMaxBeatHz
+      self.schemeBClickGain = schemeBClickGain
+      self.schemeBClickDurationMs = schemeBClickDurationMs
     }
   }
 
@@ -212,168 +263,6 @@ extension Config {
     /// Crossfades the carrier toward a band-limited (polyBLEP) sawtooth at
     /// the same frequency/phase. See `RenderState.polyBlepSaw`.
     case saw
-  }
-
-  /// §6.2 continuous positional mapping (Schemes A and C share these
-  /// numbers; Scheme C applies them sequentially per axis instead of
-  /// simultaneously).
-  public struct AudioPositional: Codable, Sendable, Equatable {
-    /// Error magnitude (same normalized units as `FramingState.error`, i.e.
-    /// `SonificationTarget.errorX`/`errorY`) that maps to full
-    /// pan-left/pan-right or the min/max tone frequency. Values beyond this
-    /// are clamped, not extrapolated.
-    public var errorRange: Double
-    /// Exponential frequency mapping lower bound (Hz, §13 Phase 3
-    /// requirement 2: "pitch ← errorY... exponential frequency mapping
-    /// between Config min/max Hz").
-    public var minToneHz: Double
-    /// Exponential frequency mapping upper bound (Hz).
-    public var maxToneHz: Double
-    /// Center reference tone (Hz) — the frequency at zero error, and the
-    /// fixed reference tone for Scheme B. Defaults to the geometric mean of
-    /// `minToneHz`/`maxToneHz` so the exponential mapping is symmetric, but
-    /// is independently tunable.
-    public var referenceToneHz: Double
-    /// Overall gain for the continuous positional tone(s), 0...1.
-    public var toneGain: Double
-    /// Multiplies the pan magnitude in `.speakers` `outputMode` (§6.2:
-    /// "speakers mode narrows pan").
-    public var panSpeakerAttenuation: Double
-    /// Multiplies the (max - min) pitch span, recentered on
-    /// `referenceToneHz`, in `.speakers` `outputMode` (§6.2: "...and widens
-    /// pitch range to compensate").
-    public var pitchSpeakerRangeExpansion: Double
-    /// Scheme C only: fraction of `errorRange` within which the horizontal
-    /// axis is considered "solved" and the sequential state machine
-    /// advances to the vertical axis (§6.2: "Solve horizontal to
-    /// completion, then vertical").
-    public var sequentialAxisThreshold: Double
-    /// **Beacon principle (2026-08-01 maintainer directive).** The sound is
-    /// positioned at the TARGET, not at the subject's error — moving to
-    /// "center" the sound also moves the subject into position. So pan and
-    /// pitch encode the *negated* error (`-errorX`, `-errorY`), not the raw
-    /// error: if the subject is right of target (`errorX > 0`), the
-    /// corrective tone comes from their LEFT (pan negative) — they square
-    /// off toward it. Same logic vertically: `errorY > 0` (subject above
-    /// target) means the target is below them, so pitch goes LOW. `true`
-    /// (default) is the shipped beacon polarity; `false` flips to the
-    /// non-negated "error-marker" polarity (tone marks where the subject
-    /// IS, not where the target is) for A/B tuning only — getting this
-    /// flag's default wrong in shipped code is the audio equivalent of the
-    /// §3.4 inverted-instruction failure mode, so it is exercised by
-    /// dedicated polarity tests rather than left to the general direction
-    /// tests to catch incidentally.
-    public var beaconPolarity: Bool
-    /// **Vertical-axis timbre differentiation (2026-08-02 maintainer tuning
-    /// directive, first audition session).** "It's obvious when sounds are
-    /// off-center, but I'm not sure if it's obvious what pitch we're aiming
-    /// to center on vertically" — stereo center is self-evident, a target
-    /// PITCH is not (it relies on memory). When enabled, the vertical tone
-    /// (Scheme A's pitch tone; Scheme C's tone while resolving the vertical
-    /// axis) stays a pure sine at zero vertical error and blends in a
-    /// distinct timbral ingredient — growing with `|errorY|` — on each side,
-    /// so purity itself (pre-attentively detectable, like Scheme B's
-    /// zero-beat null) marks the target rather than a remembered pitch. See
-    /// `maxBrightnessMix`/`maxDarknessMix` and
-    /// `RenderState.verticalTimbreMix` for the synthesis, and
-    /// `AudioRendererVerticalTimbreTests` for the hand-derived acceptance
-    /// cases. Default `true`.
-    public var verticalTimbreEnabled: Bool
-    /// Ingredient added when the TARGET is ABOVE the subject (beacon pitch
-    /// goes high): brightness, i.e. added upper harmonics (2nd/3rd) of the
-    /// pitch tone. Gain of the harmonic blend at the outer edge of
-    /// `errorRange`, 0...1; scales linearly (down to 0) as the post-polarity
-    /// pitch value approaches 0. Metaphor-congruent with "brighter/higher."
-    public var maxBrightnessMix: Double
-    /// Ingredient added when the TARGET is BELOW the subject (beacon pitch
-    /// goes low): darkness, i.e. an added sub-octave (`f/2`) component.
-    /// Gain of the sub-octave blend at the outer edge of `errorRange`,
-    /// 0...1; scales linearly (down to 0) as the post-polarity pitch value
-    /// approaches 0. Metaphor-congruent with "darker/lower."
-    public var maxDarknessMix: Double
-    /// Which synthesis character the brightness ingredient above uses.
-    /// Default `.saw` — chosen BY EAR in the 2026-08-02 round-3 A/B
-    /// (`audition sweep --axis y --brightness <style>`): "Saw is by far
-    /// the clearest; I couldn't even notice the difference in brightness
-    /// overdrive." Acoustically consistent: tanh's odd harmonics roll off
-    /// steeply and are near-inaudible on a few-hundred-Hz carrier through
-    /// built-in speakers, while polyBLEP saw carries the full harmonic
-    /// series. `.overdrive`/`.harmonics` remain selectable for
-    /// re-audition on other output hardware.
-    public var brightnessStyle: BrightnessStyle
-    /// **Timbre onset curve (§6.2 extension, 2026-08-02 first live
-    /// convergence-trial finding): "huge jump in perceived pitch from too
-    /// low to too high."** Crossing vertical center quickly used to swap the
-    /// brightness/darkness ingredient at a rate LINEAR in `|normalized
-    /// timbreRaw|` (`mix = maxMix · |normalized|`), so a fast crossing near
-    /// center still carried a perceptible amount of one ingredient right up
-    /// to the flip — read as an abrupt octave-scale timbral (and, because
-    /// pitch is also swinging fastest near center, perceived-pitch) jump.
-    /// `mix = maxMix · |normalized|^timbreOnsetExponent` instead: at `1.0`
-    /// (the old behavior, kept selectable for A/B) the ramp is linear; above
-    /// `1.0` the ingredient's onset is SUPERLINEAR, so near center both
-    /// sides stay nearly pure (e.g. at `|normalized| == 0.5`,
-    /// exponent `2.0` gives `0.5² = 0.25` of `maxMix`, a quarter, not half)
-    /// and the full-scale character at the outer edge of `errorRange` is
-    /// unchanged (`1.0^exponent == 1.0` for any exponent). Default `2.0` —
-    /// a starting point (§0), not a fixed constant. Applies identically to
-    /// both `maxBrightnessMix` and `maxDarknessMix` in
-    /// `RenderState.verticalTimbreMix` — the crossing is symmetric, so the
-    /// curve must be too, or one side would still jump more sharply than
-    /// the other.
-    public var timbreOnsetExponent: Double
-    /// Sonification quantization (2026-08-02 experiment): `0` (default) =
-    /// continuous beacon; `> 0` snaps the post-polarity error driving
-    /// pan/pitch to multiples of this step — discrete audible levels.
-    /// Trials measure centering ease vs settle steadiness. Unrelated to
-    /// `Config.Display` (which steps the DISPLAY, not the sound).
-    public var errorQuantizationStep: Double
-    /// `.overdrive` style only: the `tanh` drive coefficient at full
-    /// brightness intensity (`brightnessMix == maxBrightnessMix`); drive
-    /// ramps from `1` at zero intensity up to this value. Capped (default
-    /// `6`) rather than left unbounded — `tanh`'s odd-harmonic content
-    /// rolls off fast, but it is not literally band-limited, and this
-    /// renderer's vertical tone lives in a few-hundred-Hz range against a
-    /// 48kHz sample rate, so even the harshest harmonics this cap produces
-    /// sit comfortably below Nyquist (see `RenderState.overdriveComponent`
-    /// for the full aliasing-tradeoff reasoning).
-    public var overdriveMaxDrive: Double
-
-    public init(
-      errorRange: Double,
-      minToneHz: Double,
-      maxToneHz: Double,
-      referenceToneHz: Double,
-      toneGain: Double,
-      panSpeakerAttenuation: Double,
-      pitchSpeakerRangeExpansion: Double,
-      sequentialAxisThreshold: Double,
-      beaconPolarity: Bool,
-      verticalTimbreEnabled: Bool,
-      maxBrightnessMix: Double,
-      maxDarknessMix: Double,
-      brightnessStyle: BrightnessStyle,
-      timbreOnsetExponent: Double,
-      overdriveMaxDrive: Double,
-      errorQuantizationStep: Double = 0
-    ) {
-      self.errorRange = errorRange
-      self.minToneHz = minToneHz
-      self.maxToneHz = maxToneHz
-      self.referenceToneHz = referenceToneHz
-      self.toneGain = toneGain
-      self.panSpeakerAttenuation = panSpeakerAttenuation
-      self.pitchSpeakerRangeExpansion = pitchSpeakerRangeExpansion
-      self.sequentialAxisThreshold = sequentialAxisThreshold
-      self.beaconPolarity = beaconPolarity
-      self.verticalTimbreEnabled = verticalTimbreEnabled
-      self.maxBrightnessMix = maxBrightnessMix
-      self.maxDarknessMix = maxDarknessMix
-      self.brightnessStyle = brightnessStyle
-      self.timbreOnsetExponent = timbreOnsetExponent
-      self.overdriveMaxDrive = overdriveMaxDrive
-      self.errorQuantizationStep = errorQuantizationStep
-    }
   }
 
   /// §6.1: "Holding good zone: silence + quiet liveness heartbeat every

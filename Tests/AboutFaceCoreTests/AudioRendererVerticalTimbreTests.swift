@@ -49,6 +49,13 @@ struct AudioRendererVerticalTimbreTests {
     var config = Config.Audio.defaults
     config.positional.brightnessStyle = .harmonics
     config.positional.timbreOnsetExponent = 1.0
+    // Pinned to 0 (2026-08-02 action round, item 1): the shipped default
+    // moved to `0.03`, and this file's `errorY` values (`±0.1`, `±0.3`)
+    // aren't all exact multiples of it — quantization would snap `±0.1` to
+    // `±0.09`, shifting the hand-derived `normalized`/`brightnessMix`
+    // arithmetic in the doc comments below off their exact values. Pin
+    // rather than re-derive.
+    config.positional.errorQuantizationStep = 0
     return config
   }
 

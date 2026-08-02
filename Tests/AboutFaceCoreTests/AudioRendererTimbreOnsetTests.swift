@@ -28,6 +28,12 @@ struct AudioRendererTimbreOnsetTests {
     var config = Config.Audio.defaults
     config.positional.brightnessStyle = .harmonics
     config.positional.timbreOnsetExponent = exponent
+    // Pinned to 0 (2026-08-02 action round, item 1): the shipped default
+    // moved to `0.03`, and `halfRangeErrorY`/this file's other `errorY`
+    // values aren't all exact multiples of it — quantization would shift
+    // the hand-derived `|normalized| == 0.5` exactness these tests rely
+    // on. Pin rather than re-derive.
+    config.positional.errorQuantizationStep = 0
     return config
   }
 

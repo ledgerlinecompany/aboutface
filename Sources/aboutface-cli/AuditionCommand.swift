@@ -158,7 +158,8 @@ struct AuditionSweep: AsyncParsableCommand {
 
   @Option(
     name: .customLong("scheme-b"),
-    help: ArgumentHelp("Override the Scheme B (zero-beat refinement) enable flag: 'on' or 'off'.")
+    help: ArgumentHelp(
+      "Override the Scheme B (percussive click refinement) enable flag: 'on' or 'off'.")
   )
   var schemeB: AudioCLISupport.OnOffFlag?
 
@@ -213,7 +214,8 @@ struct AuditionAll: AsyncParsableCommand {
 
   @Option(
     name: .customLong("scheme-b"),
-    help: ArgumentHelp("Override the Scheme B (zero-beat refinement) enable flag: 'on' or 'off'.")
+    help: ArgumentHelp(
+      "Override the Scheme B (percussive click refinement) enable flag: 'on' or 'off'.")
   )
   var schemeB: AudioCLISupport.OnOffFlag?
 
