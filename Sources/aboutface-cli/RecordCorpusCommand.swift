@@ -31,8 +31,8 @@ struct RecordCorpus: AsyncParsableCommand {
       only when passed explicitly — omit it to use each clip's own duration.
 
       Resumable: a clip whose target file already exists is skipped on the next run. Use \
-      --redo <n...> (e.g. --redo 4 9 11 13) to re-record just those clips, or --all to re-record every clip regardless of what \
-      already exists.
+      --redo <n...> (e.g. --redo 4 9 11 13) to re-record just those clips, or --all to \
+      re-record every clip regardless of what already exists.
 
       At the setup prompt, before recording starts:
 
