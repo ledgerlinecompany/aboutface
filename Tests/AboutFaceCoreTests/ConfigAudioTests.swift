@@ -63,7 +63,9 @@ struct ConfigAudioTests {
   /// additive-field fallback.
   @Test("Scheme B click gain/duration default to an audible, percussive-length starting point")
   func schemeBClickDefaults() {
-    #expect(Config.Audio.defaults.scheme.schemeBClickGain == 0.35)
+    // 0.18: rebalanced just under toneGain (0.2) — round-2b maintainer
+    // finding: "the clicks were louder than the tone."
+    #expect(Config.Audio.defaults.scheme.schemeBClickGain == 0.18)
     #expect(Config.Audio.defaults.scheme.schemeBClickDurationMs == 6)
   }
 

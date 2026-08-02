@@ -81,6 +81,11 @@ extension DebugPanelView {
         range: 0...1, step: 0.01, format: Format.percent)
 
       ConfigSliderRow(
+        title: "Click volume (refinement layer)",
+        value: model.binding(\.audio.scheme.schemeBClickGain),
+        range: 0...1, step: 0.01, format: Format.percent)
+
+      ConfigSliderRow(
         title: "Positional error range",
         value: model.binding(\.audio.positional.errorRange),
         range: 0.05...1, step: 0.01, format: Format.percent)

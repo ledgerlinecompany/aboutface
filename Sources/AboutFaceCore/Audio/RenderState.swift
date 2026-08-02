@@ -327,19 +327,6 @@ final class RenderState: @unchecked Sendable {
     return (left + voiceL, right + voiceR)
   }
 
-  /// §6.2: "Schemes A and B compose; B is a refinement layer" — Scheme B
-  /// only ever layers on top of Scheme A, never Scheme C, and only inside
-  /// its configured refinement zone. Returns `nil` when Scheme B shouldn't
-  /// sound this sample.
-  private func schemeBSampleIfActive(sampleRate: Double) -> Float? {
-    guard config.scheme.schemeBEnabled, config.scheme.positional == .panPitch else { return nil }
-    let magnitude = totalErrorMagnitude()
-    let zoneLimit =
-      Float(config.scheme.schemeBRefinementFraction) * Float(config.positional.errorRange)
-    guard zoneLimit > 0, magnitude <= zoneLimit else { return nil }
-    return schemeBSample(sampleRate: sampleRate, magnitude: magnitude, zoneLimit: zoneLimit)
-  }
-
   private func mixVoices(sampleRate: Double) -> (Float, Float) {
     var left: Float = 0
     var right: Float = 0
