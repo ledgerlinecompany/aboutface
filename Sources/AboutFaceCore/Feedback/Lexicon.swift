@@ -68,6 +68,19 @@ public enum Lexicon {
     // phrase list but required by the same mechanism (§4's target framing
     // has a vertical component; §9 exposes headroom as its own signal), so
     // it follows the same terse style rather than being left unspoken.
+    //
+    // Maintainer field note (2026-08-02): a vertical correction here can
+    // mean the user's own body/head height changed OR that the laptop lid
+    // angle changed (tilting the camera's pitch relative to a seated user
+    // who hasn't moved) — `FramingState.error.y` cannot distinguish the two
+    // causes, and deliberately does not try to (no lid-angle sensor exists
+    // to disambiguate, and guessing would risk telling a user to move when
+    // the fix is actually "close the lid a little"). "Up."/"Down." stay
+    // exactly this generic on purpose. Phase 5's first-run script (§13) is
+    // the right place to teach this distinction once, as an onboarding
+    // pointer ("if 'up' or 'down' doesn't match what your body is doing,
+    // try the lid angle instead") — not something to encode per-utterance
+    // here, which §6.3's terseness rules out anyway.
     public static let up = Phrase.fixed("Up.")
     public static let down = Phrase.fixed("Down.")
 

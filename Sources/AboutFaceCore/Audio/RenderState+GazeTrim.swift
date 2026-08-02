@@ -100,6 +100,17 @@ extension RenderState {
   /// combined (e.g. Euclidean) magnitude: "clean/pure when yaw AND pitch
   /// sit at neutral" is an AND condition, so purity should break the
   /// instant EITHER axis drifts, not only when both do together.
+  /// **Not affected by `Config.AudioPositional.timbreOnsetExponent`
+  /// (2026-08-02 onset-curve fix, checked here on purpose).** This
+  /// ingredient is a genuinely different signal path from the beacon's
+  /// `verticalTimbreMix` — a single `sine → triangleWave` crossfade keyed on
+  /// `max(|pan|, |pitch|)`, not the two-sided brightness/darkness blend the
+  /// onset exponent reshapes — so there is no ingredient here for that fix
+  /// to apply to. Left linear in `impurityMix` deliberately: trim only ever
+  /// activates once `confirmedState == .goodZone` (deviations already small
+  /// by construction — see `FeedbackRouter.gazeTrimTarget`), so the fast,
+  /// large-swing crossing `timbreOnsetExponent` exists to smooth does not
+  /// occur on this path.
   private func gazeTrimCarrier(panNormalized: Float, pitchNormalized: Float) -> Float {
     let pureCarrier = Float(sin(gazeTrimPhase))
     let impurityMix = max(abs(panNormalized), abs(pitchNormalized))

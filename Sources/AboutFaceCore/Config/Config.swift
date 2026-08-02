@@ -118,10 +118,25 @@ public struct Config: Codable, Sendable, Equatable {
     public var horizontal: Double
     /// Fraction of frame height (§4).
     public var vertical: Double
+    /// Fraction of frame width, same normalized units as
+    /// `FramingState.distanceError` / `Config.TargetFraming.interocularWidth`
+    /// (§4 extension, 2026-08-02 first live convergence-trial finding:
+    /// "Not hearing any indicator of distance"). Distance used to be
+    /// entirely outside the dead-zone latch — only x/y gated it — so a
+    /// subject who centered laterally went silent even when distance was
+    /// still way off; the positional tone's tremolo (§6.2 distance ← pulse
+    /// rate/depth) is the ONLY distance cue there is, and it requires the
+    /// tone to still be playing. Default `0.02` is a deliberately tight
+    /// starting point relative to `TargetFraming.interocularWidth`'s §4
+    /// default of `0.11` (≈18% of the target interocular width) — tune by
+    /// ear against the corpus (§0), not a fixed constant. Same hysteresis
+    /// exit ratio (`hysteresisExitRatio`) as `horizontal`/`vertical`.
+    public var distance: Double
 
-    public init(horizontal: Double, vertical: Double) {
+    public init(horizontal: Double, vertical: Double, distance: Double) {
       self.horizontal = horizontal
       self.vertical = vertical
+      self.distance = distance
     }
   }
 
@@ -252,7 +267,8 @@ public struct Config: Codable, Sendable, Equatable {
     ),
     deadZone: DeadZone(
       horizontal: 0.06,
-      vertical: 0.05
+      vertical: 0.05,
+      distance: 0.02
     ),
     hysteresisExitRatio: 1.4,
     dwellMs: 800,

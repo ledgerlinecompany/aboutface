@@ -59,6 +59,10 @@ struct DebugPanelView: View {
           value: model.binding(\.deadZone.vertical),
           range: 0...0.3, step: 0.005, format: Format.percent)
         ConfigSliderRow(
+          title: "Dead zone, distance",
+          value: model.binding(\.deadZone.distance),
+          range: 0...0.3, step: 0.005, format: Format.percent)
+        ConfigSliderRow(
           title: "Hysteresis exit ratio",
           value: model.binding(\.hysteresisExitRatio),
           range: 1...3, step: 0.05, format: Format.ratio)

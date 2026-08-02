@@ -83,6 +83,16 @@ struct ConfigAudioTests {
     #expect(Config.Audio.defaults.positional.overdriveMaxDrive == 6)
   }
 
+  /// §6.2 extension (2026-08-02 first live convergence-trial finding: "huge
+  /// jump in perceived pitch from too low to too high"). Default `2.0` is
+  /// superlinear (steeper than the old linear `1.0` behavior) — see
+  /// `Config.AudioPositional.timbreOnsetExponent`'s doc comment and
+  /// `AudioRendererTimbreOnsetTests` for the hand-derived acceptance cases.
+  @Test("Timbre onset exponent defaults to a superlinear 2.0, not the old linear 1.0")
+  func timbreOnsetExponentDefaultIsSuperlinear() {
+    #expect(Config.Audio.defaults.positional.timbreOnsetExponent == 2.0)
+  }
+
   @Test("BrightnessStyle round-trips through Codable, including the raw value")
   func brightnessStyleRoundTripsRawValue() throws {
     for style in Config.BrightnessStyle.allCases {
@@ -150,6 +160,7 @@ struct ConfigAudioTests {
       maxBrightnessMix: 0.6,
       maxDarknessMix: 0.4,
       brightnessStyle: .saw,
+      timbreOnsetExponent: 2.5,
       overdriveMaxDrive: 8
     )
     let data = try JSONEncoder().encode(original)

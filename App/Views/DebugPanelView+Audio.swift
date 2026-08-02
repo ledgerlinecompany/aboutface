@@ -39,6 +39,16 @@ extension DebugPanelView {
         value: model.binding(\.audio.positional.maxDarknessMix),
         range: 0...1, step: 0.05, format: Format.percent)
 
+      ConfigSliderRow(
+        title: "Timbre onset exponent",
+        value: model.binding(\.audio.positional.timbreOnsetExponent),
+        range: 1...4, step: 0.1, format: Format.ratio
+      )
+      .accessibilityHint(
+        "How sharply brightness or darkness fades in near vertical center. 1 is linear "
+          + "(the old behavior); higher values stay purer near center so a fast crossing "
+          + "doesn't read as a sudden pitch jump.")
+
       Toggle(
         "Zero-beat refinement (Scheme B)",
         isOn: model.boolBinding(\.audio.scheme.schemeBEnabled)

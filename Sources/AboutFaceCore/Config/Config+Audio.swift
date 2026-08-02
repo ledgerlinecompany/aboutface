@@ -86,6 +86,7 @@ extension Config {
         maxBrightnessMix: 0.5,
         maxDarknessMix: 0.5,
         brightnessStyle: .saw,
+        timbreOnsetExponent: 2.0,
         overdriveMaxDrive: 6
       ),
       distance: AudioDistance(
@@ -298,6 +299,27 @@ extension Config {
     /// series. `.overdrive`/`.harmonics` remain selectable for
     /// re-audition on other output hardware.
     public var brightnessStyle: BrightnessStyle
+    /// **Timbre onset curve (§6.2 extension, 2026-08-02 first live
+    /// convergence-trial finding): "huge jump in perceived pitch from too
+    /// low to too high."** Crossing vertical center quickly used to swap the
+    /// brightness/darkness ingredient at a rate LINEAR in `|normalized
+    /// timbreRaw|` (`mix = maxMix · |normalized|`), so a fast crossing near
+    /// center still carried a perceptible amount of one ingredient right up
+    /// to the flip — read as an abrupt octave-scale timbral (and, because
+    /// pitch is also swinging fastest near center, perceived-pitch) jump.
+    /// `mix = maxMix · |normalized|^timbreOnsetExponent` instead: at `1.0`
+    /// (the old behavior, kept selectable for A/B) the ramp is linear; above
+    /// `1.0` the ingredient's onset is SUPERLINEAR, so near center both
+    /// sides stay nearly pure (e.g. at `|normalized| == 0.5`,
+    /// exponent `2.0` gives `0.5² = 0.25` of `maxMix`, a quarter, not half)
+    /// and the full-scale character at the outer edge of `errorRange` is
+    /// unchanged (`1.0^exponent == 1.0` for any exponent). Default `2.0` —
+    /// a starting point (§0), not a fixed constant. Applies identically to
+    /// both `maxBrightnessMix` and `maxDarknessMix` in
+    /// `RenderState.verticalTimbreMix` — the crossing is symmetric, so the
+    /// curve must be too, or one side would still jump more sharply than
+    /// the other.
+    public var timbreOnsetExponent: Double
     /// `.overdrive` style only: the `tanh` drive coefficient at full
     /// brightness intensity (`brightnessMix == maxBrightnessMix`); drive
     /// ramps from `1` at zero intensity up to this value. Capped (default
@@ -323,6 +345,7 @@ extension Config {
       maxBrightnessMix: Double,
       maxDarknessMix: Double,
       brightnessStyle: BrightnessStyle,
+      timbreOnsetExponent: Double,
       overdriveMaxDrive: Double
     ) {
       self.errorRange = errorRange
@@ -338,6 +361,7 @@ extension Config {
       self.maxBrightnessMix = maxBrightnessMix
       self.maxDarknessMix = maxDarknessMix
       self.brightnessStyle = brightnessStyle
+      self.timbreOnsetExponent = timbreOnsetExponent
       self.overdriveMaxDrive = overdriveMaxDrive
     }
   }

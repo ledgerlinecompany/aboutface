@@ -147,6 +147,21 @@ extension RenderState {
   /// `brightnessComponent` below. The darkness (sub-octave) side is
   /// deliberately untouched: the maintainer only flagged the above
   /// indicator as unclear.
+  ///
+  /// **Onset curve (2026-08-02 first live convergence-trial finding): "huge
+  /// jump in perceived pitch from too low to too high."** Crossing vertical
+  /// center quickly used to swap brightness ↔ darkness at a rate LINEAR in
+  /// `|normalized|`, so a fast crossing still carried an audible amount of
+  /// one ingredient right up to the flip — see
+  /// `Config.AudioPositional.timbreOnsetExponent`'s doc comment for the full
+  /// reasoning. `pow(magnitude, exponent)` (default exponent `2.0`) replaces
+  /// the bare `magnitude` both sides use below, applied identically to
+  /// `brightnessMix` and `darknessMix` — the crossing is symmetric, so the
+  /// curve must be too. `exponent == 1.0` reproduces the exact old linear
+  /// behavior; `magnitude == 0` and `magnitude == 1` are fixed points for
+  /// any exponent (`0^e == 0`, `1^e == 1`), so purity-at-center and
+  /// full-scale character at the outer edge of `errorRange` are both
+  /// unchanged.
   private func verticalTimbreMix(
     pureCarrier: Float, timbreRaw: Float, freqHz: Double, sampleRate: Double
   ) -> Float {
@@ -160,13 +175,28 @@ extension RenderState {
     guard cfg.verticalTimbreEnabled, cfg.errorRange > 0 else { return pureCarrier }
 
     let normalized = max(-1, min(1, timbreRaw / Float(cfg.errorRange)))
-    let brightnessMix = Float(cfg.maxBrightnessMix) * max(0, normalized)
-    let darknessMix = Float(cfg.maxDarknessMix) * max(0, -normalized)
+    let onsetExponent = Float(cfg.timbreOnsetExponent)
+    let brightnessMagnitude = onsetShaped(max(0, normalized), exponent: onsetExponent)
+    let darknessMagnitude = onsetShaped(max(0, -normalized), exponent: onsetExponent)
+    let brightnessMix = Float(cfg.maxBrightnessMix) * brightnessMagnitude
+    let darknessMix = Float(cfg.maxDarknessMix) * darknessMagnitude
 
     let brightened = brightnessComponent(
       pureCarrier: pureCarrier, intensity: brightnessMix, freqHz: freqHz, sampleRate: sampleRate)
     let subOctave = Float(sin(subOctavePhase))
     return brightened + darknessMix * subOctave
+  }
+
+  /// `pow(magnitude, exponent)`, guarding the one input `pow` does not
+  /// handle gracefully for this use (a zero base with a zero exponent would
+  /// be `1`, not `0` — never actually reachable via `Config`-validated
+  /// `timbreOnsetExponent` values in practice, but a stray `0` config value
+  /// should still collapse to silence rather than a discontinuous full-mix
+  /// spike at `magnitude == 0`). `magnitude` is always `0...1` here
+  /// (`max(0, ±normalized)`, itself already clamped to `-1...1` above).
+  private func onsetShaped(_ magnitude: Float, exponent: Float) -> Float {
+    guard magnitude > 0 else { return 0 }
+    return pow(magnitude, exponent)
   }
 
   /// The "target above" brightness ingredient, dispatched on

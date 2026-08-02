@@ -121,6 +121,15 @@ public struct FramingState: Sendable {
   public let error: SIMD2<Float>
   /// + = too close.
   public let distanceError: Float
+  /// Hysteresis-latched (§4, §7.1): `true` only when horizontal, vertical,
+  /// AND distance error are ALL within `Config.DeadZone`'s entry thresholds;
+  /// flips back to `false` the instant ANY one of the three exceeds its
+  /// (wider) exit threshold. Distance joined this latch 2026-08-02 — see
+  /// `Config.DeadZone.distance`'s doc comment and
+  /// `AnalysisEngine.updatedDeadZoneLatch(error:distanceError:)` — because
+  /// distance used to be excluded, so a laterally-centered subject went
+  /// silent (losing the only distance cue §6.2 has) even with distance still
+  /// far off target.
   public let inDeadZone: Bool
   /// From yaw/pitch magnitude, or true gaze if available.
   public let gazeOnCamera: Bool
