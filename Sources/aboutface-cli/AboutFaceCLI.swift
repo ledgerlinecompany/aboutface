@@ -25,6 +25,11 @@ import ArgumentParser
 ///   list (also the accessible, `--speak`-driven recording path).
 /// - `verify-corpus` — replays recorded clips and prints a CHECK/LOOK
 ///   triage table against each clip's expected condition.
+/// - `trial` — the maintainer's proposed convergence-trial harness: live
+///   camera + the real audio feedback chain, repeated-measures timing of
+///   how quickly and consistently the maintainer reaches the ideal
+///   viewing position, with `--config` as the tuning-profile A/B
+///   mechanism. See `TrialCommand.swift`.
 @main
 struct AboutFaceCLI: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
@@ -33,6 +38,8 @@ struct AboutFaceCLI: AsyncParsableCommand {
       + "AnalysisEngine and print FrameAnalysis to the console, optionally with real audio "
       + "feedback (§13 Phase 3).",
     version: "0.0.0-phase3 (Config schema v\(Config.defaults.version))",
-    subcommands: [Replay.self, Live.self, Audition.self, RecordCorpus.self, VerifyCorpus.self]
+    subcommands: [
+      Replay.self, Live.self, Audition.self, RecordCorpus.self, VerifyCorpus.self, Trial.self,
+    ]  // swiftlint:disable:previous trailing_comma
   )
 }
