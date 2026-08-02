@@ -73,6 +73,21 @@ public actor FeedbackRouter {
   var goodZoneConfirmedAt: ContinuousClock.Instant?
   var nextHeartbeatAt: ContinuousClock.Instant?
 
+  // MARK: - §7.4 rung 6 gaze-off-in-good-zone advisory (app field finding,
+  // 2026-08-02 — see `FeedbackCondition.gazeOff`'s doc comment)
+  //
+  // Runs entirely FROM WITHIN a confirmed `.goodZone` episode, parallel to
+  // but independent of the pending/confirmed pair above (which now tracks
+  // PLACEMENT only). Same two-stage shape as every other condition: a raw
+  // per-frame gaze reading (`gazeOffPendingStreak`) must reach the mode's
+  // N-frame threshold (§7.2) before `gazeOffConfirmedStart` is set, and only
+  // then does an 800ms dwell clock (§7.1, `Config.dwellMs`) start counting
+  // toward the single `lookAtCamera` announcement for the episode. See
+  // `tickGoodZoneGaze(output:at:)` in `FeedbackRouter+Announcements.swift`.
+  var gazeOffPendingStreak = 0
+  var gazeOffConfirmedStart: ContinuousClock.Instant?
+  var gazeAnnouncedForEpisode = false
+
   // MARK: - Gaze trim (tuning round 5, maintainer-designed prototype,
   // default OFF — see `Config.AudioGazeTrim` and
   // `FeedbackRouter+GazeTrim.swift`). EMA state for the yaw/pitch
@@ -179,6 +194,23 @@ public actor FeedbackRouter {
 
   var nFrameThreshold: Int {
     mode == .setup ? feedbackConfig.nFrameSetup : feedbackConfig.nFrameMonitor
+  }
+
+  /// §7.3 rung 1's delay, mode-selected (app field finding, 2026-08-02:
+  /// "it takes ~1.5s for the no-face warning to sound after the tone
+  /// stops"). Setup's active convergence loop cuts its positional tone the
+  /// instant the face is lost (`updateContinuousSonification`'s
+  /// resolve-then-send: `signalState != .ok` ⇒ `resolved = nil`), so 1.5s of
+  /// unexplained silence before the earcon flirts with §6.1's silence
+  /// ambiguity in a mode where the user is actively, attentively adjusting.
+  /// Monitor's background posture keeps the original 1.5s — §7.3's own
+  /// rationale ("covers turning to a second monitor, reaching for coffee,
+  /// one bad frame") is specifically about NOT nagging an unattended call.
+  /// See `FeedbackConfig.faceLostEarconDelaySetupMs`/
+  /// `faceLostEarconDelayMonitorMs` for the two values this selects between.
+  var faceLostEarconDelayMs: Int {
+    mode == .setup
+      ? feedbackConfig.faceLostEarconDelaySetupMs : feedbackConfig.faceLostEarconDelayMonitorMs
   }
 
   // swift-format requires the brace on its own line after a wrapped

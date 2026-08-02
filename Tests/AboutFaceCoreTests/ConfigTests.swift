@@ -60,6 +60,53 @@ struct ConfigTests {
     #expect(decoded.speech.rate == 0.7)
   }
 
+  /// Per-mode face-lost earcon delays (app field finding, 2026-08-02 — see
+  /// `FeedbackConfig.faceLostEarconDelaySetupMs`'s doc comment) round-trip
+  /// independently, same as any other `FeedbackConfig` field.
+  @Test("Per-mode face-lost earcon delays round-trip on Config")
+  func faceLostEarconDelaysRoundTrip() throws {
+    var config = Config.defaults
+    config.feedback.faceLostEarconDelaySetupMs = 350
+    config.feedback.faceLostEarconDelayMonitorMs = 2200
+
+    let data = try JSONEncoder().encode(config)
+    let decoded = try JSONDecoder().decode(Config.self, from: data)
+    #expect(decoded == config)
+    #expect(decoded.feedback.faceLostEarconDelaySetupMs == 350)
+    #expect(decoded.feedback.faceLostEarconDelayMonitorMs == 2200)
+  }
+
+  /// §7.3/§6.1 defaults for the two mode-selected delays.
+  @Test("Default face-lost earcon delays are 500ms Setup / 1500ms Monitor")
+  func defaultFaceLostEarconDelays() {
+    #expect(FeedbackConfig.defaults.faceLostEarconDelaySetupMs == 500)
+    #expect(FeedbackConfig.defaults.faceLostEarconDelayMonitorMs == 1500)
+  }
+
+  /// A file written by an older app version (single `faceLostEarconDelayMs`
+  /// key, no per-mode split) must still decode leniently — §11's "migration
+  /// MUST NOT silently reset a user's tuning" — with both new per-mode
+  /// fields falling back to their defaults since the old key no longer maps
+  /// to anything this version reads.
+  @Test("An old single-delay config key decodes leniently, filling per-mode defaults")
+  func staleFaceLostEarconDelayKeyDecodesLeniently() throws {
+    let defaultsData = try JSONEncoder().encode(Config.defaults)
+    var defaultsObject = try #require(
+      try JSONSerialization.jsonObject(with: defaultsData) as? [String: Any])
+    var feedbackObject = try #require(defaultsObject["feedback"] as? [String: Any])
+    feedbackObject.removeValue(forKey: "faceLostEarconDelaySetupMs")
+    feedbackObject.removeValue(forKey: "faceLostEarconDelayMonitorMs")
+    feedbackObject["faceLostEarconDelayMs"] = 1500
+    defaultsObject["feedback"] = feedbackObject
+
+    let data = try JSONSerialization.data(withJSONObject: defaultsObject)
+    let decoded = try ConfigStore.decodeLeniently(data)
+
+    let expected = FeedbackConfig.defaults
+    #expect(decoded.feedback.faceLostEarconDelaySetupMs == expected.faceLostEarconDelaySetupMs)
+    #expect(decoded.feedback.faceLostEarconDelayMonitorMs == expected.faceLostEarconDelayMonitorMs)
+  }
+
   @Test("Defaults round-trip through Codable")
   func defaultsRoundTrip() throws {
     let data = try JSONEncoder().encode(Config.defaults)

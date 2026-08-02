@@ -7,7 +7,9 @@ import Testing
 /// a mandatory liveness heartbeat every `FeedbackConfig.heartbeatIntervalMs`
 /// (default 7000ms — "The heartbeat is not optional"), and resumed
 /// positional feedback the instant the subject drifts back out of the dead
-/// zone.
+/// zone. Gaze-off-in-good-zone coverage (the app field finding, 2026-08-02
+/// — see `FeedbackCondition.gazeOff`'s doc comment) lives in
+/// `FeedbackRouterGoodZoneGazeTests`.
 struct FeedbackRouterGoodZoneTests {
 
   @Test("entering good zone fires enteredGoodZone once and stops positional updates")
@@ -32,6 +34,30 @@ struct FeedbackRouterGoodZoneTests {
     await router.ingest(goodZoneOutput(), at: t0.plus(ms: 6000))
     let callsBeforeHeartbeat = await audio.calls
     #expect(callsBeforeHeartbeat == [.play(.enteredGoodZone)])
+  }
+
+  @Test(
+    "arrival with gaze off-camera still fires enteredGoodZone (app field finding regression)")
+  func gazeOffOnArrivalDoesNotBlockEnteredGoodZone() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .setup)
+    let clock = ContinuousClock()
+    let t0 = clock.now
+
+    // Placement alone is the good zone now: `inDeadZone: true` with
+    // `gazeOnCamera: false` must classify as `.goodZone`, not
+    // `.problem(.gazeOff)` — the regression from the field finding ("the
+    // actual success earcon isn't firing, I'm just getting dead air and
+    // the 'look at the camera' announcement").
+    let output = makeOutput(signalState: .ok, inDeadZone: true, gazeOnCamera: false)
+
+    await ingestRepeated(router, output, at: t0, count: 5)
+    #expect(await audio.calls.isEmpty)
+
+    await router.ingest(output, at: t0.plus(ms: 800))
+    #expect(await audio.calls == [.play(.enteredGoodZone)])
+    #expect(await speech.calls == [.speak(Lexicon.Instruction.centered)])
   }
 
   @Test("holding good zone for 21s fires heartbeats at 7s, 14s, and 21s")
