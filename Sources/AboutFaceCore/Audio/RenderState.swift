@@ -131,6 +131,15 @@ final class RenderState: @unchecked Sendable {
   /// al. above.
   var quantizationGlideX: Float = 0
   var quantizationGlideY: Float = 0
+  /// Tracks whether the positional tone was audible on the PREVIOUS sample,
+  /// so `mixedSample` can detect the silent→active edge and seed the glide
+  /// accumulators at the CURRENT quantized targets. Without this the glide
+  /// state woke up at 0 (center) and synthesized a center→actual sweep on
+  /// every activation — motion that never happened (round-2 maintainer
+  /// finding: "it seems to start in the middle and then glide out to where
+  /// you are even if you don't move"). Glide smooths CHANGES; it must
+  /// never invent them.
+  var positionalWasActive = false
   /// §6.2 Scheme B click train (2026-08-02 percussive redesign, see
   /// `RenderState+SchemeB.swift`): phase accumulator driving the click
   /// repetition rate — a click (re)triggers each time this phase wraps.
@@ -282,6 +291,10 @@ final class RenderState: @unchecked Sendable {
     var right: Float = 0
 
     if currentTarget.hasTarget, !currentTarget.inDeadZone {
+      if !positionalWasActive {
+        seedQuantizationGlide()
+        positionalWasActive = true
+      }
       let (posL, posR) = positionalSample(sampleRate: sampleRate)
       left += posL
       right += posR
@@ -293,7 +306,9 @@ final class RenderState: @unchecked Sendable {
       // activation always starts from silence (see `gazeTrimRampGain`'s
       // doc comment), never resumes mid-ramp from whatever it was left at.
       gazeTrimRampGain = 0
+      // (positionalWasActive stays true while this branch repeats.)
     } else if currentTarget.hasTarget, currentTarget.gazeTrimActive {
+      positionalWasActive = false
       // Tuning round 5 (§6.1/§6.2-adjacent, default OFF): the gaze-trim
       // continuous cue takes over in place of the beacon while the
       // published target says so — mutually exclusive with the branch
@@ -305,6 +320,7 @@ final class RenderState: @unchecked Sendable {
       right += trimR
     } else {
       gazeTrimRampGain = 0
+      positionalWasActive = false
     }
 
     let (voiceL, voiceR) = mixVoices(sampleRate: sampleRate)

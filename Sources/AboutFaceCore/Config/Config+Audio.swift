@@ -91,7 +91,7 @@ extension Config {
         timbreOnsetExponent: 2.0,
         overdriveMaxDrive: 6,
         errorQuantizationStep: 0.03,
-        quantizationGlideMs: 80
+        quantizationGlideMs: 30
       ),
       distance: AudioDistance(
         errorRange: 0.3,
