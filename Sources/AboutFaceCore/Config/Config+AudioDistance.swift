@@ -40,6 +40,25 @@ extension Config {
     /// `ConfigStore`'s unknown-key round-trip but no longer read — both
     /// new keys fill from defaults via lenient decode.)
     public var farPulseDepth: Double
+    /// Round-4c audibility law (maintainer trial session 2: "Still didn't
+    /// hear any of the cuing for distance"). Depth previously scaled with
+    /// |distanceError| / errorRange — proportional over the FULL range —
+    /// so a near-threshold error (e.g. 2× the dead zone) produced a ~12%
+    /// wobble: functionally silent exactly where correction matters most.
+    /// Depth now ramps from 0 at the distance DEAD-ZONE edge to FULL depth
+    /// at `deadZone.distance × audibleRampMultiplier` (default `2`): the
+    /// moment distance is genuinely wrong, the full chop/swell character
+    /// is audible; pulse RATE still scales over the full errorRange as the
+    /// urgency cue. Inside the distance dead zone the tone is steady even
+    /// while playing for x/y error — "steady = distance is right."
+    public var audibleRampMultiplier: Double
+    /// Where the audible ramp STARTS: the |distanceError| below which the
+    /// gate stays fully open (steady tone). Defaults to `0.02` to match
+    /// `Config.DeadZone.distance`'s default — keep them aligned unless
+    /// deliberately tuning the audibility threshold apart from the
+    /// announcement/settle threshold (the renderer sees only the audio
+    /// block, hence the twin field rather than a cross-reference).
+    public var audibleRampStartError: Double
     /// **Directional pulse character (§6.2 round-4 maintainer tuning
     /// directive).** `true` (default): the gate's dip SHAPE differs by the
     /// sign of `distanceError` — sharp, clipped chops when too close
@@ -60,6 +79,8 @@ extension Config {
       pulseRateMaxHz: Double,
       closePulseDepth: Double,
       farPulseDepth: Double,
+      audibleRampMultiplier: Double,
+      audibleRampStartError: Double,
       directionalPulseEnabled: Bool,
       closePulseSharpness: Double
     ) {
@@ -68,6 +89,8 @@ extension Config {
       self.pulseRateMaxHz = pulseRateMaxHz
       self.closePulseDepth = closePulseDepth
       self.farPulseDepth = farPulseDepth
+      self.audibleRampMultiplier = audibleRampMultiplier
+      self.audibleRampStartError = audibleRampStartError
       self.directionalPulseEnabled = directionalPulseEnabled
       self.closePulseSharpness = closePulseSharpness
     }

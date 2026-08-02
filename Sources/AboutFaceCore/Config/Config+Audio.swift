@@ -95,6 +95,8 @@ extension Config {
         pulseRateMaxHz: 8,
         closePulseDepth: 0.95,
         farPulseDepth: 0.4,
+        audibleRampMultiplier: 2,
+        audibleRampStartError: 0.02,
         directionalPulseEnabled: true,
         closePulseSharpness: 3.5
       ),

@@ -122,8 +122,10 @@ struct Trial: AsyncParsableCommand {
     name: .customLong("json"),
     help: ArgumentHelp(
       "Path to an append-mode JSON session log. Successive `trial` sessions (e.g. one per "
-        + "tuning profile) accumulate into this one file so they stay comparable."))
-  var jsonPath: String?
+        + "tuning profile) accumulate into this one file so they stay comparable. Defaults to "
+        + "aboutface-trials.json in the current directory (session 2 field fix: a session's "
+        + "stats were lost to an omitted flag — logging is now always on)."))
+  var jsonPath: String = "aboutface-trials.json"
 
   @Option(
     name: .customLong("snapshots"),
@@ -225,7 +227,7 @@ struct Trial: AsyncParsableCommand {
       }
     }
 
-    if let jsonPath {
+    do {
       let url = URL(fileURLWithPath: jsonPath)
       var log = TrialSessionStore.load(from: url)
       log.sessions.append(TrialSelfTest.syntheticSession())
