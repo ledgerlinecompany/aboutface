@@ -127,6 +127,41 @@ enum AudioRendererTestSupport {
     return bestHz
   }
 
+  /// Counts falling threshold-crossings of the carrier's amplitude envelope
+  /// — i.e. how many gate "dips" occurred — a coarse proxy for pulse count
+  /// that does not require resolving an exact modulation frequency (useful
+  /// here since `Config.AudioDistance.pulseRateMinHz` can be as low as 1 Hz,
+  /// too slow to resolve precisely over a short render). Shared by
+  /// `AudioRendererPositionalTests` and `AudioRendererDistanceDirectionTests`
+  /// (§6.2 round-4 directional-distance tests) — moved here rather than
+  /// duplicated once a second file needed it.
+  ///
+  /// The envelope is extracted as **block RMS** (non-overlapping blocks of
+  /// `blockSize` samples), not a rectified-and-smoothed running average: RMS
+  /// over a window spanning several carrier periods rejects the carrier
+  /// almost completely regardless of the carrier's phase at the block
+  /// boundary (`sin²` integrated over any window much longer than one period
+  /// converges to a constant), whereas a simple moving average of `|sample|`
+  /// leaves a residual ripple at the carrier frequency whose threshold
+  /// crossings can swamp the much slower gate signal this is trying to
+  /// measure.
+  static func envelopeDipCount(_ samples: [Float], blockSize: Int) -> Int {
+    let blocks = windowedRMS(samples, windows: max(1, samples.count / blockSize))
+    guard let minValue = blocks.min(), let maxValue = blocks.max(), maxValue > minValue else {
+      return 0
+    }
+    let threshold = (minValue + maxValue) / 2
+
+    var dips = 0
+    var wasAbove = (blocks.first ?? 0) > threshold
+    for value in blocks {
+      let isAbove = value > threshold
+      if wasAbove, !isAbove { dips += 1 }
+      wasAbove = isAbove
+    }
+    return dips
+  }
+
   /// Spectral flatness (Wiener entropy): geometric mean / arithmetic mean of
   /// the magnitude spectrum sampled at `bins` points between `minHz` and
   /// `maxHz`. Close to `1` for broadband/noise-like content, much smaller

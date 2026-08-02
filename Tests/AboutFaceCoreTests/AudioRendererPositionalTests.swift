@@ -79,19 +79,27 @@ struct AudioRendererPositionalTests {
 
   @Test("Larger |distanceError| produces a faster amplitude gate (more envelope dips per second)")
   func distanceErrorMagnitudeIncreasesPulseRate() async throws {
+    // "Near" is a small NONZERO magnitude (0.03), not exactly 0: since the
+    // §6.2 round-4 purity anchor (`RenderState.distanceGate`) makes the
+    // gate depth itself scale to 0 at exactly zero error (genuinely
+    // steady, no dips at all), comparing against exactly-0 here would test
+    // "modulation present vs. absent" rather than the rate actually
+    // tracking magnitude, which is this test's point —
+    // `AudioRendererDistanceDirectionTests.zeroErrorIsSteady` covers the
+    // exactly-0 anchor case directly.
     let nearRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
       await renderer.update(
-        SonificationTarget(errorX: 0, errorY: 0, distanceError: 0, inDeadZone: false))
+        SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.03, inDeadZone: false))
     }
     let (nearLeft, _) = try await AudioRendererTestSupport.renderFrames(nearRenderer, total: 48000)
-    let nearDips = envelopeDipCount(nearLeft, blockSize: 480)
+    let nearDips = AudioRendererTestSupport.envelopeDipCount(nearLeft, blockSize: 480)
 
     let farRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.3, inDeadZone: false))
     }
     let (farLeft, _) = try await AudioRendererTestSupport.renderFrames(farRenderer, total: 48000)
-    let farDips = envelopeDipCount(farLeft, blockSize: 480)
+    let farDips = AudioRendererTestSupport.envelopeDipCount(farLeft, blockSize: 480)
 
     // Config.Audio.defaults.distance: pulseRateMinHz = 1, pulseRateMaxHz = 8
     // over 1 second of audio — expect roughly 1 dip vs. roughly 8, so a
@@ -205,37 +213,4 @@ struct AudioRendererPositionalTests {
 
     #expect(freq < 400)
   }
-}
-
-/// Counts falling threshold-crossings of the carrier's amplitude envelope —
-/// i.e. how many gate "dips" occurred — a coarse proxy for pulse count that
-/// does not require resolving an exact modulation frequency (useful here
-/// since `Config.AudioDistance.pulseRateMinHz` can be as low as 1 Hz, too
-/// slow to resolve precisely over a short render).
-///
-/// The envelope is extracted as **block RMS** (non-overlapping blocks of
-/// `blockSize` samples), not a rectified-and-smoothed running average: RMS
-/// over a window spanning several carrier periods rejects the carrier
-/// almost completely regardless of the carrier's phase at the block
-/// boundary (`sin²` integrated over any window much longer than one period
-/// converges to a constant), whereas a simple moving average of `|sample|`
-/// leaves a residual ripple at the carrier frequency whose threshold
-/// crossings can swamp the much slower gate signal this is trying to
-/// measure.
-private func envelopeDipCount(_ samples: [Float], blockSize: Int) -> Int {
-  let blocks = AudioRendererTestSupport.windowedRMS(
-    samples, windows: max(1, samples.count / blockSize))
-  guard let minValue = blocks.min(), let maxValue = blocks.max(), maxValue > minValue else {
-    return 0
-  }
-  let threshold = (minValue + maxValue) / 2
-
-  var dips = 0
-  var wasAbove = (blocks.first ?? 0) > threshold
-  for value in blocks {
-    let isAbove = value > threshold
-    if wasAbove, !isAbove { dips += 1 }
-    wasAbove = isAbove
-  }
-  return dips
 }

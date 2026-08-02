@@ -23,9 +23,12 @@ struct Audition: AsyncParsableCommand {
       the full name list, e.g. `audition earcon face-lost`).
         audition sweep           Sweep the positional beacon across one axis end to end -- \
       default: horizontal error from -0.4 to +0.4 over 5s -- so pan/pitch tracking is audible in \
-      one continuous pass.
-        audition all             Announce each earcon by TTS name, play it, then sweep both \
-      axes -- the default starting point for an ear-tuning session.
+      one continuous pass. --axis distance sweeps distanceError instead (too far -> correct -> \
+      too close), printing a marker at each third so the round-4 directional pulse character \
+      (sharp chops too close, smooth swell too far, steady at target) is easy to place by ear.
+        audition all             Announce each earcon by TTS name, play it, then sweep all three \
+      axes (x, y, distance) -- the default starting point for an ear-tuning session; the distance \
+      sweep's thirds markers are spoken as well as printed here.
 
       All three take --config <path> to audition a Debug-panel-exported tuning profile instead \
       of Config.defaults, and --scheme/--scheme-b (sweep/all only) to A/B the positional scheme. \
@@ -98,10 +101,17 @@ enum EarconName: String, ExpressibleByArgument, CaseIterable {
   }
 }
 
-/// `audition sweep --axis x|y`.
+/// `audition sweep --axis x|y|distance`.
 enum AuditionAxis: String, ExpressibleByArgument, CaseIterable {
   case x
   case y
+  /// §6.2 round-4 directional-distance tuning directive: sweeps
+  /// `distanceError` instead of `errorX`/`errorY`, so the pulse
+  /// rate-plus-character encoding (sharp chops too close, smooth swell too
+  /// far, steady at target) is audible end to end in one pass. See
+  /// `AuditionSupport.sweep`'s `DistanceMarker` for the printed/spoken
+  /// too-far/correct/too-close third markers this axis adds.
+  case distance
 
   // "pitch + timbre": `sweep --axis y` drives the real `AudioRenderer`
   // (`AuditionSupport.sweep` calls `audio.update(_:)` directly), so §6.2's
@@ -109,7 +119,13 @@ enum AuditionAxis: String, ExpressibleByArgument, CaseIterable {
   // darkness below, pure sine at center) is already audible in this sweep
   // with no code change beyond this label — it was only ever wired through
   // `positional.errorY`, which the sweep already drives end to end.
-  var label: String { self == .x ? "horizontal (pan)" : "vertical (pitch + timbre)" }
+  var label: String {
+    switch self {
+    case .x: return "horizontal (pan)"
+    case .y: return "vertical (pitch + timbre)"
+    case .distance: return "distance (pulse rate + directional character)"
+    }
+  }
 }
 
 /// Shared config-loading/scheme-override/sweep plumbing for the three
@@ -127,21 +143,74 @@ enum AuditionSupport {
   /// `audio.update(_:)` directly (bypassing `FeedbackRouter` entirely,
   /// unlike `replay --audio`) since a sweep is a synthetic diagnostic
   /// signal, not a replayed `EngineOutput` stream.
-  static func sweep(audio: AudioRenderer, axis: AuditionAxis, seconds: Double) async {
+  ///
+  /// `axis == .distance` (§6.2 round-4 directional-distance tuning
+  /// directive) sweeps `distanceError` across the same `sweepRange` instead
+  /// of `errorX`/`errorY`, and additionally prints a marker (and speaks it,
+  /// via `announcer`, when one is supplied — `audition sweep` standalone
+  /// passes none, `audition all` passes its own) each time the sweep
+  /// crosses into a new third of the range: too-far (sign matches
+  /// "too far" — negative `distanceError`), correct (the middle third,
+  /// straddling zero — the purity-anchor zone where the gate goes steady),
+  /// too-close (positive `distanceError`). `announcer` is `nil` by default
+  /// so `--axis x`/`--axis y` behavior is completely unchanged.
+  static func sweep(
+    audio: AudioRenderer, axis: AuditionAxis, seconds: Double, announcer: Speech? = nil
+  ) async {
     let steps = max(1, Int(seconds * sweepUpdateHz))
     let stepDuration = Duration.seconds(seconds / Double(steps))
+    var lastMarker: DistanceMarker?
     for step in 0...steps {
       let t = Float(step) / Float(steps)
       let value = sweepRange.lowerBound + (sweepRange.upperBound - sweepRange.lowerBound) * t
-      let target =
-        axis == .x
-        ? SonificationTarget(errorX: value, errorY: 0, distanceError: 0, inDeadZone: false)
-        : SonificationTarget(errorX: 0, errorY: value, distanceError: 0, inDeadZone: false)
+      let target: SonificationTarget
+      switch axis {
+      case .x:
+        target = SonificationTarget(errorX: value, errorY: 0, distanceError: 0, inDeadZone: false)
+      case .y:
+        target = SonificationTarget(errorX: 0, errorY: value, distanceError: 0, inDeadZone: false)
+      case .distance:
+        target = SonificationTarget(errorX: 0, errorY: 0, distanceError: value, inDeadZone: false)
+        let marker = DistanceMarker(distanceError: value, range: sweepRange)
+        if marker != lastMarker {
+          print(marker.text)
+          await announcer?.speak(marker.text)
+          lastMarker = marker
+        }
+      }
       await audio.update(target)
       try? await Task.sleep(for: stepDuration)
     }
     await audio.update(nil)
     try? await Task.sleep(for: .milliseconds(150))
+  }
+
+  /// The too-far / correct / too-close third of `AuditionSupport.sweepRange`
+  /// a given `distanceError` sample falls in, for the `--axis distance`
+  /// sweep's printed/spoken progress markers.
+  private enum DistanceMarker: Equatable {
+    case tooFar
+    case correct
+    case tooClose
+
+    init(distanceError: Float, range: ClosedRange<Float>) {
+      let third = (range.upperBound - range.lowerBound) / 3
+      if distanceError < range.lowerBound + third {
+        self = .tooFar
+      } else if distanceError > range.upperBound - third {
+        self = .tooClose
+      } else {
+        self = .correct
+      }
+    }
+
+    var text: String {
+      switch self {
+      case .tooFar: return "Too far"
+      case .correct: return "Correct distance"
+      case .tooClose: return "Too close"
+      }
+    }
   }
 
   /// Starts a real-time `AudioRenderer` for `config.audio`, or prints a
@@ -194,7 +263,11 @@ struct AuditionSweep: AsyncParsableCommand {
     abstract: "Sweep the positional beacon across one axis, end to end."
   )
 
-  @Option(help: "Axis to sweep: 'x' (horizontal, pan) or 'y' (vertical, pitch).")
+  @Option(
+    help: ArgumentHelp(
+      "Axis to sweep: 'x' (horizontal, pan), 'y' (vertical, pitch), or 'distance' "
+        + "(pulse rate + directional character).")
+  )
   var axis: AuditionAxis = .x
 
   @Option(help: "Sweep duration in seconds.")
@@ -296,7 +369,8 @@ struct AuditionAll: AsyncParsableCommand {
       print("\(axis.label) sweep")
       await announcer.speak("\(axis.label) sweep")
       await AuditionSupport.sweep(
-        audio: audio, axis: axis, seconds: AuditionSupport.defaultSweepSeconds)
+        audio: audio, axis: axis, seconds: AuditionSupport.defaultSweepSeconds,
+        announcer: announcer)
     }
 
     await audio.stop()
