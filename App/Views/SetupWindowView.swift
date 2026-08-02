@@ -13,6 +13,7 @@ import SwiftUI
 /// `PipelineModel`; this view does no signal math of its own.
 struct SetupWindowView: View {
   @Bindable var model: PipelineModel
+  @Environment(\.openWindow) private var openWindow
 
   var body: some View {
     Form {
@@ -27,6 +28,7 @@ struct SetupWindowView: View {
       Section("Feedback") {
         feedbackToggleRow
         silenceToggleRow
+        openDebugPanelRow
         if let message = model.audioUnavailableMessage {
           Text(message)
             .foregroundStyle(.secondary)
@@ -149,7 +151,11 @@ struct SetupWindowView: View {
       )
     )
     .accessibilityHint(
-      "Turns audio and speech feedback on or off. Analysis keeps running either way.")
+      "Turns audio and speech feedback on or off. Analysis keeps running either way."
+    )
+    // Field finding: controls that do nothing before Start are confusing
+    // (and, for VoiceOver, actionable-sounding); dim them until running.
+    .disabled(!model.isRunning)
   }
 
   /// §7.5's "someone just started talking to me" instant mute — cuts audio
@@ -183,6 +189,7 @@ struct SetupWindowView: View {
       }
     }
     .foregroundStyle(.secondary)
+    .disabled(!model.isRunning)
   }
 }
 
@@ -206,5 +213,23 @@ private struct SignalRow: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(row.label)
     .accessibilityValue(row.value)
+  }
+}
+
+extension SetupWindowView {
+  /// Every tuning control (§9's sliders, Scheme B toggle, export/import)
+  /// lives in the Debug Panel — a separate window that previously had NO
+  /// in-app affordance and was reachable only through the menu bar's
+  /// Window menu, which nothing announced (maintainer field finding:
+  /// "there's actually no way I can find to get to the settings panel").
+  /// Function-before-key phrasing per the recorder conventions.
+  var openDebugPanelRow: some View {
+    Button("Open tuning panel") {
+      openWindow(id: "debug-panel")
+    }
+    .keyboardShortcut("d", modifiers: [.command])
+    .accessibilityHint(
+      "Opens the Debug Panel window with every tuning slider, the refinement-click toggle, and "
+        + "profile export and import. Also available with Command D, or in the Window menu.")
   }
 }

@@ -41,6 +41,10 @@ public actor FeedbackRouter {
   var mode: FeedbackMode
 
   var isSilenced = false
+  /// Dedupe for the continuous channel's nil sends (see
+  /// `updateContinuousSonification`): `true` until the first active target
+  /// goes out, so a stream that never had a face never spams `update(nil)`.
+  var lastContinuousSendWasNil = true
 
   // MARK: - §7.2 N-frame + confirmed discrete state
   //
@@ -219,23 +223,34 @@ public actor FeedbackRouter {
   {
     // swiftlint:enable opening_brace
     guard !isSilenced else { return }
-    guard output.analysis.signalState == .ok else { return }
-    guard let framing = output.framing else { return }
 
-    guard !framing.inDeadZone else {
-      if let trimTarget = gazeTrimTarget(output: output, framing: framing) {
-        await audio.update(trimTarget)
+    // ALWAYS resolve to exactly one of {beacon target, trim target, nil}
+    // and send it (nil deduped). The previous shape returned early on
+    // non-ok states without ever sending nil, leaving the renderer
+    // droning its last target through face-lost — §6.1's exact failure
+    // ("if it can't see a face, it shouldn't emit a tone", app field
+    // finding). Resolving-then-sending also cuts the beacon the instant
+    // the dead zone is entered, rather than after the dwell-gated
+    // good-zone announcement.
+    let resolved: SonificationTarget?
+    if output.analysis.signalState == .ok, let framing = output.framing {
+      if framing.inDeadZone {
+        resolved = gazeTrimTarget(output: output, framing: framing)
+      } else {
+        resolved = SonificationTarget(
+          errorX: framing.error.x,
+          errorY: framing.error.y,
+          distanceError: framing.distanceError,
+          inDeadZone: framing.inDeadZone
+        )
       }
-      return
+    } else {
+      resolved = nil
     }
 
-    let target = SonificationTarget(
-      errorX: framing.error.x,
-      errorY: framing.error.y,
-      distanceError: framing.distanceError,
-      inDeadZone: framing.inDeadZone
-    )
-    await audio.update(target)
+    if resolved == nil, lastContinuousSendWasNil { return }
+    lastContinuousSendWasNil = resolved == nil
+    await audio.update(resolved)
   }
 
   // swiftlint:disable opening_brace
