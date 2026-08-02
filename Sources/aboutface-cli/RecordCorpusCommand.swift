@@ -31,7 +31,7 @@ struct RecordCorpus: AsyncParsableCommand {
       only when passed explicitly — omit it to use each clip's own duration.
 
       Resumable: a clip whose target file already exists is skipped on the next run. Use \
-      --redo <n> to re-record just clip n, or --all to re-record every clip regardless of what \
+      --redo <n...> (e.g. --redo 4 9 11 13) to re-record just those clips, or --all to re-record every clip regardless of what \
       already exists.
 
       At the setup prompt, before recording starts:
@@ -111,12 +111,14 @@ struct RecordCorpus: AsyncParsableCommand {
   var speak = false
 
   @Option(
+    parsing: .upToNextOption,
     help: ArgumentHelp(
-      "Re-record only clip number <n> (1-20), even if it already has a file. Other "
-        + "already-recorded clips are still skipped."
+      "Re-record only these clip numbers (1-20), even if they already have files — space-"
+        + "separated (--redo 4 9 11 13) or repeated (--redo 4 --redo 9). Other already-"
+        + "recorded clips are still skipped."
     )
   )
-  var redo: Int?
+  var redo: [Int] = []
 
   @Flag(help: "Re-record every clip, even ones that already have a file.")
   var all = false
@@ -155,7 +157,7 @@ struct RecordCorpus: AsyncParsableCommand {
     clipLoop: for script in CorpusCatalog.clips {
       let entry = manifest[script.index - 1]
       let finalURL = clipsDir.appendingPathComponent(script.filename)
-      let forceRedo = all || (redo.map { $0 == script.index } ?? false)
+      let forceRedo = all || redo.contains(script.index)
 
       if FileManager.default.fileExists(atPath: finalURL.path) && !forceRedo {
         print(
