@@ -47,18 +47,28 @@ extension RenderState {
   /// layering the distance pulse into it would muddy exactly the precision
   /// it exists to provide.
   func schemeBSample(sampleRate: Double, magnitude: Float, zoneLimit: Float) -> Float {
-    let beatHz = Double(config.scheme.schemeBMaxBeatHz) * Double(magnitude / zoneLimit)
+    // PARKING-SENSOR polarity (round-2 maintainer directive — "I was
+    // expecting speed up = good until you converge on perfect"): click
+    // rate rises as error FALLS within the refinement zone, matching the
+    // proximity-alert schema everyone already knows (parking sensors,
+    // Geiger counters), and inverting the original tuning-fork mapping,
+    // which read backwards in trials. Rate is 0 at the zone's outer edge
+    // (the layer fades in from silence — no pop at zone entry) and maxes
+    // as the error approaches the dead zone, where zone entry cuts all
+    // positional sound and fires the good-zone earcon: the arrival is a
+    // crescendo → cut → chime, produced entirely by existing structure.
+    let closeness = 1 - Double(magnitude / zoneLimit)
+    let beatHz = Double(config.scheme.schemeBMaxBeatHz) * max(0, closeness)
 
     let previousPhase = schemeBClickPhase
     schemeBClickPhase = advancedPhase(schemeBClickPhase, freqHz: beatHz, sampleRate: sampleRate)
 
     // `advancedPhase` wraps at 2π; a decrease this sample means a new click
     // cycle just started — (re)trigger the transient by resetting the
-    // elapsed-sample counter. `beatHz <= 0` (exactly at the null) never
-    // advances the phase at all (`advancedPhase` is a no-op at `freqHz ==
-    // 0`), so it can never wrap and never (re)triggers — true silence at
-    // the null, the same "silence at center" property the old zero-beat
-    // design had, now produced by rhythm instead of pitch. The increment is
+    // elapsed-sample counter. `beatHz <= 0` (at or beyond the zone's outer
+    // edge under the parking-sensor mapping) never advances the phase, so
+    // the layer engages from genuine silence at the boundary; maximum rate
+    // is reached just before dead-zone entry cuts everything. The increment is
     // saturating (never past `Int.max`, so never overflows) rather than
     // unconditional `+= 1`: `schemeBClickElapsedSamples` defaults to
     // `Int.max` (see its doc comment on `RenderState`) precisely so a fresh
@@ -94,4 +104,25 @@ extension RenderState {
     let noise = AudioSynthesis.whiteNoiseSample(&schemeBClickRng)
     return Float(envelope) * noise * Float(cfg.schemeBClickGain)
   }
+  /// §6.2: "Schemes A and B compose; B is a refinement layer" — Scheme B
+  /// only ever layers on top of Scheme A, never Scheme C, and only inside
+  /// its configured refinement zone. Returns `nil` when Scheme B shouldn't
+  /// sound this sample.
+  func schemeBSampleIfActive(sampleRate: Double) -> Float? {
+    guard config.scheme.schemeBEnabled, config.scheme.positional == .panPitch else { return nil }
+    // Parking-model addition: B is a fine-XY refinement cue, so it speaks
+    // only once DISTANCE is already right — otherwise XY-perfect with
+    // distance still wrong would click at maximum rate indefinitely,
+    // layered over the distance chops. Gate on the audible-ramp start
+    // (the audio block's twin of the distance dead zone).
+    guard abs(currentTarget.distanceError) <= Float(config.distance.audibleRampStartError) else {
+      return nil
+    }
+    let magnitude = totalErrorMagnitude()
+    let zoneLimit =
+      Float(config.scheme.schemeBRefinementFraction) * Float(config.positional.errorRange)
+    guard zoneLimit > 0, magnitude <= zoneLimit else { return nil }
+    return schemeBSample(sampleRate: sampleRate, magnitude: magnitude, zoneLimit: zoneLimit)
+  }
+
 }

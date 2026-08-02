@@ -21,3 +21,4 @@ AboutFace.xcodeproj/
 
 # Trial session logs (user data, machine-local)
 aboutface-trials.json
+aboutface-trials.*.json

@@ -48,9 +48,12 @@ struct AudioRendererSchemeBTests {
 
   // MARK: - Click rate tracks error magnitude within the refinement zone
 
-  @Test("Click rate increases with |error| inside the refinement zone")
-  func clickRateTracksMagnitudeWithinZone() async throws {
+  @Test("PARKING polarity: click rate rises as error falls within the zone")
+  func clickRateTracksClosenessWithinZone() async throws {
     // errorRange 0.35, refinementFraction 0.2 ⇒ zoneLimit 0.07.
+    // Parking-sensor mapping (round-2 maintainer directive): closeness =
+    // 1 − magnitude/zoneLimit; near-null (0.015 → closeness ≈ 0.79) must
+    // click much faster than near-edge (0.065 → closeness ≈ 0.07).
     let config = schemeBOnlyConfig()
 
     let nearNull = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in
@@ -67,20 +70,38 @@ struct AudioRendererSchemeBTests {
     let (edgeLeft, _) = try await AudioRendererTestSupport.renderFrames(nearEdge, total: 48000)
     let edgeClicks = clickCount(edgeLeft)
 
-    #expect(edgeClicks > nearClicks)
+    #expect(nearClicks > edgeClicks)
+    #expect(nearClicks >= 3, "near-null should click rapidly, got \(nearClicks)")
   }
 
-  // MARK: - Zero clicks at zero error
+  // MARK: - Parking polarity boundary behaviors
 
-  @Test("Zero error produces zero clicks (true silence at the null)")
-  func zeroErrorProducesZeroClicks() async throws {
+  @Test("XY at null clicks at maximum rate (arrival is dead-zone entry, which cuts everything)")
+  func xyNullClicksAtMaxRate() async throws {
+    // Under parking polarity the crescendo peaks AT the null; the terminal
+    // silence comes from dead-zone entry (inDeadZone: true stops the whole
+    // positional layer upstream), not from the click rate reaching zero.
     let config = schemeBOnlyConfig()
     let renderer = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: 0, inDeadZone: false))
     }
-    let (left, right) = try await AudioRendererTestSupport.renderFrames(renderer, total: 48000)
+    let (left, _) = try await AudioRendererTestSupport.renderFrames(renderer, total: 48000)
+    // schemeBMaxBeatHz default governs the ceiling; expect a fast train.
+    #expect(clickCount(left) >= 5, "null should click at max rate, got \(clickCount(left))")
+  }
 
+  @Test("Distance still wrong ⇒ no clicks even with XY at null (fine-XY gate)")
+  func distanceGateSuppressesClicks() async throws {
+    // B is a fine-XY refinement cue: with distance beyond the audible-ramp
+    // start, XY-perfect must NOT click (it would click at max rate forever,
+    // layered over the distance chops).
+    let config = schemeBOnlyConfig()
+    let renderer = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in
+      await renderer.update(
+        SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.1, inDeadZone: false))
+    }
+    let (left, right) = try await AudioRendererTestSupport.renderFrames(renderer, total: 48000)
     #expect(clickCount(left) == 0)
     #expect(left.allSatisfy { $0 == 0 })
     #expect(right.allSatisfy { $0 == 0 })

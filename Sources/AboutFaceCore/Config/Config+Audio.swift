@@ -70,7 +70,7 @@ extension Config {
         schemeBEnabled: false,
         schemeBRefinementFraction: 0.2,
         schemeBMaxBeatHz: 8,
-        schemeBClickGain: 0.35,
+        schemeBClickGain: 0.18,
         schemeBClickDurationMs: 6
       ),
       outputMode: .headphones,
@@ -211,7 +211,7 @@ extension Config {
       schemeBEnabled: Bool,
       schemeBRefinementFraction: Double,
       schemeBMaxBeatHz: Double,
-      schemeBClickGain: Double = 0.35,
+      schemeBClickGain: Double = 0.18,
       schemeBClickDurationMs: Double = 6
     ) {
       self.positional = positional
