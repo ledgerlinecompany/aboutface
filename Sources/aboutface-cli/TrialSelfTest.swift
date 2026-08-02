@@ -12,7 +12,10 @@
 /// per-axis overshoot counting, settle-window steadiness), `TrialStats`
 /// (median/mean/stddev/aggregate), `DisplacementCheck`,
 /// `TrialSessionStore.configHash`'s determinism, a `TrialSessionLog` JSON
-/// round-trip, and the end-of-session summary/comparison sentence builders.
+/// round-trip, the end-of-session summary/comparison sentence builders, and
+/// (for `--snapshots`) `TrialSnapshotWriter.filename`'s formatting plus the
+/// `TrialSessionLog.TrialRecord` snapshot fields' round-trip AND their
+/// decoding from a pre-existing on-disk log that never had those keys.
 /// NOT covered here (documented, not silently skipped): the live
 /// camera/audio integration loop in `TrialCommand.swift` / `TrialProtocol.
 /// swift` itself — that has no headless equivalent (§14's own rule: never
@@ -40,6 +43,7 @@ enum TrialSelfTest {
     checkConfigHash(&failures)
     checkSessionLogRoundTrip(&failures)
     checkSessionSummary(&failures)
+    checkSnapshotFields(&failures)
     return failures
   }
 }

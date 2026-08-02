@@ -15,14 +15,37 @@ import Foundation
 /// the duration of `beginLive()...endLive()`. Only one live stream is ever
 /// open at a time (one trial's live phase at a time) — `trial`'s own
 /// control flow guarantees that, not this type.
+///
+/// One live sample: an `EngineOutput` paired with the exact `CapturedFrame`
+/// it was computed from, when `--snapshots` is active (`nil` otherwise —
+/// see `TrialHub.publish(_:frame:)`). Pairing them atomically at publish
+/// time (rather than having a snapshot moment separately query "the latest
+/// frame") means a snapshot taken when SETTLED/timeout fires always matches
+/// the frame that produced the triggering `EngineOutput`, with no race
+/// against a newer frame arriving in between.
+struct TrialSample: Sendable {
+  let output: EngineOutput
+  let frame: CapturedFrame?
+}
+
 actor TrialHub {
   private(set) var latest: EngineOutput?
+  /// Most recent camera frame — retained only when `--snapshots` is active,
+  /// since only then does the frame pump call `publish(_:frame:)` with a
+  /// non-nil `frame` (see `Trial.pumpFramesRetainingFrames` in
+  /// `TrialProtocol.swift`). One buffer, overwritten every publish, never an
+  /// accumulating collection; stays `nil` for the whole session without
+  /// `--snapshots` — zero retained frames in that case.
+  private(set) var latestFrame: CapturedFrame?
   private(set) var sourceEnded = false
-  private var liveContinuation: AsyncStream<EngineOutput>.Continuation?
+  private var liveContinuation: AsyncStream<TrialSample>.Continuation?
 
-  func publish(_ output: EngineOutput) {
+  func publish(_ output: EngineOutput, frame: CapturedFrame? = nil) {
     latest = output
-    liveContinuation?.yield(output)
+    if let frame {
+      latestFrame = frame
+    }
+    liveContinuation?.yield(TrialSample(output: output, frame: frame))
   }
 
   /// The capture source's frame stream ended (camera stopped/failed).
@@ -37,8 +60,8 @@ actor TrialHub {
 
   /// Opens the live phase: every subsequent `publish(_:)` call also yields
   /// into the returned stream until `endLive()` is called.
-  func beginLive() -> AsyncStream<EngineOutput> {
-    let (stream, continuation) = AsyncStream<EngineOutput>.makeStream(
+  func beginLive() -> AsyncStream<TrialSample> {
+    let (stream, continuation) = AsyncStream<TrialSample>.makeStream(
       bufferingPolicy: .bufferingNewest(8))
     liveContinuation = continuation
     return stream
@@ -158,6 +181,8 @@ struct TrialContext: Sendable {
   let speech: Speech
   let displacementThreshold: Float
   let deadZone: Config.DeadZone
+  /// `nil` without `--snapshots`; see `TrialSnapshots.swift`.
+  let snapshotWriter: TrialSnapshotWriter?
 }
 
 /// Camera source construction shared by `Trial`'s real run — pulled out to
