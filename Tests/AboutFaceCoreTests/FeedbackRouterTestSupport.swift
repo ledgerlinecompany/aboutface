@@ -81,7 +81,9 @@ func makeOutput(
   errorY: Float = 0,
   distanceError: Float = 0,
   inDeadZone: Bool = true,
-  gazeOnCamera: Bool = true
+  gazeOnCamera: Bool = true,
+  yaw: Float = 0,
+  pitch: Float = 0
 ) -> EngineOutput {
   let framing: FramingState? =
     hasFace
@@ -91,11 +93,24 @@ func makeOutput(
       inDeadZone: inDeadZone,
       gazeOnCamera: gazeOnCamera
     ) : nil
+  // `yaw`/`pitch` default to 0 and are otherwise unused by any pre-existing
+  // test — only the tuning-round-5 gaze-trim tests
+  // (`FeedbackRouterGazeTrimTests`) pass non-default values, to exercise
+  // `FeedbackRouter.gazeTrimTarget(output:framing:)`'s
+  // `output.analysis.primary.yaw`/`.pitch` reads. Every other `FaceGeometry`
+  // field is a harmless placeholder — nothing else in `FeedbackRouter`
+  // reads `analysis.primary` at all.
+  let primary: FaceGeometry? =
+    hasFace
+    ? FaceGeometry(
+      boundingBox: .zero, eyeMidpoint: .zero, interocularDistance: 0, yaw: yaw, pitch: pitch,
+      roll: 0, captureQuality: nil, confidence: 1
+    ) : nil
   let analysis = FrameAnalysis(
     timestamp: .zero,
     signalState: signalState,
     faceCount: hasFace ? 1 : 0,
-    primary: nil,
+    primary: primary,
     lighting: neutralLighting
   )
   return EngineOutput(analysis: analysis, framing: framing)

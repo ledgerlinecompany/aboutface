@@ -14,11 +14,39 @@ public struct SonificationTarget: Sendable, Equatable {
   public var distanceError: Float
   public var inDeadZone: Bool
 
-  public init(errorX: Float, errorY: Float, distanceError: Float, inDeadZone: Bool) {
+  /// **Gaze trim (tuning round 5, maintainer-designed audition prototype —
+  /// see `Config.AudioGazeTrim`, default OFF).** `true` marks this as a
+  /// TRIM-mode reading rather than the ordinary positional beacon: a
+  /// Setup-mode-only, good-zone-only fine-centering cue for head pose that
+  /// may take over the continuous channel in place of pure
+  /// silence-and-heartbeat (§6.1). `yawDeviationDegrees`/
+  /// `pitchDeviationDegrees` are only meaningful when this is `true`; the
+  /// beacon fields above (`errorX`/`errorY`/`distanceError`) are carried
+  /// through unchanged (they are near-zero anyway, since trim only ever
+  /// activates inside the dead zone) purely for debugging fidelity — the
+  /// renderer does not read them while `gazeTrimActive` is `true`.
+  public var gazeTrimActive: Bool
+  /// Head yaw minus the captured neutral baseline
+  /// (`Config.TargetFraming.neutralYawDegrees`), degrees — same egocentric
+  /// sign as `FaceGeometry.yaw`: + = turned right of neutral.
+  public var yawDeviationDegrees: Float
+  /// Head pitch minus the captured neutral baseline
+  /// (`Config.TargetFraming.neutralPitchDegrees`), degrees — same sign as
+  /// `FaceGeometry.pitch`: + = chin up relative to neutral.
+  public var pitchDeviationDegrees: Float
+
+  public init(
+    errorX: Float, errorY: Float, distanceError: Float, inDeadZone: Bool,
+    gazeTrimActive: Bool = false, yawDeviationDegrees: Float = 0,
+    pitchDeviationDegrees: Float = 0
+  ) {
     self.errorX = errorX
     self.errorY = errorY
     self.distanceError = distanceError
     self.inDeadZone = inDeadZone
+    self.gazeTrimActive = gazeTrimActive
+    self.yawDeviationDegrees = yawDeviationDegrees
+    self.pitchDeviationDegrees = pitchDeviationDegrees
   }
 }
 

@@ -29,6 +29,20 @@
 /// every `Instruction` case has a `State` counterpart — so Phase 4/5's Query
 /// implementation only has to choose the register, never invent new
 /// vocabulary.
+///
+/// ## Auditory contract (tuning round 5 design discussion)
+///
+/// Tones never mean "look"; direction words always mean "move"; the word
+/// "Look" always means gaze — `Instruction.lookAtCamera` is the only phrase
+/// that ever asks for a gaze correction, and it is speech, never a tone.
+/// **Exception:** when `Config.AudioGazeTrim.enabled` (default `false`, an
+/// audition prototype — see `FeedbackRouter+GazeTrim.swift`/
+/// `RenderState+GazeTrim.swift`), the gaze-trim tone DOES mean "turn,"
+/// breaking the tones-never-mean-look rule on purpose. It stays honest only
+/// because it is never mistakable for the positional beacon — markedly
+/// quieter, a disjoint register, Setup-mode and confirmed-good-zone only —
+/// so a listener can always tell which loop they're in from the sound
+/// alone, not from having to remember which mode is active.
 public enum Lexicon {
   /// An utterance About Face is allowed to speak. Carries its fixed text;
   /// nothing outside this file can construct one (see the type-level doc

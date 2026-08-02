@@ -16,16 +16,28 @@ struct ParamSnapshot: Sendable {
   var errorY: Float
   var distanceError: Float
   var inDeadZone: Bool
+  /// Tuning round 5 gaze-trim prototype fields — see
+  /// `SonificationTarget.gazeTrimActive`'s doc comment.
+  var gazeTrimActive: Bool
+  var yawDeviationDegrees: Float
+  var pitchDeviationDegrees: Float
 
   static let silent = ParamSnapshot(
-    hasTarget: false, errorX: 0, errorY: 0, distanceError: 0, inDeadZone: true)
+    hasTarget: false, errorX: 0, errorY: 0, distanceError: 0, inDeadZone: true,
+    gazeTrimActive: false, yawDeviationDegrees: 0, pitchDeviationDegrees: 0)
 
-  init(hasTarget: Bool, errorX: Float, errorY: Float, distanceError: Float, inDeadZone: Bool) {
+  init(
+    hasTarget: Bool, errorX: Float, errorY: Float, distanceError: Float, inDeadZone: Bool,
+    gazeTrimActive: Bool, yawDeviationDegrees: Float, pitchDeviationDegrees: Float
+  ) {
     self.hasTarget = hasTarget
     self.errorX = errorX
     self.errorY = errorY
     self.distanceError = distanceError
     self.inDeadZone = inDeadZone
+    self.gazeTrimActive = gazeTrimActive
+    self.yawDeviationDegrees = yawDeviationDegrees
+    self.pitchDeviationDegrees = pitchDeviationDegrees
   }
 
   init(_ target: SonificationTarget?) {
@@ -38,7 +50,10 @@ struct ParamSnapshot: Sendable {
       errorX: target.errorX,
       errorY: target.errorY,
       distanceError: target.distanceError,
-      inDeadZone: target.inDeadZone
+      inDeadZone: target.inDeadZone,
+      gazeTrimActive: target.gazeTrimActive,
+      yawDeviationDegrees: target.yawDeviationDegrees,
+      pitchDeviationDegrees: target.pitchDeviationDegrees
     )
   }
 }
@@ -107,6 +122,16 @@ final class RenderState: @unchecked Sendable {
   var schemeBReferencePhase: Double = 0
   var schemeBMovingPhase: Double = 0
   var pulsePhase: Double = 0
+  /// Tuning round 5 gaze-trim prototype (§6.1/§6.2-adjacent, default OFF —
+  /// see `Config.AudioGazeTrim`). Own phase accumulator — the trim tone's
+  /// register is disjoint from the beacon's on purpose (RenderState+
+  /// GazeTrim.swift), so it cannot share `positionalPhase`.
+  var gazeTrimPhase: Double = 0
+  /// Onset-ramp gain, `0...1` — climbs from `0` toward `1` over
+  /// `Config.AudioGazeTrim.onsetRampMs` while trim is active, and is reset
+  /// to `0` the instant it isn't, so every (re)activation ramps fresh with
+  /// no pop. See `RenderState+GazeTrim.swift`.
+  var gazeTrimRampGain: Float = 0
   /// Scheme C state machine: `true` while resolving the horizontal axis,
   /// `false` once resolved and resolving vertical (§6.2: "Solve horizontal
   /// to completion, then vertical").
@@ -228,6 +253,22 @@ final class RenderState: @unchecked Sendable {
         left += schemeB
         right += schemeB
       }
+      // Not gaze-trim's turn — reset the onset ramp so a LATER trim
+      // activation always starts from silence (see `gazeTrimRampGain`'s
+      // doc comment), never resumes mid-ramp from whatever it was left at.
+      gazeTrimRampGain = 0
+    } else if currentTarget.hasTarget, currentTarget.gazeTrimActive {
+      // Tuning round 5 (§6.1/§6.2-adjacent, default OFF): the gaze-trim
+      // continuous cue takes over in place of the beacon while the
+      // published target says so — mutually exclusive with the branch
+      // above by construction, since `FeedbackRouter` only ever publishes
+      // `gazeTrimActive: true` alongside `inDeadZone: true` (see
+      // `FeedbackRouter.gazeTrimTarget(output:framing:)`).
+      let (trimL, trimR) = gazeTrimSample(sampleRate: sampleRate)
+      left += trimL
+      right += trimR
+    } else {
+      gazeTrimRampGain = 0
     }
 
     let (voiceL, voiceR) = mixVoices(sampleRate: sampleRate)
