@@ -117,9 +117,9 @@ struct ConfigAudioTests {
   /// 2026-08-02 action round, item 2: both quantized trial profiles were
   /// "jumpy" — see `Config.AudioPositional.quantizationGlideMs`'s doc
   /// comment.
-  @Test("Quantization glide defaults to 80ms per step, not an instant jump")
+  @Test("Quantization glide defaults to 30ms per step (round-2: 80 was audibly sluggish)")
   func quantizationGlideMsDefault() {
-    #expect(Config.Audio.defaults.positional.quantizationGlideMs == 80)
+    #expect(Config.Audio.defaults.positional.quantizationGlideMs == 30)
   }
 
   @Test("BrightnessStyle round-trips through Codable, including the raw value")

@@ -228,4 +228,17 @@ extension RenderState {
     if abs(diff) <= maxDelta { return target }
     return current + (diff > 0 ? maxDelta : -maxDelta)
   }
+  /// Seeds both glide accumulators at the CURRENT post-polarity quantized
+  /// targets — called by `mixedSample` on the silent→active edge so glide
+  /// only ever smooths changes and never synthesizes a center→actual sweep
+  /// on activation (round-2 maintainer finding). No-op semantics when
+  /// quantization is off (the accumulators are unused on that path).
+  func seedQuantizationGlide() {
+    let step = Float(config.positional.errorQuantizationStep)
+    guard step > 0 else { return }
+    let signMultiplier: Float = config.positional.beaconPolarity ? -1 : 1
+    quantizationGlideX = ((signMultiplier * currentTarget.errorX) / step).rounded() * step
+    quantizationGlideY = ((signMultiplier * currentTarget.errorY) / step).rounded() * step
+  }
+
 }

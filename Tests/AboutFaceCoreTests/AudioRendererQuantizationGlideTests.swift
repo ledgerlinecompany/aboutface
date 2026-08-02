@@ -53,10 +53,13 @@ struct AudioRendererQuantizationGlideTests {
 
   /// With quantization active, the very first render block should differ
   /// between the glided and hard-quantized renderers — the glided one is
-  /// still slewing up from silence at `t == 0` while the hard one jumps
-  /// straight to the quantized target. If this ever starts passing
-  /// trivially (outputs equal from sample 0), the glide isn't engaging.
-  @Test("Glide measurably differs from the hard-quantized case early in the render")
+  /// still slewing up on a mid-render TARGET CHANGE, while the hard one
+  /// jumps straight to the new level. Activation itself must NOT glide —
+  /// round-2 fix: glide state seeds at the current target on the
+  /// silent→active edge, so glide only smooths changes, never synthesizes
+  /// a center→actual sweep ("it seems to start in the middle and then
+  /// glide out to where you are even if you don't move").
+  @Test("Glide engages on target CHANGES (and only on changes, not activation)")
   func glideDiffersFromHardQuantizedEarlyOn() async throws {
     var hard = Config.Audio.defaults
     hard.positional.errorQuantizationStep = 0.03
@@ -66,29 +69,46 @@ struct AudioRendererQuantizationGlideTests {
     glided.positional.errorQuantizationStep = 0.03
     glided.positional.quantizationGlideMs = 80
 
-    let target = SonificationTarget(errorX: 0, errorY: 0.3, distanceError: 0, inDeadZone: false)
+    let initial = SonificationTarget(errorX: 0, errorY: 0.09, distanceError: 0, inDeadZone: false)
+    let changed = SonificationTarget(errorX: 0, errorY: 0.3, distanceError: 0, inDeadZone: false)
 
-    let hardRenderer = try await AudioRendererTestSupport.makeRenderer(config: hard) { renderer in
-      await renderer.update(target)
+    // swift-format puts the brace on its own line after the long return
+    // type; swiftlint's opening_brace disagrees. Format wins (established
+    // conflict — see ConfigStore.swift).
+    // swiftlint:disable opening_brace
+    func renderTwoPhases(_ config: Config.Audio) async throws -> (phase1: [Float], phase2: [Float])
+    {
+      // swiftlint:enable opening_brace
+      let renderer = try await AudioRendererTestSupport.makeRenderer(config: config) { renderer in
+        await renderer.update(initial)
+      }
+      let (phase1, _) = try await AudioRendererTestSupport.renderFrames(renderer, total: 2048)
+      await renderer.update(changed)
+      let (phase2, _) = try await AudioRendererTestSupport.renderFrames(renderer, total: 2048)
+      return (phase1, phase2)
     }
-    let (hardLeft, _) = try await AudioRendererTestSupport.renderFrames(hardRenderer, total: 256)
 
-    // swift-format requires the closure's `renderer in` onto its own line
-    // once the opening-brace line is too long; swiftlint's
-    // closure_parameter_position rule wants it on the same line as `{`.
-    // Format wins (see ConfigStore.swift for the same kind of workaround).
-    // swiftlint:disable closure_parameter_position
-    let glidedRenderer = try await AudioRendererTestSupport.makeRenderer(config: glided) {
-      renderer in
-      // swiftlint:enable closure_parameter_position
-      await renderer.update(target)
-    }
-    let (glidedLeft, _) = try await AudioRendererTestSupport.renderFrames(
-      glidedRenderer, total: 256)
+    let hardOut = try await renderTwoPhases(hard)
+    let glidedOut = try await renderTwoPhases(glided)
 
+    // Activation window: identical (no phantom center-out sweep) — compare
+    // spectral content, not raw samples (phase offsets differ across
+    // renderer instances is not a concern here since both start silent,
+    // but coarse RMS/frequency measures are robust either way).
+    let hardFreq1 = AudioRendererTestSupport.dominantFrequency(
+      hardOut.phase1, sampleRate: 48000, minHz: 150, maxHz: 3000)
+    let glidedFreq1 = AudioRendererTestSupport.dominantFrequency(
+      glidedOut.phase1, sampleRate: 48000, minHz: 150, maxHz: 3000)
+    #expect(
+      abs(hardFreq1 - glidedFreq1) < 2, "activation must not glide: \(hardFreq1) vs \(glidedFreq1)")
+
+    // Post-change window: the glided transition spends time between levels,
+    // so its early post-change samples differ measurably from hard's.
     var maxDiff: Float = 0
-    for (x, y) in zip(hardLeft, glidedLeft) { maxDiff = max(maxDiff, abs(x - y)) }
-    #expect(maxDiff > 0.01, "glide should audibly differ from an instant jump this early")
+    for i in 0..<min(1024, hardOut.phase2.count, glidedOut.phase2.count) {
+      maxDiff = max(maxDiff, abs(hardOut.phase2[i] - glidedOut.phase2[i]))
+    }
+    #expect(maxDiff > 0.01, "glide must engage on the change, maxDiff=\(maxDiff)")
   }
 
   // MARK: - Settled output matches the hard-quantized case exactly
