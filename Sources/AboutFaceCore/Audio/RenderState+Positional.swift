@@ -42,7 +42,7 @@ extension RenderState {
     signMultiplier: Float, minHz: Double, maxHz: Double, sampleRate: Double
   ) -> (Float, Float) {
     let cfg = config.positional
-    let pitchRaw = signMultiplier * currentTarget.errorY
+    let pitchRaw = quantizedError(signMultiplier * currentTarget.errorY)
     let freq = AudioSynthesis.exponentialFrequency(
       normalized: pitchRaw, range: Float(cfg.errorRange), minHz: minHz, maxHz: maxHz)
     positionalPhase = advancedPhase(positionalPhase, freqHz: freq, sampleRate: sampleRate)
@@ -53,7 +53,7 @@ extension RenderState {
       sampleRate: sampleRate)
     let sample = carrier * amplitude
 
-    let panRaw = signMultiplier * currentTarget.errorX
+    let panRaw = quantizedError(signMultiplier * currentTarget.errorX)
     var panNormalized: Float =
       cfg.errorRange > 0 ? max(-1, min(1, panRaw / Float(cfg.errorRange))) : 0
     if config.outputMode == .speakers {
@@ -77,7 +77,8 @@ extension RenderState {
       sequentialOnHorizontal = true
     }
 
-    let axisRaw = sequentialOnHorizontal ? horizontalRaw : signMultiplier * currentTarget.errorY
+    let axisRaw = quantizedError(
+      sequentialOnHorizontal ? horizontalRaw : signMultiplier * currentTarget.errorY)
     let freq = AudioSynthesis.exponentialFrequency(
       normalized: axisRaw, range: Float(cfg.errorRange), minHz: minHz, maxHz: maxHz)
     positionalPhase = advancedPhase(positionalPhase, freqHz: freq, sampleRate: sampleRate)
@@ -385,5 +386,19 @@ extension RenderState {
     if next >= 2 * .pi { next -= 2 * .pi }
     if next < 0 { next += 2 * .pi }
     return next
+  }
+  /// Sonification quantization (2026-08-02 maintainer experiment): snaps a
+  /// post-polarity error value to multiples of
+  /// `AudioPositional.errorQuantizationStep`. Step `0` (default) is exact
+  /// pass-through — the continuous beacon. Applied AFTER the beacon
+  /// polarity sign so quantization can never change which side the tone is
+  /// on, only how finely it tracks within that side. Rounding to nearest
+  /// keeps zero a step center: near-center error snaps to exactly 0,
+  /// which composes with the purity-anchor behavior rather than fighting
+  /// it.
+  private func quantizedError(_ value: Float) -> Float {
+    let step = Float(config.positional.errorQuantizationStep)
+    guard step > 0 else { return value }
+    return (value / step).rounded() * step
   }
 }
