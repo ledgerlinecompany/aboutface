@@ -92,7 +92,8 @@ extension Config {
         errorRange: 0.3,
         pulseRateMinHz: 1,
         pulseRateMaxHz: 8,
-        pulseDepth: 0.6,
+        closePulseDepth: 0.95,
+        farPulseDepth: 0.4,
         directionalPulseEnabled: true,
         closePulseSharpness: 3.5
       ),
@@ -105,8 +106,8 @@ extension Config {
       gazeTrim: AudioGazeTrim(
         enabled: false,
         gain: 0.05,
-        minHz: 1600,
-        maxHz: 2400,
+        minHz: 1400,
+        maxHz: 3200,
         deviationRangeDegrees: 20,
         deadBandDegrees: 3,
         smoothingWindow: 8,

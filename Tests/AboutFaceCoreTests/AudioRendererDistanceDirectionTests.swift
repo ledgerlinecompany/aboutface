@@ -49,6 +49,41 @@ struct AudioRendererDistanceDirectionTests {
 
   // MARK: - Purity anchor: zero error is genuinely steady
 
+  @Test("Round-4b depth contrast: close chops cut far deeper than the far swell")
+  func closeCutsDeeperThanFarSwell() async throws {
+    // Maintainer directive: "the volume changes in the choppy section need
+    // to be more aggressive with the speed being the indicator." At equal
+    // |distanceError| (full scale), the close side's minimum block RMS must
+    // sit far below the far side's — depth of cut is the direction cue.
+    // Defaults: closePulseDepth 0.95 → gate dips to ~0.05 at the chop
+    // bottom; farPulseDepth 0.4 → swell floor ~0.6. Comparing minimum
+    // block-RMS as a fraction of each side's own maximum makes the check
+    // robust to overall gain.
+    let closeRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+      await renderer.update(
+        SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.35, inDeadZone: false))
+    }
+    let (closeLeft, _) = try await AudioRendererTestSupport.renderFrames(
+      closeRenderer, total: 48000)
+    let farRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+      await renderer.update(
+        SonificationTarget(errorX: 0, errorY: 0, distanceError: -0.35, inDeadZone: false))
+    }
+    let (farLeft, _) = try await AudioRendererTestSupport.renderFrames(farRenderer, total: 48000)
+
+    func envelopeFloorRatio(_ samples: [Float]) -> Double {
+      let windows = AudioRendererTestSupport.windowedRMS(samples, windows: 96)
+      guard let maxRMS = windows.max(), maxRMS > 0 else { return 1 }
+      return (windows.min() ?? maxRMS) / maxRMS
+    }
+
+    let closeFloor = envelopeFloorRatio(closeLeft)
+    let farFloor = envelopeFloorRatio(farLeft)
+    #expect(closeFloor < 0.25, "close chops should cut near silence, floor=\(closeFloor)")
+    #expect(farFloor > 0.45, "far swell should stay shallow, floor=\(farFloor)")
+    #expect(closeFloor < farFloor)
+  }
+
   @Test("Zero distance error produces no amplitude modulation (flat envelope)")
   func zeroErrorIsSteady() async throws {
     let renderer = try await AudioRendererTestSupport.makeRenderer { renderer in

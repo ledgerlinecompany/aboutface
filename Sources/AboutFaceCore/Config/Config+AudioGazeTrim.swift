@@ -43,9 +43,14 @@ extension Config {
     /// ~1244 Hz once `.speakers` `pitchSpeakerRangeExpansion` widens it) —
     /// see the type-level doc comment: trim must be different IN KIND from
     /// the beacon so a user never mistakes which loop they're in. Default
-    /// `1600`, a "soft high sine" register clearly above the beacon's.
+    /// `1400` — clearly above the beacon's register even in speakers mode
+    /// (max ≈ 1244 Hz), preserving the different-in-kind guarantee.
     public var minHz: Double
-    /// Exponential frequency mapping upper bound (Hz). Default `2400`.
+    /// Exponential frequency mapping upper bound (Hz). Default `3200` —
+    /// widened from the original 2400 after the first audition ("can't
+    /// tell if anything other than pan is changing"): 1600–2400 was barely
+    /// half an octave, too narrow to hear as pitch movement at trim gain;
+    /// 1400–3200 is ≈1.2 octaves.
     public var maxHz: Double
     /// Yaw/pitch deviation magnitude (degrees) that maps to full
     /// pan-left/pan-right or the min/max trim frequency — the trim

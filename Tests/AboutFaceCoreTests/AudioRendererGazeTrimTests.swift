@@ -31,13 +31,13 @@ struct AudioRendererGazeTrimTests {
 
   // MARK: - Register disjoint from the beacon
 
-  @Test("trim register (default 1600-2400Hz) is disjoint from the beacon register (220-880Hz)")
+  @Test("trim register (default 1400-3200Hz) is disjoint from the beacon register (220-880Hz)")
   func trimRegister_disjointFromBeaconRegister() async throws {
     // Measured in the BELOW-target direction (errorY = +0.3): the vertical
     // timbre ingredient there is the sub-octave (energy BELOW the
     // fundamental), so the dominant-frequency measurement can't be outranked
     // upward. In the above-target direction the default saw brightness adds
-    // harmonics near ~1600 Hz whose magnitude races the fundamental within
+    // harmonics near ~1400 Hz whose magnitude races the fundamental within
     // the analysis window — the beacon's FUNDAMENTAL register is what this
     // test pins, and it is direction-independent.
     let beaconRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
@@ -59,7 +59,7 @@ struct AudioRendererGazeTrimTests {
       trimLeft, sampleRate: Self.sampleRate, minHz: 150, maxHz: 3000)
 
     #expect(beaconDominant <= 880)
-    #expect(trimDominant >= 1600)
+    #expect(trimDominant >= 1400)
   }
 
   // MARK: - Quieter than the beacon at equal (default) config

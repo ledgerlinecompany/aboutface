@@ -107,19 +107,21 @@ struct ConfigAudioTests {
   @Test("Distance never maps to a base amplitude change, only gate rate/depth/character")
   func distanceConfigHasNoVolumeField() {
     // Structural assertion, not a runtime one: `Config.AudioDistance` has
-    // exactly `errorRange`/`pulseRateMinHz`/`pulseRateMaxHz`/`pulseDepth`/
+    // exactly `errorRange`/`pulseRateMinHz`/`pulseRateMaxHz`/the per-side depths/
     // `directionalPulseEnabled`/`closePulseSharpness` — there is no
     // "distance gain" field for a future implementer to wire up by mistake
     // in violation of §6.2 ("never volume"). Encoded here as a round-trip
     // over an independently-constructed value so a future additive field is
     // at least visible in a diff.
     let distance = Config.AudioDistance(
-      errorRange: 0.4, pulseRateMinHz: 2, pulseRateMaxHz: 10, pulseDepth: 0.5,
+      errorRange: 0.4, pulseRateMinHz: 2, pulseRateMaxHz: 10, closePulseDepth: 0.9,
+      farPulseDepth: 0.5,
       directionalPulseEnabled: false, closePulseSharpness: 4)
     #expect(distance.errorRange == 0.4)
     #expect(distance.pulseRateMinHz == 2)
     #expect(distance.pulseRateMaxHz == 10)
-    #expect(distance.pulseDepth == 0.5)
+    #expect(distance.closePulseDepth == 0.9)
+    #expect(distance.farPulseDepth == 0.5)
     #expect(distance.directionalPulseEnabled == false)
     #expect(distance.closePulseSharpness == 4)
   }
