@@ -73,9 +73,9 @@ struct ConfigAudioTests {
     #expect(Config.Audio.defaults.positional.maxDarknessMix == 0.5)
   }
 
-  @Test("Brightness style defaults to .overdrive, per 2026-08-02 round-2 maintainer lean")
+  @Test("Brightness style defaults to .saw, chosen by ear in the 2026-08-02 A/B")
   func brightnessStyleDefaultsToOverdrive() {
-    #expect(Config.Audio.defaults.positional.brightnessStyle == .overdrive)
+    #expect(Config.Audio.defaults.positional.brightnessStyle == .saw)
   }
 
   @Test("Overdrive max drive default is capped, not left unbounded")

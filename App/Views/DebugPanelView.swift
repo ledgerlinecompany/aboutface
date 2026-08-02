@@ -180,72 +180,6 @@ struct DebugPanelView: View {
 
   // MARK: - Audio (§6, §13 Phase 3)
 
-  /// Task brief: "scheme picker (A/B-flag/C from Config.Audio),
-  /// headphones-vs-speakers toggle, beacon polarity toggle, master gain,
-  /// heartbeat interval; whatever Config.Audio exposes that a tuner
-  /// plausibly reaches for first (don't slider every earcon envelope — pick
-  /// the top ~8; the rest remain JSON-editable)." The eight controls below
-  /// are that set; every remaining `Config.Audio`/earcon-envelope number
-  /// (per-condition frequencies, durations, gains in `Config.AudioEarcons`,
-  /// the engine sample rate/buffer size, distance-pulse mapping, …) stays
-  /// reachable only via Export/Import above, exactly as the task brief
-  /// asks.
-  private var audioSection: some View {
-    ConfigSection(title: "Audio") {
-      Picker("Positional scheme", selection: model.rawValueBinding(\.audio.scheme.positional)) {
-        Text("A — Pan/pitch").tag(Config.AudioPositionalScheme.panPitch.rawValue)
-        Text("C — Sequential axis").tag(Config.AudioPositionalScheme.sequential.rawValue)
-      }
-      .accessibilityHint(
-        "Scheme A pans and pitches simultaneously. Scheme C solves horizontal, then vertical — "
-          + "unambiguous on a single speaker.")
-
-      Toggle(
-        "Zero-beat refinement (Scheme B)",
-        isOn: model.boolBinding(\.audio.scheme.schemeBEnabled)
-      )
-      .accessibilityHint(
-        "Layers a beat tone that nulls to silence on final approach, inside the "
-          + "refinement zone below. Composes with Scheme A only.")
-
-      ConfigSliderRow(
-        title: "Scheme B refinement zone",
-        value: model.binding(\.audio.scheme.schemeBRefinementFraction),
-        range: 0.05...0.5, step: 0.01, format: Format.percent)
-
-      Picker("Output device", selection: model.rawValueBinding(\.audio.outputMode)) {
-        Text("Headphones").tag(Config.AudioOutputMode.headphones.rawValue)
-        Text("Speakers").tag(Config.AudioOutputMode.speakers.rawValue)
-      }
-      .accessibilityHint(
-        "Speakers mode narrows stereo pan and widens the pitch range to compensate for poor "
-          + "built-in-speaker imaging.")
-
-      Toggle("Beacon polarity", isOn: model.boolBinding(\.audio.positional.beaconPolarity))
-        .accessibilityHint(
-          "On (default): the tone is positioned at the target, so moving toward it centers the "
-            + "sound. Off: the tone marks where you currently are, for A/B tuning only.")
-
-      ConfigSliderRow(
-        title: "Master gain, positional tone",
-        value: model.binding(\.audio.positional.toneGain),
-        range: 0...1, step: 0.01, format: Format.percent)
-
-      ConfigSliderRow(
-        title: "Positional error range",
-        value: model.binding(\.audio.positional.errorRange),
-        range: 0.05...1, step: 0.01, format: Format.percent)
-
-      ConfigSliderRow(
-        title: "Heartbeat interval",
-        value: model.intBinding(\.feedback.heartbeatIntervalMs),
-        range: 1000...30000, step: 500, format: Format.milliseconds)
-    } onReset: {
-      model.resetToDefault(\.audio)
-      model.resetToDefault(\.feedback.heartbeatIntervalMs)
-    }
-  }
-
   // MARK: - Export / import (§9: "This matters more than it sounds")
 
   private var exportImportSection: some View {
@@ -291,7 +225,7 @@ struct DebugPanelView: View {
 /// A titled group of `ConfigSliderRow`s plus a per-section "Reset to
 /// defaults" button (spec §9: "Reset-to-default per section and
 /// globally").
-private struct ConfigSection<Content: View>: View {
+struct ConfigSection<Content: View>: View {
   let title: String
   @ViewBuilder let content: Content
   let onReset: () -> Void
@@ -317,7 +251,7 @@ private struct ConfigSection<Content: View>: View {
 /// job is only to make sure `.accessibilityValue` reads as a real unit
 /// ("42 percent") rather than a bare number ("0.42", task brief's explicit
 /// example of what NOT to do).
-private struct ConfigSliderRow: View {
+struct ConfigSliderRow: View {
   let title: String
   @Binding var value: Double
   let range: ClosedRange<Double>
@@ -344,7 +278,7 @@ private struct ConfigSliderRow: View {
 
 /// Unit-aware value formatting for `ConfigSliderRow` (task brief: "42
 /// percent," not "0.42").
-private enum Format {
+enum Format {
   static func percent(_ value: Double) -> String {
     "\(Int((value * 100).rounded())) percent"
   }

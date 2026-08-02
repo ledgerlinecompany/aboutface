@@ -9,10 +9,10 @@ import Testing
 /// makes the brightness ingredient's synthesis CHARACTER selectable
 /// (`.harmonics` — round 1's baseline, covered by
 /// `AudioRendererVerticalTimbreTests`, which pins to it explicitly now that
-/// the default has moved on; `.overdrive` — the new shipped default;
+/// the default has moved on; `.saw` — the shipped default (by-ear A/B);
 /// `.saw`) so the maintainer can audition all three and pick by ear (§0/
 /// §16). This file covers the two new styles' acceptance cases, plus
-/// default-config (now `.overdrive`) purity/axis-isolation coverage.
+/// default-config (now `.saw`) purity/axis-isolation coverage.
 ///
 /// Same Goertzel-ratio measurement technique as
 /// `AudioRendererVerticalTimbreTests` (see its doc comment for why a RATIO,
@@ -104,17 +104,20 @@ struct AudioRendererBrightnessStyleTests {
     #expect(nearNyquist < result.fundamental * 0.1)
   }
 
-  // MARK: - New default (.overdrive): purity/axis-isolation still hold
+  // MARK: - Shipped default (.saw): purity/axis-isolation still hold
 
-  @Test("Default config (.overdrive): horizontal-only error leaks no vertical ingredient")
+  @Test("Default config (.saw): horizontal-only error leaks no vertical ingredient")
   func defaultConfig_axisIsolationHolds() async throws {
-    #expect(Config.Audio.defaults.positional.brightnessStyle == .overdrive)
-    let horizontalOnly = try await measure(errorX: 0.3, errorY: 0, style: .overdrive)
-    let bright = try await measure(errorX: 0, errorY: -0.3, style: .overdrive)
+    #expect(Config.Audio.defaults.positional.brightnessStyle == .saw)
+    // Saw's signature includes the 2nd harmonic (unlike overdrive's
+    // odd-only spectrum), so isolation is asserted at 2f AND 3f.
+    let horizontalOnly = try await measure(errorX: 0.3, errorY: 0, style: .saw)
+    let bright = try await measure(errorX: 0, errorY: -0.3, style: .saw)
+    #expect(horizontalOnly.ratio(at: 2) < bright.ratio(at: 2) * 0.1)
     #expect(horizontalOnly.ratio(at: 3) < bright.ratio(at: 3) * 0.1)
   }
 
-  @Test("Default config (.overdrive): centered stays pure with beaconPolarity flipped")
+  @Test("Default config (.saw): centered stays pure with beaconPolarity flipped")
   func defaultConfig_purityHoldsWithFlippedPolarity() async throws {
     var flipped = Config.Audio.defaults
     flipped.positional.beaconPolarity = false

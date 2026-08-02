@@ -89,7 +89,7 @@ struct ConfigStoreTests {
   }
 
   @Test(
-    "Lenient decode: absent brightnessStyle key fills in the default (.overdrive) via deep merge"
+    "Lenient decode: absent brightnessStyle key fills in the default (.saw) via deep merge"
   )
   func lenientDecodeMissingBrightnessStyleDefaults() throws {
     let url = temporaryURL()
@@ -119,7 +119,7 @@ struct ConfigStoreTests {
     let result = ConfigStore.load(from: url)
     #expect(result.issue == nil)
     #expect(result.config.audio.positional.maxBrightnessMix == 0.7)  // tuned value preserved
-    #expect(result.config.audio.positional.brightnessStyle == .overdrive)  // missing key defaulted
+    #expect(result.config.audio.positional.brightnessStyle == .saw)  // missing key defaulted
   }
 
   /// **Documented decision (2026-08-02, brightness-style round):** an
