@@ -8,7 +8,7 @@ extension RenderState {
   /// §6.2: "Distance maps to pulse rate... never volume." See
   /// `Config.AudioDistance`'s doc comment for why a rate-coded amplitude
   /// gate is not the "volume" the spec rules out. Returns a multiplier in
-  /// `[1 - pulseDepth · t, 1]`, `t` being `|distanceError|` normalized to
+  /// `[1 - depth · t, 1]` (per-side depth, see round-4b note below), `t` being `|distanceError|` normalized to
   /// `errorRange` (`0` at target, `1` at the outer edge).
   ///
   /// **Directional pulse character (§6.2 round-4).** Rate alone only ever
@@ -46,13 +46,22 @@ extension RenderState {
     pulsePhase = advancedPhase(pulsePhase, freqHz: rateHz, sampleRate: sampleRate)
     let oscillation = 0.5 - 0.5 * cos(pulsePhase)  // 0...1, starts at 0 (gate starts fully open)
 
+    // Round-4b: per-side depth. The close side's chops cut nearly to
+    // silence (closePulseDepth, default 0.95); the far side's swell stays
+    // shallow (farPulseDepth, default 0.4) — depth contrast is the
+    // direction cue, rate remains the urgency cue. Continuity at the sign
+    // flip is unaffected: both sides' depth still scales by t, which is 0
+    // exactly where the branch (and depth constant) switches.
     let shaped: Double
+    let depth: Double
     if cfg.directionalPulseEnabled, distanceError > 0 {
       let sharpness = max(0.1, cfg.closePulseSharpness)
       shaped = pow(oscillation, sharpness)
+      depth = cfg.closePulseDepth
     } else {
       shaped = oscillation
+      depth = cfg.directionalPulseEnabled ? cfg.farPulseDepth : cfg.closePulseDepth
     }
-    return Float(1 - cfg.pulseDepth * t * shaped)
+    return Float(1 - depth * t * shaped)
   }
 }
