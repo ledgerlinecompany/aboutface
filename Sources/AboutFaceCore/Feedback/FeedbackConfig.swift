@@ -30,14 +30,35 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
 
   /// §7.3 face-lost escalation ladder, milliseconds elapsed since the
   /// (N-frame-confirmed) face-lost condition began. Phase 3 ships rung 0
-  /// (nothing) and rung 1 (`faceLostEarconDelayMs`, the distinct earcon).
-  /// `faceLostSpeechDelayMs` (rung 2, ~5s, spoken "No face.") and
-  /// `faceLostStopDelayMs` (rung 3, ~30s, STOP + `userLikelyAway`) are
-  /// reserved fields — present now so Phase 4 doesn't need another Config
+  /// (nothing) and rung 1, the distinct earcon — MODE-SELECTED as of the
+  /// app field finding below, rather than the single `faceLostEarconDelayMs`
+  /// this used to be. `faceLostSpeechDelayMs` (rung 2, ~5s, spoken "No
+  /// face.") and `faceLostStopDelayMs` (rung 3, ~30s, STOP +
+  /// `userLikelyAway`) stay single-valued, unaffected by this split —
+  /// reserved fields, present now so Phase 4 doesn't need another Config
   /// shape change, but `FeedbackRouter` does not read them yet. See
   /// `FeedbackRouter.tickAnnouncements(output:at:)`'s face-lost case for
   /// exactly where Phase 4 slots in.
-  public var faceLostEarconDelayMs: Int
+  ///
+  /// **Split into per-mode fields (app field finding, 2026-08-02): "it
+  /// takes ~1.5s for the no-face warning to sound after the tone stops."**
+  /// 1500ms rung-1 delay is right for Monitor — §7.3's own rationale
+  /// ("covers turning to a second monitor, reaching for coffee, one bad
+  /// frame") is explicitly about a background call the user isn't staring
+  /// at. Setup is the opposite posture: an active convergence loop where
+  /// the positional tone now cuts INSTANTLY on face loss
+  /// (`FeedbackRouter.updateContinuousSonification`'s resolve-then-send:
+  /// `signalState != .ok` ⇒ send `nil`), so 1500ms of unexplained silence
+  /// before the earcon flirts with §6.1's silence ambiguity in the one mode
+  /// where the user is watching closely. `FeedbackRouter.mode` picks
+  /// between these two fields via `FeedbackRouter.faceLostEarconDelayMs`
+  /// (that computed property's own doc comment has the router-side half of
+  /// this story) — this follows the SAME per-mode-fields shape as
+  /// `ModeLimits` below, rather than inventing a parallel pattern, per
+  /// §0/§11's "no numeric threshold is hardcoded" spirit (one canonical
+  /// place per tunable, keyed by the thing that actually varies it).
+  public var faceLostEarconDelaySetupMs: Int
+  public var faceLostEarconDelayMonitorMs: Int
   public var faceLostSpeechDelayMs: Int
   public var faceLostStopDelayMs: Int
 
@@ -77,7 +98,8 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   public init(
     nFrameSetup: Int,
     nFrameMonitor: Int,
-    faceLostEarconDelayMs: Int,
+    faceLostEarconDelaySetupMs: Int,
+    faceLostEarconDelayMonitorMs: Int,
     faceLostSpeechDelayMs: Int,
     faceLostStopDelayMs: Int,
     heartbeatIntervalMs: Int,
@@ -86,7 +108,8 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   ) {
     self.nFrameSetup = nFrameSetup
     self.nFrameMonitor = nFrameMonitor
-    self.faceLostEarconDelayMs = faceLostEarconDelayMs
+    self.faceLostEarconDelaySetupMs = faceLostEarconDelaySetupMs
+    self.faceLostEarconDelayMonitorMs = faceLostEarconDelayMonitorMs
     self.faceLostSpeechDelayMs = faceLostSpeechDelayMs
     self.faceLostStopDelayMs = faceLostStopDelayMs
     self.heartbeatIntervalMs = heartbeatIntervalMs
@@ -96,11 +119,14 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
 
   /// §7.2/§7.3/§6.1/§5.2 starting-point defaults — tune against the test
   /// corpus (§14) once real clips exist, same as every other `Config`
-  /// default in this codebase.
+  /// default in this codebase. `faceLostEarconDelaySetupMs` (500) and
+  /// `faceLostEarconDelayMonitorMs` (1500) per the app field finding on
+  /// `faceLostEarconDelaySetupMs`'s own doc comment above.
   public static let defaults = FeedbackConfig(
     nFrameSetup: 5,
     nFrameMonitor: 3,
-    faceLostEarconDelayMs: 1500,
+    faceLostEarconDelaySetupMs: 500,
+    faceLostEarconDelayMonitorMs: 1500,
     faceLostSpeechDelayMs: 5000,
     faceLostStopDelayMs: 30000,
     heartbeatIntervalMs: 7000,

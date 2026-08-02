@@ -6,6 +6,8 @@
 /// bottom and takes the first case whose gate is true, so the ladder's
 /// order lives in exactly one place (this declaration) rather than a
 /// separately-maintained array that could drift out of sync with it.
+/// **`.gazeOff` is the one exception to "walks it" — see its own doc
+/// comment below.**
 ///
 /// Each case's gate lives in `Gates.evaluate(_:output:)`. Two of §7.4's
 /// seven numbered rungs are intentionally NOT wired to real signals this
@@ -57,7 +59,30 @@ public enum FeedbackCondition: Sendable, Equatable, Hashable, CaseIterable {
   case lowConfidence
   /// §7.4 rung 5.
   case framingError
-  /// §7.4 rung 6.
+  /// **Redesigned (app field finding, 2026-08-02): "the actual success
+  /// earcon isn't firing, I'm just getting dead air and the 'look at the
+  /// camera' announcement."** `Gates.gazeOff` used to outrank `.goodZone`
+  /// classification (`inDeadZone && !gazeOnCamera`), so a well-placed
+  /// arrival with gaze off-camera classified as `.problem(.gazeOff)`
+  /// instead of `.goodZone` — `enteredGoodZone` never fired, and combined
+  /// with camera-ray geometry (absolute gaze reads off perpetually without
+  /// a captured neutral baseline — see `Config.TargetFraming
+  /// .neutralYawDegrees`'s own field note), the success chime could be
+  /// unreachable outright.
+  ///
+  /// Placement (position + distance in the dead zone) IS the good zone now
+  /// — `FeedbackRouter.discreteState(for:)` below EXCLUDES this case from
+  /// the ladder walk it does for every other `FeedbackCondition` (frames in
+  /// the dead zone are `.goodZone` regardless of gaze), so this is no
+  /// longer one of §7.4's exclusive rungs in practice despite the case
+  /// (and the doc numbering) staying put for continuity with the spec's own
+  /// numbered list. Its `Gates.evaluate` predicate is instead consulted
+  /// directly by `FeedbackRouter.tickGoodZoneGaze(output:at:)` — an
+  /// advisory that runs FROM WITHIN a confirmed `.goodZone` episode, on the
+  /// same N-frame+800ms dwell discipline as any other condition (§7.1/
+  /// §7.2), speaking `Lexicon.Instruction.lookAtCamera` at most once per
+  /// episode. See that method's doc comment in
+  /// `FeedbackRouter+Announcements.swift` for the full in-zone shape.
   case gazeOff
 }
 
@@ -92,34 +117,37 @@ extension FeedbackRouter {
       case .framingError:
         return output.framing.map { !$0.inDeadZone } ?? false
       case .gazeOff:
-        return output.framing.map { $0.inDeadZone && !$0.gazeOnCamera } ?? false
+        // Changed semantics (see the case's own doc comment): no longer
+        // `inDeadZone && !gazeOnCamera` gating a ladder rung — just the raw
+        // "is gaze off camera right now" reading, since the only caller
+        // left, `FeedbackRouter.tickGoodZoneGaze(output:at:)`, is only ever
+        // invoked from within an already-confirmed `.goodZone` episode
+        // (placement, therefore `inDeadZone`, already established by
+        // definition at that call site).
+        return output.framing.map { !$0.gazeOnCamera } ?? false
       }
     }
   }
 
   /// Resolves one frame's `EngineOutput` to a `DiscreteState` by walking
-  /// §7.4's ladder (`FeedbackCondition.allCases`, top to bottom) and taking
-  /// the first matching gate. If none match, the frame is either
-  /// `.goodZone` (signal `.ok`, framing present, in dead zone, gaze on
-  /// camera) or `.indeterminate` — the latter is a defensive fallback for a
-  /// `.ok` signal state with no `framing` (a contract violation by
+  /// §7.4's ladder (`FeedbackCondition.allCases`, top to bottom, EXCLUDING
+  /// `.gazeOff` — see that case's doc comment for why) and taking the first
+  /// matching gate. If none match, the frame is either `.goodZone` (signal
+  /// `.ok`, framing present, in dead zone — gaze is no longer part of this
+  /// classification, on purpose, per the 2026-08-02 field finding) or
+  /// `.indeterminate` — the latter is a defensive fallback for a `.ok`
+  /// signal state with no `framing` (a contract violation by
   /// `AnalysisEngine`'s own documented invariant, "framing is nil exactly
   /// when analysis.primary is nil," which should be unreachable when
   /// `signalState == .ok`) and never drives an announcement (see
   /// `tickAnnouncements(output:at:)`'s `.indeterminate` case).
   static func discreteState(for output: EngineOutput) -> DiscreteState {
     if let condition = FeedbackCondition.allCases.first(where: {
-      Gates.evaluate($0, output: output)
+      $0 != .gazeOff && Gates.evaluate($0, output: output)
     }) {
       return .problem(condition)
     }
-    // swift-format requires the brace on its own line after a multiline
-    // condition; swiftlint's opening_brace rule disagrees. Format wins.
-    // swiftlint:disable opening_brace
-    if output.analysis.signalState == .ok, let framing = output.framing, framing.inDeadZone,
-      framing.gazeOnCamera
-    {
-      // swiftlint:enable opening_brace
+    if output.analysis.signalState == .ok, let framing = output.framing, framing.inDeadZone {
       return .goodZone
     }
     return .indeterminate

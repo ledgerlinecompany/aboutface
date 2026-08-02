@@ -38,6 +38,14 @@ extension FeedbackRouter {
       // `FeedbackRouter.smoothedYawDeviationDegrees`'s doc comment.
       smoothedYawDeviationDegrees = nil
       smoothedPitchDeviationDegrees = nil
+      // §7.4 rung 6 gaze-off-in-good-zone advisory: reset its N-frame +
+      // dwell tracking and "already announced" latch so the NEXT good-zone
+      // episode always gets a fresh gaze-off announcement opportunity,
+      // never inheriting a stale streak/latch from this one — see
+      // `FeedbackRouter.gazeOffPendingStreak`'s doc comment.
+      gazeOffPendingStreak = 0
+      gazeOffConfirmedStart = nil
+      gazeAnnouncedForEpisode = false
     }
 
     if case .problem(.faceLost) = previous, next != previous {
@@ -69,7 +77,7 @@ extension FeedbackRouter {
       await tickFaceLostLadder(from: confirmedStateStart, at: time)
 
     case .goodZone:
-      await tickGoodZone(from: confirmedStateStart, at: time)
+      await tickGoodZone(output: output, from: confirmedStateStart, at: time)
 
     case .problem(let condition):
       await tickGenericDwell(
@@ -80,10 +88,12 @@ extension FeedbackRouter {
     }
   }
 
-  /// §7.3 face-lost escalation ladder. Phase 3 ships rung 0 (0–1.5s:
-  /// nothing) and rung 1 (1.5s: distinct, non-positional earcon).
-  /// `feedbackConfig.faceLostSpeechDelayMs` (rung 2, ~5s, spoken "No
-  /// face.") and `faceLostStopDelayMs` (rung 3, ~30s, STOP +
+  /// §7.3 face-lost escalation ladder. Phase 3 ships rung 0 (nothing) and
+  /// rung 1 (a distinct, non-positional earcon), at a MODE-SELECTED delay —
+  /// `FeedbackRouter.faceLostEarconDelayMs` (500ms Setup / 1500ms Monitor
+  /// defaults — see that property's doc comment for the app field finding
+  /// that split it). `feedbackConfig.faceLostSpeechDelayMs` (rung 2, ~5s,
+  /// spoken "No face.") and `faceLostStopDelayMs` (rung 3, ~30s, STOP +
   /// `userLikelyAway`) are reserved config fields already — Phase 4 adds
   /// `faceLostRung == 1 && elapsed >= faceLostSpeechDelayMs` and
   /// `faceLostRung == 2 && elapsed >= faceLostStopDelayMs` cases right
@@ -101,18 +111,30 @@ extension FeedbackRouter {
   ) async {
     guard faceLostRung < 1 else { return }
     let elapsedMs = Self.milliseconds(from: start, to: time)
-    guard elapsedMs >= feedbackConfig.faceLostEarconDelayMs else { return }
+    guard elapsedMs >= faceLostEarconDelayMs else { return }
     faceLostRung = 1
     await fire(event: .faceLost, phrase: nil, key: nil, at: time, bypassRateLimit: true)
   }
 
   // swiftlint:disable opening_brace
   /// §6.1 good-zone handling: the 800ms-dwell-gated `.enteredGoodZone`
-  /// confirmation (once), then the 7s-cadence liveness heartbeat for as
-  /// long as `confirmedState` stays `.goodZone`. Setup mode additionally
+  /// confirmation (once), then — on every later frame this episode — the
+  /// gaze-off advisory (`tickGoodZoneGaze`) and the 7s-cadence liveness
+  /// heartbeat, both independent of each other. Setup mode additionally
   /// speaks `Lexicon.Instruction.centered` on entry (§5.1: Setup speaks
   /// instructions); Monitor stays earcon-only (§5.2).
-  private func tickGoodZone(from start: ContinuousClock.Instant, at time: ContinuousClock.Instant)
+  ///
+  /// The early `return` right after firing `enteredGoodZone` is what
+  /// guarantees `tickGoodZoneGaze` — and therefore any `lookAtCamera`
+  /// announcement — can never run on the SAME frame the entry earcon fires:
+  /// `tickGoodZoneGaze` only ever runs once `dwellFiredForCurrentEpisode`
+  /// is already `true`, i.e. strictly on a later frame, and even then it
+  /// needs its own N-frame+800ms dwell on top of that. See
+  /// `FeedbackCondition.gazeOff`'s doc comment for why gaze moved here from
+  /// the exclusive classification ladder.
+  private func tickGoodZone(
+    output: EngineOutput, from start: ContinuousClock.Instant, at time: ContinuousClock.Instant
+  )
     async
   {
     // swiftlint:enable opening_brace
@@ -127,6 +149,8 @@ extension FeedbackRouter {
       return
     }
 
+    await tickGoodZoneGaze(output: output, at: time)
+
     guard let nextHeartbeatAt, time >= nextHeartbeatAt else { return }
     self.nextHeartbeatAt = nextHeartbeatAt.advanced(
       by: .milliseconds(feedbackConfig.heartbeatIntervalMs))
@@ -135,6 +159,65 @@ extension FeedbackRouter {
     // distinguishable from "the app crashed," not a discretionary
     // announcement §5.2's budget is meant to ration.
     await fire(event: .livenessHeartbeat, phrase: nil, key: nil, at: time, bypassRateLimit: true)
+  }
+
+  /// §7.4 rung 6, redesigned (app field finding, 2026-08-02 — see
+  /// `FeedbackCondition.gazeOff`'s doc comment for the full story): gaze is
+  /// no longer part of `.goodZone` classification, so it cannot block the
+  /// `enteredGoodZone` earcon. Instead, once already inside a confirmed
+  /// good-zone episode (only ever called from `tickGoodZone` after its own
+  /// entry dwell has fired — see that method's doc comment for the ordering
+  /// guarantee), this tracks `!framing.gazeOnCamera` — `Gates.evaluate(
+  /// .gazeOff, output:)`'s new, simpler meaning — through the SAME
+  /// two-stage discipline every other condition gets:
+  ///
+  /// 1. **§7.2 N-frame filter** (`nFrameThreshold`, mode-selected): a raw
+  ///    gaze-off reading must hold for this many CONSECUTIVE frames before
+  ///    it is "confirmed," so a blink or a momentary glance at a second
+  ///    screen triggers nothing.
+  /// 2. **§7.1 800ms dwell** (`Config.dwellMs`), timed from the
+  ///    CONFIRMATION frame (matching `FeedbackRouterNFrameTests`' documented
+  ///    idiom for the top-level pipeline, reused here rather than
+  ///    reinvented).
+  ///
+  /// Once both are satisfied, speaks `Lexicon.Instruction.lookAtCamera` at
+  /// most once per good-zone episode (`gazeAnnouncedForEpisode`, reset on
+  /// zone exit by `onConfirmedStateChanged`) — subject to the mode's rate
+  /// limits like any other dwell-fired announcement (`fire` is called
+  /// WITHOUT `bypassRateLimit`, unlike the heartbeat/face-lost-ladder/
+  /// face-reacquired call sites). No `AudioEvent`: gaze has no earcon
+  /// (`Lexicon.swift`'s "tones never mean look" contract), so — mirroring
+  /// every other condition's `mode == .setup ? instruction : nil` shape in
+  /// `tickGenericDwell` below — Monitor mode's phrase resolves to `nil` and
+  /// this call is a no-op there (§5.2: earcons only by default).
+  ///
+  /// A single frame reporting gaze back on camera resets BOTH stages
+  /// immediately, no N-frame grace period on the way back: this is an
+  /// advisory nested inside an already-good state, not a competing
+  /// top-level condition, so there is no risk of a recovered glance being
+  /// mistaken for a still-open problem the way a blip could confuse the
+  /// exclusive ladder above.
+  private func tickGoodZoneGaze(output: EngineOutput, at time: ContinuousClock.Instant) async {
+    guard !gazeAnnouncedForEpisode else { return }
+
+    guard Gates.evaluate(.gazeOff, output: output) else {
+      gazeOffPendingStreak = 0
+      gazeOffConfirmedStart = nil
+      return
+    }
+
+    gazeOffPendingStreak += 1
+    guard let confirmedStart = gazeOffConfirmedStart else {
+      guard gazeOffPendingStreak >= nFrameThreshold else { return }
+      gazeOffConfirmedStart = time
+      return
+    }
+
+    let elapsedMs = Self.milliseconds(from: confirmedStart, to: time)
+    guard elapsedMs >= config.dwellMs else { return }
+    gazeAnnouncedForEpisode = true
+    let phrase: Lexicon.Phrase? = mode == .setup ? Lexicon.Instruction.lookAtCamera : nil
+    await fire(event: nil, phrase: phrase, key: .condition(.gazeOff), at: time)
   }
 
   /// §7.1 generic dwell: any `FeedbackCondition` other than `.faceLost`
@@ -159,15 +242,20 @@ extension FeedbackRouter {
   }
 
   /// The (`AudioEvent`, `Lexicon.Instruction`) pair for a dwell-fired
-  /// condition. `.framingError`/`.gazeOff` have no `AudioEvent` — their
-  /// feedback in Monitor mode is entirely the continuous tone
+  /// condition. `.framingError` has no `AudioEvent` — its feedback in
+  /// Monitor mode is entirely the continuous tone
   /// (`updateContinuousSonification`, not gated by dwell at all), so in
-  /// Monitor mode a dwell-fired `.framingError`/`.gazeOff` produces no
-  /// renderer call whatsoever (`fire` no-ops when both `event` and
-  /// `phrase` are `nil`; see below). `.partiallyOutOfFrame`/
-  /// `.lightingCritical` are unreachable this phase (their gates always
-  /// return `false`) but are still listed for switch exhaustiveness and to
-  /// mark where Phase 4 fills in a real payload.
+  /// Monitor mode a dwell-fired `.framingError` produces no renderer call
+  /// whatsoever (`fire` no-ops when both `event` and `phrase` are `nil`;
+  /// see below). `.partiallyOutOfFrame`/`.lightingCritical` are
+  /// unreachable this phase (their gates always return `false`) but are
+  /// still listed for switch exhaustiveness and to mark where Phase 4
+  /// fills in a real payload. `.gazeOff` is ALSO unreachable here now
+  /// (`FeedbackRouter.discreteState(for:)` excludes it from the ladder
+  /// walk that produces a `.problem(condition)` in the first place — see
+  /// `FeedbackCondition.gazeOff`'s doc comment); its real payload lives in
+  /// `tickGoodZoneGaze(output:at:)` above, the good-zone-internal advisory
+  /// that replaced it. Kept here only for switch exhaustiveness.
   private static func announcementPayload(
     for condition: FeedbackCondition,
     output: EngineOutput
@@ -185,7 +273,8 @@ extension FeedbackRouter {
     case .framingError:
       return (nil, framingInstruction(for: output))
     case .gazeOff:
-      return (nil, Lexicon.Instruction.lookAtCamera)
+      // Unreachable — see the method doc comment above.
+      return (nil, nil)
     }
   }
 

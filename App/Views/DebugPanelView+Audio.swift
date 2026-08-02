@@ -94,6 +94,17 @@ extension DebugPanelView {
         title: "Heartbeat interval",
         value: model.intBinding(\.feedback.heartbeatIntervalMs),
         range: 1000...30000, step: 500, format: Format.milliseconds)
+
+      ConfigSliderRow(
+        title: "Face-lost earcon delay, Setup",
+        value: model.intBinding(\.feedback.faceLostEarconDelaySetupMs),
+        range: 100...3000, step: 50, format: Format.milliseconds
+      )
+      .accessibilityHint(
+        "How long Setup mode waits, after the positional tone cuts out on face loss, before "
+          + "playing the distinct face-lost earcon (§7.3). Monitor mode's delay stays fixed at "
+          + "1500 milliseconds — reachable via Export/Import, not a live slider — since its "
+          + "rationale (don't nag over a glance at a second monitor) doesn't change by ear.")
     } onReset: {
       model.resetToDefault(\.audio)
     }
