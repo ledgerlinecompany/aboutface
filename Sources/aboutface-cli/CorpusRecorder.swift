@@ -31,6 +31,12 @@ enum CorpusRecorder {
   struct Summary: Sendable {
     let frameCount: Int
     let elapsedSeconds: Double
+    /// Fraction (0...1) of the ~1 Hz face-sanity-check ticks (see below)
+    /// where at least one face was detected. `nil` when the take was too
+    /// short for even one tick (so there is nothing to report a fraction
+    /// of), which `RecordCorpus`'s completion line must handle gracefully
+    /// rather than dividing by zero.
+    let faceDetectedFraction: Double?
   }
 
   /// Bundles the three `AVAssetWriter` pieces `writeFrames` needs — again
@@ -53,18 +59,22 @@ enum CorpusRecorder {
     }
   }
 
-  /// One ~1 Hz status update: elapsed whole seconds, frames written so far,
-  /// and a best-effort face count from a ~1/sec `VisionBackend` sanity
-  /// check. `faces` is `nil` when that check itself failed — inference
-  /// failure must not abort the recording, since the point of the check is
-  /// a cheap "are you in frame" hint, not a hard dependency (task brief:
-  /// "degrade gracefully if inference fails").
+  /// Internally still samples `VisionBackend` at ~1 Hz as a face-in-frame
+  /// sanity check (a hiccup here must not abort the recording — "degrade
+  /// gracefully if inference fails" — so a failed sample just counts as
+  /// "no face" for that tick, see `faceSanityCheck`) — but `onFaceStateChange`
+  /// only fires when the detected/not-detected state actually FLIPS between
+  /// consecutive ticks, not once per tick. A per-second print of this used
+  /// to be the caller's status line; that read as constant chatter to a
+  /// screen reader (which announces every new line of terminal output), so
+  /// callers must only surface state changes, not every tick — see
+  /// `RecordCorpus`'s doc comment.
   static func record(
     source: CameraCaptureSource,
     dimensions: Dimensions,
     to url: URL,
     seconds: Int,
-    onStatus: (_ elapsedSeconds: Int, _ frameCount: Int, _ faces: Int?) -> Void
+    onFaceStateChange: (_ faceDetected: Bool) async -> Void
   ) async throws -> Summary {
     // Best-effort cleanup of a leftover file from a previous crashed/killed
     // run at this exact path — `AVAssetWriter` will not overwrite an
@@ -81,7 +91,7 @@ enum CorpusRecorder {
 
     let pipeline = WriterPipeline(writer: writer, input: input, adaptor: adaptor)
     let loopResult = await Self.writeFrames(
-      source: source, pipeline: pipeline, seconds: seconds, onStatus: onStatus)
+      source: source, pipeline: pipeline, seconds: seconds, onFaceStateChange: onFaceStateChange)
 
     input.markAsFinished()
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -99,13 +109,24 @@ enum CorpusRecorder {
       throw RecorderError.writerFailed("camera produced no frames")
     }
 
-    return Summary(frameCount: loopResult.frameCount, elapsedSeconds: loopResult.elapsedSeconds)
+    let faceDetectedFraction =
+      loopResult.faceSampleCount > 0
+      ? Double(loopResult.faceDetectedSampleCount) / Double(loopResult.faceSampleCount)
+      : nil
+
+    return Summary(
+      frameCount: loopResult.frameCount, elapsedSeconds: loopResult.elapsedSeconds,
+      faceDetectedFraction: faceDetectedFraction)
   }
 
   private struct LoopResult {
     let frameCount: Int
     let elapsedSeconds: Double
     let sessionStarted: Bool
+    /// Number of ~1 Hz face-sanity-check ticks taken over the whole take.
+    let faceSampleCount: Int
+    /// Of `faceSampleCount` ticks, how many found at least one face.
+    let faceDetectedSampleCount: Int
   }
 
   /// The per-frame consume/encode/report loop, split out of `record(_:)`
@@ -115,7 +136,7 @@ enum CorpusRecorder {
     source: CameraCaptureSource,
     pipeline: WriterPipeline,
     seconds: Int,
-    onStatus: (_ elapsedSeconds: Int, _ frameCount: Int, _ faces: Int?) -> Void
+    onFaceStateChange: (_ faceDetected: Bool) async -> Void
   ) async -> LoopResult {
     let writer = pipeline.writer
     let input = pipeline.input
@@ -127,6 +148,13 @@ enum CorpusRecorder {
     var frameCount = 0
     var lastReportedSecond = -1
     var sessionStarted = false
+    var faceSampleCount = 0
+    var faceDetectedSampleCount = 0
+    // `nil` until the first tick establishes a baseline — that baseline is
+    // never itself announced (only a subsequent FLIP from it is), so an
+    // already-in-frame subject at recording start doesn't get a redundant
+    // "face detected" right after the "Recording..." line.
+    var previousFaceDetected: Bool?
 
     for await frame in source.frames {
       if start == nil {
@@ -154,14 +182,22 @@ enum CorpusRecorder {
       if wholeSeconds != lastReportedSecond {
         lastReportedSecond = wholeSeconds
         let faces = await Self.faceSanityCheck(backend: backend, frame: frame)
-        onStatus(wholeSeconds, frameCount, faces)
+        let faceDetected = (faces ?? 0) > 0
+        faceSampleCount += 1
+        if faceDetected { faceDetectedSampleCount += 1 }
+        if let previousFaceDetected, previousFaceDetected != faceDetected {
+          await onFaceStateChange(faceDetected)
+        }
+        previousFaceDetected = faceDetected
       }
     }
 
     return LoopResult(
       frameCount: frameCount,
       elapsedSeconds: Self.seconds(clock.now - (start ?? clock.now)),
-      sessionStarted: sessionStarted
+      sessionStarted: sessionStarted,
+      faceSampleCount: faceSampleCount,
+      faceDetectedSampleCount: faceDetectedSampleCount
     )
   }
 

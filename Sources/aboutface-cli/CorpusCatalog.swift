@@ -27,6 +27,19 @@ enum CorpusCatalog {
     /// `RecordCorpus`'s instruction-block builder. Empty for clips where
     /// the description alone is fully actionable without further setup.
     let setup: [String]
+    /// This clip's own recording duration, in seconds — the default for
+    /// every clip is 15s; a few clips whose choreography needs more room
+    /// (see each clip's own comment below) specify a longer value.
+    /// `record-corpus --seconds` overrides this for every clip, but only
+    /// when passed explicitly (see `RecordCorpus.seconds`'s doc comment).
+    let durationSeconds: Int
+
+    init(index: Int, slug: String, setup: [String], durationSeconds: Int = 15) {
+      self.index = index
+      self.slug = slug
+      self.setup = setup
+      self.durationSeconds = durationSeconds
+    }
 
     var filename: String {
       "\(String(format: "%02d", index))-\(slug).mov"
@@ -116,26 +129,30 @@ enum CorpusCatalog {
         "Face the camera normally, then tilt your head toward one shoulder — ear toward "
           + "shoulder — and hold that tilt for the whole clip."
       ]),
+    // 20s, not the 15s default: a second person needs time to enter frame, cross fully
+    // behind the subject, and exit before the clip ends, without the walk-through feeling
+    // rushed — 15s left too little margin around the crossing itself.
     ClipScript(
       index: 14, slug: "walk-through",
       setup: [
         "Have another person walk behind you once, or if alone: start centered, have the "
           + "clip run while you lean out and back to simulate — note in the report that a "
           + "real second person is preferred."
-      ]),
+      ], durationSeconds: 20),
     ClipScript(
       index: 15, slug: "second-person-seated",
       setup: [
         "Set up: have a second person sit beside or just behind you, both of you visible "
           + "to the camera for the whole clip. If you are alone, this clip cannot be "
-          + "staged solo — press s to skip it and record it later with a second person."
+          + "staged solo — skip it and come back once a second person is available: "
+          + "press S."
       ]),
     ClipScript(
       index: 16, slug: "glasses-glare",
       setup: [
         "Set up: wear glasses, and angle a lamp or bright window so its reflection lands "
           + "directly on a lens toward the camera. If you don't have glasses on hand, "
-          + "press s to skip and revisit this clip later."
+          + "skip it and revisit this clip later: press S."
       ]),
     ClipScript(
       index: 17, slug: "lens-covered",
@@ -155,12 +172,15 @@ enum CorpusCatalog {
         "Sit normally, and partway through the clip raise a hand and briefly touch or "
           + "cover part of your face for a second or two, then lower it again."
       ]),
+    // 25s, not the 15s default: walking fully out of frame, staying out long enough for
+    // face-lost escalation to actually register, and walking back and re-centering does
+    // not fit in 15s — the original duration was too short to complete the choreography.
     ClipScript(
       index: 20, slug: "leave-return",
       setup: [
-        "Start centered; after about 4 seconds walk fully out of frame; stay out about 5 "
+        "Start centered; after about 5 seconds walk fully out of frame; stay out about 8 "
           + "seconds; return and re-center."
-      ]),
+      ], durationSeconds: 25),
   ]
   // swiftlint:enable trailing_comma
 }
