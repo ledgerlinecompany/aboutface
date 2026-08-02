@@ -322,15 +322,11 @@ extension Config {
     /// curve must be too, or one side would still jump more sharply than
     /// the other.
     public var timbreOnsetExponent: Double
-    /// Sonification quantization (maintainer experiment, 2026-08-02):
-    /// `0` (default) = continuous beacon. `> 0` = the post-polarity
-    /// error driving pan/pitch is snapped to multiples of this step, so
-    /// the tone moves in discrete audible levels rather than smoothly.
-    /// Hypothesis under test: stepped feedback trades fine precision for
-    /// unambiguous "level changed" moments — trials measure whether
-    /// centering gets easier (settle time) and how settle steadiness
-    /// (`meanAbsErrorDuringSettle`) suffers. Display quantization
-    /// (`Config.Display`) is unrelated — this steps the SOUND.
+    /// Sonification quantization (2026-08-02 experiment): `0` (default) =
+    /// continuous beacon; `> 0` snaps the post-polarity error driving
+    /// pan/pitch to multiples of this step — discrete audible levels.
+    /// Trials measure centering ease vs settle steadiness. Unrelated to
+    /// `Config.Display` (which steps the DISPLAY, not the sound).
     public var errorQuantizationStep: Double
     /// `.overdrive` style only: the `tanh` drive coefficient at full
     /// brightness intensity (`brightnessMix == maxBrightnessMix`); drive

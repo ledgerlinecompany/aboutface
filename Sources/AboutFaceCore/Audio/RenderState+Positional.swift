@@ -387,15 +387,10 @@ extension RenderState {
     if next < 0 { next += 2 * .pi }
     return next
   }
-  /// Sonification quantization (2026-08-02 maintainer experiment): snaps a
-  /// post-polarity error value to multiples of
-  /// `AudioPositional.errorQuantizationStep`. Step `0` (default) is exact
-  /// pass-through — the continuous beacon. Applied AFTER the beacon
-  /// polarity sign so quantization can never change which side the tone is
-  /// on, only how finely it tracks within that side. Rounding to nearest
-  /// keeps zero a step center: near-center error snaps to exactly 0,
-  /// which composes with the purity-anchor behavior rather than fighting
-  /// it.
+  /// Snaps a post-polarity error to `errorQuantizationStep` multiples
+  /// (`0` = continuous pass-through). Applied AFTER the polarity sign, so
+  /// quantization can never flip the beacon's side; round-to-nearest makes
+  /// zero a step center, so near-center snaps to true purity.
   private func quantizedError(_ value: Float) -> Float {
     let step = Float(config.positional.errorQuantizationStep)
     guard step > 0 else { return value }
