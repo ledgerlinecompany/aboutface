@@ -76,6 +76,8 @@ public struct AccessibilitySnapshot: Sendable, Equatable {
 ///   and the slider `Binding` helpers (§9/§11).
 /// - `PipelineModel+Target.swift`: "capture current position as target"
 ///   (§4).
+/// - `PipelineModel+Mode.swift`: `setMode(_:)`, Setup↔Monitor (§5, §13
+///   Phase 4).
 ///
 /// ## Two throttle rates, one upstream stream (spec §9)
 ///
@@ -115,8 +117,24 @@ public final class PipelineModel {
 
   // MARK: - Session lifecycle
 
-  public private(set) var isRunning = false
-  public private(set) var captureErrorMessage: String?
+  // `internal(set)`, not `private(set)`, on both of these: `setMode(_:)`'s
+  // capture restart in `PipelineModel+Mode.swift` writes them too (Swift's
+  // `private` scopes to the declaring FILE, not the whole type — see
+  // `config`'s doc comment above for the same note).
+  public internal(set) var isRunning = false
+  public internal(set) var captureErrorMessage: String?
+
+  // MARK: - Mode (§5, §13 Phase 4) — see `PipelineModel+Mode.swift`
+
+  /// Setup vs. Monitor (§5.1/§5.2). Defaults to `.setup` — the app opens a
+  /// real window and converges the user's framing before anything goes to
+  /// the background. `internal(set)`, not `private(set)`, for the same
+  /// cross-file-visibility reason as `config` above: written from
+  /// `setMode(_:)` in `PipelineModel+Mode.swift`. This PR only wires the
+  /// mechanism; nothing calls `setMode` yet except tests and the debug
+  /// panel's mode control — the camera-gating/hotkey/menu-bar triggers that
+  /// actually flip it in normal use are a separate PR (task brief).
+  public internal(set) var mode: FeedbackMode = .setup
 
   // MARK: - Feedback chain (§5.1, §13 Phase 3) — see `PipelineModel+Audio.swift`
 
@@ -150,8 +168,10 @@ public final class PipelineModel {
 
   // MARK: - Static-per-session context fed to `SignalFormatter`
 
-  public private(set) var captureFormat: SignalFormatter.CaptureFormatDescriptor?
-  public private(set) var mirrorState: MirrorState?
+  // Same `internal(set)` note as `isRunning`/`captureErrorMessage` above:
+  // `setMode(_:)`'s capture restart updates both when the format changes.
+  public internal(set) var captureFormat: SignalFormatter.CaptureFormatDescriptor?
+  public internal(set) var mirrorState: MirrorState?
   public let backendDisplayName = VisionBackend.displayName
 
   // MARK: - Private engine/session state
@@ -160,6 +180,22 @@ public final class PipelineModel {
   var engine: AnalysisEngine?
   var consumeTask: Task<Void, Never>?
   var saveTask: Task<Void, Never>?
+
+  /// Bumped every time `consumeTask` is intentionally superseded or torn
+  /// down (`beginConsuming(engine:source:targetAnalysisHz:)`, `stop()`) —
+  /// see `beginConsuming`'s doc comment for why a superseded consume task's
+  /// own completion handler must not be allowed to stomp `isRunning`/
+  /// `captureErrorMessage` after a NEWER one has already taken over (the
+  /// §13 Phase 4 task brief's trap (c): "two rapid calls... must not leave
+  /// the model believing it is in a mode it is not").
+  var captureGeneration = 0
+
+  /// Serializes `setMode(_:)` calls into a FIFO queue — see that method's
+  /// doc comment in `PipelineModel+Mode.swift` (trap (c): overlapping/
+  /// re-entrant mode transitions). Starts as an already-finished no-op task
+  /// so the first real `setMode` call has an immediately-satisfiable
+  /// `previous` to await.
+  var modeTransitionChain: Task<Void, Never> = Task {}
 
   /// The most recent `EngineOutput`, updated on every frame regardless of
   /// throttling — "capture current position as target" (§4) wants the
@@ -172,15 +208,6 @@ public final class PipelineModel {
   private var lastAccessibilityUpdate: ContinuousClock.Instant = .now
   private let visualInterval = Duration.milliseconds(100)  // ~10 Hz
   private let accessibilityInterval = Duration.milliseconds(500)  // ~2 Hz
-
-  // Setup mode's capture format (§5.1): "Capture format 1280×720 @ 30fps."
-  // Kept as constants here, matching `CameraCaptureSource`'s own defaults —
-  // its doc comment explains why these are init parameters rather than
-  // `Config` fields for now (Setup vs. Monitor mode want different values
-  // and mode-specific wiring hasn't landed).
-  private static let setupWidth = 1280
-  private static let setupHeight = 720
-  private static let setupFrameRate = 30.0
 
   public init() {
     permissionState = CameraPermissionState(AVCaptureDevice.authorizationStatus(for: .video))
@@ -238,11 +265,19 @@ public final class PipelineModel {
     }
 
     captureErrorMessage = nil
+    // §5's per-mode capture format (Config-keyed, §0/§11 — see
+    // `Config.Camera.ModeCaptureSettings`'s doc comment for why this
+    // replaced the former `setupWidth`/`setupHeight`/`setupFrameRate`
+    // statics). `start()` always begins in whatever `mode` currently is
+    // (`.setup` by default); `setMode(_:)` in `PipelineModel+Mode.swift`
+    // is what changes `mode` and restarts capture on an already-running
+    // pipeline.
+    let modeSettings = config.camera.settings(for: mode)
     let source = CameraCaptureSource(
       deviceUniqueID: deviceID,
-      width: Self.setupWidth,
-      height: Self.setupHeight,
-      frameRate: Self.setupFrameRate
+      width: modeSettings.width,
+      height: modeSettings.height,
+      frameRate: modeSettings.frameRate
     )
     let newEngine = AnalysisEngine(backend: VisionBackend(), config: config)
 
@@ -256,7 +291,7 @@ public final class PipelineModel {
     captureSource = source
     engine = newEngine
     captureFormat = SignalFormatter.CaptureFormatDescriptor(
-      width: Self.setupWidth, height: Self.setupHeight, frameRate: Self.setupFrameRate)
+      width: modeSettings.width, height: modeSettings.height, frameRate: modeSettings.frameRate)
     mirrorState = source.mirrorState
     isRunning = true
     signalStateLine = "Starting…"
@@ -267,25 +302,11 @@ public final class PipelineModel {
     // `PipelineModel+Audio.swift`.
     await startFeedbackChain()
 
-    consumeTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      do {
-        for try await item in newEngine.stream(from: source) {
-          self.ingest(item)
-          // Same per-frame stream that drives the UI (task brief: "fed
-          // from the same engine stream... every frame, real timestamps
-          // via ContinuousClock") — not the throttled `visualOutput`/
-          // `accessibilitySnapshot` views `ingest(_:)` above derives from.
-          await self.feedFeedbackChain(item)
-        }
-      } catch {
-        self.captureErrorMessage = "Capture stopped: \(error)"
-      }
-      self.isRunning = false
-    }
+    beginConsuming(engine: newEngine, source: source, targetAnalysisHz: modeSettings.analysisHz)
   }
 
   public func stop() async {
+    captureGeneration += 1
     consumeTask?.cancel()
     consumeTask = nil
     await captureSource?.stop()
@@ -301,7 +322,18 @@ public final class PipelineModel {
     accessibilitySnapshot = .empty
   }
 
-  private func ingest(_ output: EngineOutput) {
+  // `beginConsuming(engine:source:targetAnalysisHz:)` — the shared
+  // consume-loop spawn used by both `start()` above and `setMode(_:)`'s
+  // capture restart — lives in `PipelineModel+Mode.swift`, not here, purely
+  // to stay under SwiftLint's file-length limit; see that file for why
+  // `captureGeneration` (declared above) is threaded through it.
+
+  // Not `private`: Swift's `private` scopes to the declaring *file*, not
+  // the whole type (see `config`'s doc comment above for the same note) —
+  // `beginConsuming(engine:source:targetAnalysisHz:)` in
+  // `PipelineModel+Mode.swift` calls this from its consume loop, same as
+  // `start()` above does.
+  func ingest(_ output: EngineOutput) {
     latestOutput = output
 
     let now = ContinuousClock.now

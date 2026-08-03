@@ -209,26 +209,49 @@ public actor AnalysisEngine {
     return EngineOutput(analysis: analysis, framing: framing)
   }
 
-  /// Consumes `source.frames` and yields one `EngineOutput` per frame, in
-  /// order — the streaming convenience over `process(_:)`. Finishes
-  /// normally when `source.frames` finishes; finishes by throwing if
-  /// `process(_:)` throws for some frame. Does not call `source.start()` —
-  /// callers start the source themselves, same as consuming `source.frames`
-  /// directly. Cancelling / abandoning the returned stream cancels the
-  /// internal frame-forwarding task via `onTermination`.
+  /// Consumes `source.frames` and yields one `EngineOutput` per ANALYZED
+  /// frame, in order — the streaming convenience over `process(_:)`.
+  /// Finishes normally when `source.frames` finishes; finishes by throwing
+  /// if `process(_:)` throws for some frame. Does not call `source.start()`
+  /// — callers start the source themselves, same as consuming
+  /// `source.frames` directly. Cancelling / abandoning the returned stream
+  /// cancels the internal frame-forwarding task via `onTermination`.
+  ///
+  /// - Parameter targetAnalysisHz: §5.2's decimation seam. `nil` (the
+  ///   default) analyzes every frame — Setup's behavior (§5.1) and every
+  ///   existing caller's (corpus replay, the CLI harness) unchanged
+  ///   behavior. When set, an `AnalysisRateDecimator` decides, from each
+  ///   frame's own timestamp, whether to call `process(_:)` at all — a
+  ///   skipped frame never reaches `backend.analyze(_:)`. This is
+  ///   deliberately checked HERE, before `process(_:)`, rather than in
+  ///   `PipelineModel`'s consume loop or by analyzing every frame and
+  ///   discarding some `EngineOutput`s: §5.2's whole rationale is CPU and
+  ///   thermal load over a two-hour Monitor session, and a
+  ///   analyze-then-discard version would spend exactly the Vision inference
+  ///   cost it exists to avoid while producing an output stream that looks
+  ///   identical to the correct one in any test that only inspects what came
+  ///   out the other end. See `AnalysisRateDecimator`'s own doc comment for
+  ///   why it is time-based rather than "every Nth frame."
   ///
   /// `nonisolated`: building the `AsyncThrowingStream` itself touches no
   /// actor state directly (only the `Task` it spawns does, by `await`ing
   /// `process(_:)`, which hops onto the actor per call), so callers can get
   /// the stream back without an `await` at the call site — matching how
-  /// `CaptureSource.frames` itself is a plain, non-`async` property.
-  public nonisolated func stream(from source: some CaptureSource) -> AsyncThrowingStream<
-    EngineOutput, Error
-  > {
+  /// `CaptureSource.frames` itself is a plain, non-`async` property. The
+  /// `AnalysisRateDecimator` instance below lives entirely inside that one
+  /// spawned `Task`'s local state — never shared, never touched from more
+  /// than one place — so its `Sendable` conformance is not load-bearing for
+  /// safety here, only for the type to be usable as a value at all.
+  public nonisolated func stream(
+    from source: some CaptureSource,
+    targetAnalysisHz: Double? = nil
+  ) -> AsyncThrowingStream<EngineOutput, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
+        var decimator = AnalysisRateDecimator(targetHz: targetAnalysisHz)
         for await frame in source.frames {
           if Task.isCancelled { return }
+          guard decimator.shouldAnalyze(at: frame.timestamp) else { continue }
           do {
             let output = try await process(frame)
             continuation.yield(output)

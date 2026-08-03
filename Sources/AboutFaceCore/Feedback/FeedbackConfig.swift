@@ -25,6 +25,15 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   /// `FeedbackRouter` selects between them via its `FeedbackMode`, not a raw
   /// Hz value, since mode IS the rate hint in this codebase (§5.1/§5.2 each
   /// name their own fixed analysis rate).
+  ///
+  /// `nFrameMonitor`'s default of 3 has been sitting here since before
+  /// Monitor mode's capture/analysis pipeline existed, on the assumption
+  /// that Monitor would eventually actually analyze at 5Hz. The mode
+  /// plumbing PR (§13 Phase 4, `Config.Camera.monitor.analysisHz`,
+  /// `AnalysisRateDecimator`) is what makes that assumption true for the
+  /// first time — before it, Monitor mode simply didn't exist as a distinct
+  /// capture/analysis configuration, so this value was untested against its
+  /// own stated rationale.
   public var nFrameSetup: Int
   public var nFrameMonitor: Int
 

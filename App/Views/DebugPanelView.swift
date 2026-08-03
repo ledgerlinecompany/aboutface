@@ -19,6 +19,7 @@ struct DebugPanelView: View {
   var body: some View {
     Form {
       exportImportSection
+      modeSection
 
       ConfigSection(title: "Target framing") {
         ConfigSliderRow(
@@ -183,6 +184,32 @@ struct DebugPanelView: View {
       Button("OK") { importErrorMessage = nil }
     } message: {
       Text(importErrorMessage ?? "")
+    }
+  }
+
+  // MARK: - Mode (§5, §13 Phase 4)
+
+  /// Reachable-by-hand mode switch (task brief: "before the triggers
+  /// land" — camera-gating, the `monitorToggle` hotkey, and `MenuBarExtra`
+  /// are a separate PR). Plain `Section`, not `ConfigSection`: `mode` is
+  /// `PipelineModel` session state, not a `Config` field, so there is no
+  /// per-section "reset to defaults" that means anything beyond just
+  /// switching back to Setup, which the picker itself already does.
+  private var modeSection: some View {
+    Section("Mode") {
+      Picker("Mode", selection: model.modeBinding) {
+        Text("Setup").tag(FeedbackMode.setup.rawValue)
+        Text("Monitor").tag(FeedbackMode.monitor.rawValue)
+      }
+      .accessibilityHint(
+        "Setup: 1280 by 720 capture at 30 frames per second, 30 Hz analysis, spoken "
+          + "instructions, no announcement rate limit — for actively framing yourself before a "
+          + "call. Monitor: 640 by 480 capture at 15 frames per second, 5 Hz analysis, earcons "
+          + "only unless your face is lost, announcements limited to once per 20 seconds and "
+          + "the same condition not repeated within 3 minutes — for running quietly in the "
+          + "background during a call. Switching modes while running restarts the camera at "
+          + "the new format."
+      )
     }
   }
 
