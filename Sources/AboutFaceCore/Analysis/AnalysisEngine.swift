@@ -182,7 +182,8 @@ public actor AnalysisEngine {
         primary: nil,
         lighting: lighting
       )
-      return EngineOutput(analysis: analysis, framing: nil)
+      return EngineOutput(
+        analysis: analysis, framing: nil, capturedPixelDimensions: frame.pixelDimensions)
     }
 
     // Lighting wants Vision raw space, pre-egocentric (its own doc
@@ -206,29 +207,53 @@ public actor AnalysisEngine {
     )
     let framing = framingState(for: geometry, signalState: signalState, timestamp: frame.timestamp)
 
-    return EngineOutput(analysis: analysis, framing: framing)
+    return EngineOutput(
+      analysis: analysis, framing: framing, capturedPixelDimensions: frame.pixelDimensions)
   }
 
-  /// Consumes `source.frames` and yields one `EngineOutput` per frame, in
-  /// order — the streaming convenience over `process(_:)`. Finishes
-  /// normally when `source.frames` finishes; finishes by throwing if
-  /// `process(_:)` throws for some frame. Does not call `source.start()` —
-  /// callers start the source themselves, same as consuming `source.frames`
-  /// directly. Cancelling / abandoning the returned stream cancels the
-  /// internal frame-forwarding task via `onTermination`.
+  /// Consumes `source.frames` and yields one `EngineOutput` per ANALYZED
+  /// frame, in order — the streaming convenience over `process(_:)`.
+  /// Finishes normally when `source.frames` finishes; finishes by throwing
+  /// if `process(_:)` throws for some frame. Does not call `source.start()`
+  /// — callers start the source themselves, same as consuming
+  /// `source.frames` directly. Cancelling / abandoning the returned stream
+  /// cancels the internal frame-forwarding task via `onTermination`.
+  ///
+  /// - Parameter targetAnalysisHz: §5.2's decimation seam. `nil` (the
+  ///   default) analyzes every frame — Setup's behavior (§5.1) and every
+  ///   existing caller's (corpus replay, the CLI harness) unchanged
+  ///   behavior. When set, an `AnalysisRateDecimator` decides, from each
+  ///   frame's own timestamp, whether to call `process(_:)` at all — a
+  ///   skipped frame never reaches `backend.analyze(_:)`. This is
+  ///   deliberately checked HERE, before `process(_:)`, rather than in
+  ///   `PipelineModel`'s consume loop or by analyzing every frame and
+  ///   discarding some `EngineOutput`s: §5.2's whole rationale is CPU and
+  ///   thermal load over a two-hour Monitor session, and a
+  ///   analyze-then-discard version would spend exactly the Vision inference
+  ///   cost it exists to avoid while producing an output stream that looks
+  ///   identical to the correct one in any test that only inspects what came
+  ///   out the other end. See `AnalysisRateDecimator`'s own doc comment for
+  ///   why it is time-based rather than "every Nth frame."
   ///
   /// `nonisolated`: building the `AsyncThrowingStream` itself touches no
   /// actor state directly (only the `Task` it spawns does, by `await`ing
   /// `process(_:)`, which hops onto the actor per call), so callers can get
   /// the stream back without an `await` at the call site — matching how
-  /// `CaptureSource.frames` itself is a plain, non-`async` property.
-  public nonisolated func stream(from source: some CaptureSource) -> AsyncThrowingStream<
-    EngineOutput, Error
-  > {
+  /// `CaptureSource.frames` itself is a plain, non-`async` property. The
+  /// `AnalysisRateDecimator` instance below lives entirely inside that one
+  /// spawned `Task`'s local state — never shared, never touched from more
+  /// than one place — so its `Sendable` conformance is not load-bearing for
+  /// safety here, only for the type to be usable as a value at all.
+  public nonisolated func stream(
+    from source: some CaptureSource,
+    targetAnalysisHz: Double? = nil
+  ) -> AsyncThrowingStream<EngineOutput, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
+        var decimator = AnalysisRateDecimator(targetHz: targetAnalysisHz)
         for await frame in source.frames {
           if Task.isCancelled { return }
+          guard decimator.shouldAnalyze(at: frame.timestamp) else { continue }
           do {
             let output = try await process(frame)
             continuation.yield(output)
@@ -300,8 +325,22 @@ public struct EngineOutput: Sendable {
   public let analysis: FrameAnalysis
   public let framing: FramingState?
 
-  public init(analysis: FrameAnalysis, framing: FramingState?) {
+  /// The ACTUAL pixel dimensions of the `CapturedFrame` that produced this
+  /// output (`CapturedFrame.pixelDimensions`'s own doc comment has the full
+  /// "requested is not delivered" rationale, PR #53). `process(_:)` sets
+  /// this on every `EngineOutput` it returns, live or nil. Additive field,
+  /// default `nil` — every pre-existing `EngineOutput(analysis:framing:)`
+  /// call site (test fixtures that hand-build an output rather than routing
+  /// one through `process(_:)`) keeps compiling; `nil` there is accurate,
+  /// not a placeholder, since no real pixel buffer backs those fixtures.
+  public let capturedPixelDimensions: PixelDimensions?
+
+  public init(
+    analysis: FrameAnalysis, framing: FramingState?,
+    capturedPixelDimensions: PixelDimensions? = nil
+  ) {
     self.analysis = analysis
     self.framing = framing
+    self.capturedPixelDimensions = capturedPixelDimensions
   }
 }

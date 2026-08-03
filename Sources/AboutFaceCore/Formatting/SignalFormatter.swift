@@ -90,8 +90,15 @@ public enum SignalFormatter {
   ///     analysis has not produced anything yet (e.g. camera not started).
   ///   - backendName: `FaceAnalysisBackend.displayName` of the active
   ///     backend.
-  ///   - captureFormat: The requested capture format, or `nil` if capture
+  ///   - captureFormat: The REQUESTED capture format, or `nil` if capture
   ///     has not been configured yet.
+  ///   - actualCaptureDimensions: The ACTUAL pixel dimensions the camera has
+  ///     delivered this session (read from a real captured frame — see
+  ///     `CapturedFrame.pixelDimensions`), or `nil` if no frame has arrived
+  ///     yet. Distinct from `captureFormat` on purpose (PR #53's lesson,
+  ///     `CapturedFrame.pixelDimensions`'s own doc comment): a requested
+  ///     format is not proof of a delivered one, and the capture-format row
+  ///     must be able to say so rather than parroting the request back.
   ///   - mirrorState: The active capture session's `MirrorState`, or `nil`
   ///     before a session exists.
   /// Everything a row needs besides the field itself — bundled so the
@@ -101,6 +108,7 @@ public enum SignalFormatter {
     let output: EngineOutput?
     let backendName: String
     let captureFormat: CaptureFormatDescriptor?
+    let actualCaptureDimensions: PixelDimensions?
     let mirrorState: MirrorState?
     let display: Config.Display
   }
@@ -109,12 +117,13 @@ public enum SignalFormatter {
     output: EngineOutput?,
     backendName: String,
     captureFormat: CaptureFormatDescriptor?,
+    actualCaptureDimensions: PixelDimensions? = nil,
     mirrorState: MirrorState?,
     display: Config.Display = Config.defaults.display
   ) -> [FormattedSignal] {
     let context = Context(
       output: output, backendName: backendName, captureFormat: captureFormat,
-      mirrorState: mirrorState, display: display)
+      actualCaptureDimensions: actualCaptureDimensions, mirrorState: mirrorState, display: display)
     return Field.allCases.map { row(for: $0, context: context) }
   }
 
@@ -162,7 +171,7 @@ public enum SignalFormatter {
     // swiftlint:disable opening_brace
     if let staticValue = staticValue(
       for: field, backendName: context.backendName, captureFormat: context.captureFormat,
-      mirrorState: context.mirrorState)
+      actualCaptureDimensions: context.actualCaptureDimensions, mirrorState: context.mirrorState)
     {
       return staticValue
     }
@@ -191,13 +200,15 @@ public enum SignalFormatter {
     for field: Field,
     backendName: String,
     captureFormat: CaptureFormatDescriptor?,
+    actualCaptureDimensions: PixelDimensions?,
     mirrorState: MirrorState?
   ) -> String? {
     switch field {
     case .backendName:
       return backendName
     case .captureFormat:
-      return captureFormat.map(formatCaptureFormat) ?? notStartedPlaceholder
+      guard let captureFormat else { return notStartedPlaceholder }
+      return formatCaptureFormat(captureFormat, actual: actualCaptureDimensions)
     case .mirrorState:
       return mirrorState.map(formatMirrorState) ?? notStartedPlaceholder
     default:

@@ -230,6 +230,25 @@ struct SignalFormatterTests {
     #expect(value == "640×480 @ 15.0fps")
   }
 
+  @Test("Capture format: actual matching requested (or nil, unknown) prints just the request")
+  func captureFormat_actualMatchesOrUnknown_printsRequestOnly() {
+    let requested = SignalFormatter.CaptureFormatDescriptor(width: 640, height: 480, frameRate: 15)
+    #expect(SignalFormatter.formatCaptureFormat(requested, actual: nil) == "640×480 @ 15fps")
+    #expect(
+      SignalFormatter.formatCaptureFormat(
+        requested, actual: PixelDimensions(width: 640, height: 480)) == "640×480 @ 15fps")
+  }
+
+  @Test("Capture format: actual dimensions differing from the request are flagged, not hidden")
+  func captureFormat_actualMismatchesRequested_isFlagged() {
+    // PR #53's exact failure mode: Monitor requests 640×480 but the session
+    // silently reverts to the .high preset's 1280×720.
+    let requested = SignalFormatter.CaptureFormatDescriptor(width: 640, height: 480, frameRate: 15)
+    let value = SignalFormatter.formatCaptureFormat(
+      requested, actual: PixelDimensions(width: 1280, height: 720))
+    #expect(value == "640×480 @ 15fps, camera actually delivered 1280×720")
+  }
+
   @Test("Mirror state renders both cases")
   func mirrorState_rendersBothCases() {
     #expect(SignalFormatter.formatMirrorState(.mirrored) == "Mirrored")

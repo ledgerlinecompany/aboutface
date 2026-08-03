@@ -42,4 +42,41 @@ public struct CapturedFrame: @unchecked Sendable {
     self.timestamp = timestamp
     self.mirrorState = mirrorState
   }
+
+  /// The ACTUAL pixel dimensions of this frame's image buffer — read
+  /// directly off `pixelBuffer`, not whatever width/height a capture
+  /// session was configured to request. `CVPixelBufferGetWidth`/`GetHeight`
+  /// are O(1) attribute reads (they do not touch pixel data), so this is
+  /// cheap to compute on every frame.
+  ///
+  /// This exists because a REQUESTED capture format is not proof of a
+  /// DELIVERED one (PR #53: `AVCaptureSession`/`AVCaptureDevice` were found
+  /// to silently revert a requested format on macOS under some ordering of
+  /// calls — see `CameraCaptureSource.configureSession`'s doc comment for
+  /// the full story). Trusting the request instead of reading back what was
+  /// actually decoded into `pixelBuffer` would reproduce that exact mistake
+  /// one layer up. Callers that need to know "what did the camera actually
+  /// deliver this session" (the Setup window's capture-format row,
+  /// `aboutface-cli live`'s summary) read this off a real captured frame —
+  /// see `EngineOutput.capturedPixelDimensions`, which is this value
+  /// threaded through `AnalysisEngine.process(_:)`.
+  public var pixelDimensions: PixelDimensions {
+    PixelDimensions(
+      width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
+  }
+}
+
+/// The width/height half of `CapturedFrame.pixelDimensions` — deliberately a
+/// tiny, standalone, `Equatable` value type (not a bare tuple) so it can be
+/// compared, stored, and threaded through `EngineOutput` and `PipelineModel`
+/// state without any of those call sites re-declaring a `(width: Int,
+/// height: Int)` shape of their own.
+public struct PixelDimensions: Sendable, Equatable {
+  public let width: Int
+  public let height: Int
+
+  public init(width: Int, height: Int) {
+    self.width = width
+    self.height = height
+  }
 }
