@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreMedia
 
 /// `FramingState` derivation (§3.3, §4): error vs. `Config.targetFraming`,
 /// EMA smoothing, hysteresis-latched `inDeadZone`, and `gazeOnCamera`. Split
@@ -11,7 +12,11 @@ import CoreGraphics
 /// only from this file).
 extension AnalysisEngine {
 
-  func framingState(for geometry: FaceGeometry) -> FramingState {
+  func framingState(
+    for geometry: FaceGeometry,
+    signalState: SignalState,
+    timestamp: CMTime
+  ) -> FramingState {
     let target = config.targetFraming
 
     // Horizontal: `FaceGeometry.eyeMidpoint.x` is already egocentric
@@ -51,16 +56,38 @@ extension AnalysisEngine {
     let inDeadZone = updatedDeadZoneLatch(
       error: newSmoothedError, distanceError: newSmoothedDistanceError)
 
-    // Deviation from the captured neutral pose (§4 extension), not
-    // absolute camera-ray angles: a laptop camera views the face from off
-    // the natural eyeline, so absolute pose is offset for every user (a
-    // natural position read ~+30° chin-up in field testing). With no
-    // captured baseline (defaults of 0) this degrades to the absolute
-    // behavior.
+    // Deviation from the WORKING neutral-pose baseline (§4 extension, §13
+    // Phase 5's capture-free extension of it) — not absolute camera-ray
+    // angles: a laptop camera views the face from off the natural eyeline,
+    // so absolute pose is offset for every user (a natural position read
+    // ~+30° chin-up in field testing). The working baseline is either the
+    // learned running average (`AnalysisEngine+GazeBaseline.swift`, seeded
+    // from a capture if one exists, else from the first eligible in-zone
+    // frame) or, with `Config.Gaze.baselineLearningEnabled == false` or
+    // before anything has seeded it, the static captured/default neutral —
+    // see `effectiveBaselineYaw(target:)`/`effectiveBaselinePitch(target:)`.
+    // With neither a capture nor learning (defaults of 0, disabled), this
+    // degrades to the old absolute behavior.
     let gaze = config.gaze
+    let baselineYaw = effectiveBaselineYaw(target: target)
+    let baselinePitch = effectiveBaselinePitch(target: target)
     let gazeOnCamera =
-      abs(geometry.yaw - Float(target.neutralYawDegrees)) <= Float(gaze.maxYawDegrees)
-      && abs(geometry.pitch - Float(target.neutralPitchDegrees)) <= Float(gaze.maxPitchDegrees)
+      abs(geometry.yaw - baselineYaw) <= Float(gaze.maxYawDegrees)
+      && abs(geometry.pitch - baselinePitch) <= Float(gaze.maxPitchDegrees)
+
+    // Adapt AFTER computing `gazeOnCamera` above, per
+    // `AnalysisEngine+GazeBaseline.swift`'s doc comment: this frame's own
+    // pose must never leak into its own gaze judgment, only into the next
+    // frame's. Eligibility is the full §13 Phase 5 gate: a healthy signal,
+    // hysteresis-latched dead-zone membership (computed just above — this
+    // deliberately reuses the SAME smoothed `inDeadZone`, not a separate
+    // raw check, so "settled" means the same thing here as everywhere else
+    // in this file), and at-or-above-threshold confidence.
+    let eligible =
+      signalState == .ok && inDeadZone
+      && geometry.confidence >= Float(config.signal.lowConfidenceThreshold)
+    adaptLearnedBaseline(
+      yaw: geometry.yaw, pitch: geometry.pitch, eligible: eligible, timestamp: timestamp)
 
     return FramingState(
       error: newSmoothedError,

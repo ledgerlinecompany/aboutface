@@ -51,7 +51,7 @@ import CoreVideo
 ///
 /// ## File layout
 ///
-/// Split across three files purely to keep each one a manageable size, the
+/// Split across four files purely to keep each one a manageable size, the
 /// same way `LightingAnalyzer` is split into
 /// `LightingAnalyzer{,Downsample,Math}.swift` — everywhere below is still
 /// `AnalysisEngine`'s own implementation, not a separate public surface:
@@ -60,6 +60,8 @@ import CoreVideo
 /// - `AnalysisEngine+Geometry.swift`: the §3.4 egocentric boundary.
 /// - `AnalysisEngine+Framing.swift`: `FramingState` derivation (smoothing,
 ///   hysteresis, gaze).
+/// - `AnalysisEngine+GazeBaseline.swift`: the capture-free learned-baseline
+///   EMA (§13 Phase 5 hard MUST) that backs `gazeOnCamera`.
 public actor AnalysisEngine {
   let backend: any FaceAnalysisBackend
   var config: Config
@@ -82,9 +84,37 @@ public actor AnalysisEngine {
   var smoothedDistanceError: Float?
   var inDeadZoneLatched = false
 
+  // MARK: - Learned gaze baseline state (§13 Phase 5, `AnalysisEngine+GazeBaseline.swift`)
+  //
+  // Declared here for the same "every stored property lives in one place"
+  // reason as the smoothing state above, but deliberately NOT reset by
+  // `resetSmoothingState()`/on face loss — see that method's doc comment.
+  // `learnedBaselineYaw`/`Pitch` are `nil` exactly when nothing has seeded
+  // the baseline yet (no capture, no eligible in-zone frame). `baselineSeed*`
+  // record the seed value the clamp is measured from (capture, or the first
+  // seed from an in-zone frame) — distinct from the current learned value,
+  // which drifts within the clamp as the EMA adapts. `lastFrameTimestamp`
+  // is the previous geometry-bearing frame's timestamp, used to convert
+  // `Config.Gaze.baselineAdaptationSeconds` into a per-frame alpha from the
+  // observed frame cadence; it IS reset on face loss (a stale cadence
+  // reference across a gap is meaningless — same reasoning as the smoothing
+  // state, just for timing rather than position), which only affects the
+  // alpha of the next adaptation, never the learned value itself.
+  var learnedBaselineYaw: Float?
+  var learnedBaselinePitch: Float?
+  var baselineSeedYaw: Float?
+  var baselineSeedPitch: Float?
+  var lastFrameTimestamp: CMTime?
+
   public init(backend: any FaceAnalysisBackend, config: Config = .defaults) {
     self.backend = backend
     self.config = config
+    if let seed = Self.captureSeed(previous: nil, new: config) {
+      learnedBaselineYaw = seed.yaw
+      learnedBaselinePitch = seed.pitch
+      baselineSeedYaw = seed.yaw
+      baselineSeedPitch = seed.pitch
+    }
   }
 
   /// Replaces the live `Config`. Takes effect starting with the next
@@ -93,8 +123,25 @@ public actor AnalysisEngine {
   /// panel, §9, where every threshold is a live slider bound to `Config` —
   /// not exercised yet in Phase 1, but the actor boundary already makes
   /// this safe to call while `process(_:)`/`stream(from:)` are in flight.)
+  ///
+  /// Also re-seeds the learned gaze baseline (`AnalysisEngine+GazeBaseline.swift`)
+  /// when — and only when — `targetFraming.neutralYawDegrees`/
+  /// `neutralPitchDegrees` CHANGED to a new nonzero value: a fresh "capture
+  /// current position as target" is an instant-set override of the user's
+  /// neutral pose, so the learned baseline should snap to it immediately
+  /// rather than crawl there over `baselineAdaptationSeconds`. An unrelated
+  /// `updateConfig` call (a slider tweak elsewhere in the debug panel) must
+  /// NOT re-seed — that would erase whatever the baseline had already
+  /// learned since the last capture for no reason.
   public func updateConfig(_ config: Config) {
+    let previous = self.config
     self.config = config
+    if let seed = Self.captureSeed(previous: previous, new: config) {
+      learnedBaselineYaw = seed.yaw
+      learnedBaselinePitch = seed.pitch
+      baselineSeedYaw = seed.yaw
+      baselineSeedPitch = seed.pitch
+    }
   }
 
   /// Processes one frame end to end: backend inference, lighting analysis,
@@ -147,7 +194,7 @@ public actor AnalysisEngine {
       primary: geometry,
       lighting: lighting
     )
-    let framing = framingState(for: geometry)
+    let framing = framingState(for: geometry, signalState: signalState, timestamp: frame.timestamp)
 
     return EngineOutput(analysis: analysis, framing: framing)
   }
@@ -186,10 +233,20 @@ public actor AnalysisEngine {
     }
   }
 
+  /// Resets the §4/§7 positional smoothing/hysteresis state (see the
+  /// stored-property doc comment above) AND `lastFrameTimestamp` — but
+  /// deliberately NOT the learned gaze baseline (`learnedBaselineYaw`/
+  /// `Pitch`/`baselineSeed*`), which is long-term knowledge about the
+  /// user's natural pose, not a per-session smoothing artifact. Resetting
+  /// `lastFrameTimestamp` only means the next adaptation-eligible frame
+  /// after a gap has no cadence reference and therefore blends nothing on
+  /// that one frame (`AnalysisEngine+GazeBaseline.swift`) — it re-primes
+  /// silently, it does not lose the learned value.
   func resetSmoothingState() {
     smoothedError = nil
     smoothedDistanceError = nil
     inDeadZoneLatched = false
+    lastFrameTimestamp = nil
   }
 
   // MARK: - SignalState (§3.3)
