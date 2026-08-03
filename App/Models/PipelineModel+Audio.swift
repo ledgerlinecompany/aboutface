@@ -89,6 +89,22 @@ extension PipelineModel {
     Task { await pushSilencedState() }
   }
 
+  // MARK: - §5.3 Query / §8 repeat-last (App/HotkeyCenter.swift's hotkey call sites)
+
+  /// ⌘⌃⇧F: §5.3 Query. No-ops if the feedback chain isn't running (no
+  /// camera started yet) — same "nothing to do yet" posture as
+  /// `captureCurrentPositionAsTarget()`.
+  public func performQuery() {
+    guard let feedbackRouter else { return }
+    Task { await feedbackRouter.performQuery(at: .now) }
+  }
+
+  /// ⌘⌃⇧R: §8 repeat last announcement.
+  public func repeatLastAnnouncement() {
+    guard let feedbackRouter else { return }
+    Task { await feedbackRouter.repeatLastAnnouncement() }
+  }
+
   /// §7.5: "MUST take effect within one audio buffer — cut the render, do
   /// not wait for the current utterance to finish." Both `feedbackEnabled`
   /// (the Setup window's master toggle) and `isSilenced` (the instant mute)

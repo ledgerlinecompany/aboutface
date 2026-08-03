@@ -45,6 +45,11 @@ struct Replay: AsyncParsableCommand {
       --silence-at <sec> engages the §7.5 manual-silence path partway through the clip, so that \
       "cuts within one buffer, analysis keeps running" behavior is audible too.
 
+      --query-at <sec> (§5.3) fires the real FeedbackRouter.performQuery(at:) -- not a \
+      simulation -- once the clip reaches this many seconds, exercising the Query burst-\
+      aggregation path headlessly against whatever real frames --audio has already ingested by \
+      then. Prints the composed summary to stdout (it is also spoken, same as any announcement).
+
       --truth <before|after|quiz> (2026-08-02): computes this clip's ground truth -- via a \
       SEPARATE, silent replay pass through AnalysisEngine (reusing verify-corpus's ClipStats \
       aggregation), never the --audio pass -- and speaks/prints it as a terse declarative \
@@ -111,6 +116,15 @@ struct Replay: AsyncParsableCommand {
     )
   )
   var silenceAt: Double?
+
+  @Option(
+    name: .customLong("query-at"),
+    help: ArgumentHelp(
+      "With --audio, fire §5.3 Query (FeedbackRouter.performQuery(at:)) once the clip reaches "
+        + "this many seconds (clip-relative timestamp). Prints the composed summary to stdout."
+    )
+  )
+  var queryAt: Double?
 
   @Option(
     name: .customLong("config"),
@@ -248,6 +262,7 @@ struct Replay: AsyncParsableCommand {
     var errorSampleCount = 0
     var lastReportedSecond = -1
     var silenceEngaged = false
+    var queryFired = false
 
     for try await output in engine.stream(from: source) {
       frameCount += 1
@@ -269,13 +284,12 @@ struct Replay: AsyncParsableCommand {
         }
       }
 
-      if let silenceAt, !silenceEngaged, line.timestampSeconds >= silenceAt {
-        silenceEngaged = true
-        await chain.router.setSilenced(true)
-        print("-- §7.5 manual silence engaged at t=\(String(format: "%.2f", silenceAt))s --")
-      }
+      await maybeEngageSilence(
+        router: chain.router, timestampSeconds: line.timestampSeconds, engaged: &silenceEngaged)
 
       await chain.router.ingest(output, at: .now)
+      await maybeFireQuery(
+        router: chain.router, timestampSeconds: line.timestampSeconds, fired: &queryFired)
     }
 
     await chain.audio.stop()
@@ -288,28 +302,5 @@ struct Replay: AsyncParsableCommand {
       absErrorYSum: absErrorYSum,
       errorSampleCount: errorSampleCount
     )
-  }
-
-  private func printSummary(
-    frameCount: Int,
-    stateHistogram: [String: Int],
-    absErrorXSum: Float,
-    absErrorYSum: Float,
-    errorSampleCount: Int
-  ) {
-    print("")
-    print("frames=\(frameCount)")
-    for (state, count) in stateHistogram.sorted(by: { $0.key < $1.key }) {
-      print("  \(state)=\(count)")
-    }
-    if errorSampleCount > 0 {
-      let meanAbsX = absErrorXSum / Float(errorSampleCount)
-      let meanAbsY = absErrorYSum / Float(errorSampleCount)
-      print(
-        "meanAbsError x=\(String(format: "%.4f", meanAbsX)) y=\(String(format: "%.4f", meanAbsY)) "
-          + "(over \(errorSampleCount) frames with a detected face)")
-    } else {
-      print("meanAbsError: no frames with a detected face")
-    }
   }
 }

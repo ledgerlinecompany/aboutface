@@ -13,10 +13,16 @@ import SwiftUI
 @main
 struct AboutFaceApp: App {
   @State private var model = PipelineModel()
+  // §8 global hotkeys: one `HotkeyCenter` for the app's lifetime, wired up
+  // (and re-wired on `Config.hotkeys` changes) from the Setup window's own
+  // `.task`/`.onChange` below — see `SetupWindowView`'s
+  // `hotkeyBootstrap` doc comment for why that is the right place rather
+  // than here.
+  @State private var hotkeyCenter = HotkeyCenter()
 
   var body: some Scene {
     WindowGroup("About Face — Setup", id: "setup") {
-      SetupWindowView(model: model)
+      SetupWindowView(model: model, hotkeyCenter: hotkeyCenter)
         .frame(minWidth: 480, minHeight: 420)
     }
     .defaultSize(width: 560, height: 680)

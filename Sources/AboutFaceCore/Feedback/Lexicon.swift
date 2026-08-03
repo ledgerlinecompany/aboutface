@@ -129,5 +129,40 @@ public enum Lexicon {
     public static let tooDark = Phrase.fixed("Too dark to detect a face.")
     public static let gazeOff = Phrase.fixed("You are not looking at the camera.")
     public static let headTilted = Phrase.fixed("Head tilted.")
+
+    // §5.3 Query mode additions (`QueryComposer.swift`) — the "fine" state
+    // for each field that can also report a problem above, plus §5.3's
+    // "other people" field (new signal this round, `FrameAnalysis
+    // .faceCount > 1`) and a whole-query fallback for the "problems only"
+    // variant finding literally nothing wrong (see `QueryComposer
+    // .summarize(burst:problemsOnly:)`'s doc comment for why total silence
+    // in response to an explicit hotkey press would itself be a §6.1-style
+    // silence ambiguity — "did my hotkey even register").
+    public static let lightingFine = Phrase.fixed("Lighting is fine.")
+    public static let gazeOn = Phrase.fixed("You are looking at the camera.")
+    public static let headLevelState = Phrase.fixed("Your head is level.")
+    public static let otherPeoplePresent = Phrase.fixed("Other people are in frame.")
+    public static let otherPeopleNone = Phrase.fixed("No one else in frame.")
+    public static let allClear = Phrase.fixed("All good.")
+  }
+
+  /// Joins already-fixed `Phrase` values, in the order given, into ONE
+  /// spoken utterance — §5.3 Query mode's "a single terse spoken summary"
+  /// assembled from up to four independently aggregated fields (framing,
+  /// lighting, gaze, other people; see `QueryComposer.swift`), each of which
+  /// is itself one or more of this file's fixed `State` phrases.
+  ///
+  /// This is NOT the dynamic-phrase-generation §6.3/CLAUDE.md forbid ("do
+  /// not generate phrases dynamically"): nothing here interpolates a
+  /// number, a name, or any other runtime value into text — it only
+  /// concatenates strings that already exist as closed-vocabulary constants
+  /// declared in THIS file. The closure guarantee (`Phrase.init` private,
+  /// `fixed(_:)` fileprivate to this file) still holds: `compose(_:)` lives
+  /// here too, and every `Phrase` it can ever receive was itself
+  /// constructed the same closed way, so the composed result is always a
+  /// concatenation of vocabulary this file defines, in an order the caller
+  /// chooses — never new words.
+  public static func compose(_ phrases: [Phrase]) -> Phrase {
+    Phrase.fixed(phrases.map(\.text).joined(separator: " "))
   }
 }

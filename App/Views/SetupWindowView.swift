@@ -13,6 +13,7 @@ import SwiftUI
 /// `PipelineModel`; this view does no signal math of its own.
 struct SetupWindowView: View {
   @Bindable var model: PipelineModel
+  let hotkeyCenter: HotkeyCenter
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
@@ -59,6 +60,23 @@ struct SetupWindowView: View {
     .task {
       await model.requestCameraPermission()
     }
+    .task { hotkeyBootstrap() }
+    .onChange(of: model.config.hotkeys) { _, newValue in
+      hotkeyCenter.updateRegistrations(newValue)
+    }
+  }
+
+  /// §8 global hotkeys: wires `hotkeyCenter` to `model` and to this view's
+  /// own `@Environment(\.openWindow)` action, once, at Setup-window launch.
+  /// This is the Setup `WindowGroup`'s content view specifically (rather
+  /// than `AboutFaceApp` itself) because `openWindow` is a View-environment
+  /// action — `HotkeyCenter`'s `setupToggle` handler needs a concrete
+  /// "open/focus the Setup window" closure (§8: "opens/focuses the
+  /// window"), and this is the one view guaranteed to exist by the time a
+  /// global hotkey can fire (the Setup `WindowGroup` is `AboutFaceApp`'s
+  /// first scene, so SwiftUI presents it automatically at launch).
+  private func hotkeyBootstrap() {
+    hotkeyCenter.configure(model: model, openSetupWindow: { openWindow(id: "setup") })
   }
 
   // MARK: - Camera permission

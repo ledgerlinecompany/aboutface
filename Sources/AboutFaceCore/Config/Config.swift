@@ -74,6 +74,9 @@ public struct Config: Codable, Sendable, Equatable {
   /// Own-TTS parameters (§6.3). Defined in Feedback/FeedbackConfig.swift.
   public var speech: SpeechConfig
 
+  /// §8 global hotkey bindings. Defined in Config/Config+Hotkeys.swift.
+  public var hotkeys: Hotkeys
+
   public struct TargetFraming: Codable, Sendable, Equatable {
     /// Eye midpoint, fraction of frame height from top (§4: "upper third,
     /// modest headroom").
@@ -301,7 +304,8 @@ public struct Config: Codable, Sendable, Equatable {
     display: Display,
     audio: Audio = .defaults,
     feedback: FeedbackConfig = .defaults,
-    speech: SpeechConfig = .defaults
+    speech: SpeechConfig = .defaults,
+    hotkeys: Hotkeys = .defaults
   ) {
     self.version = version
     self.targetFraming = targetFraming
@@ -316,6 +320,7 @@ public struct Config: Codable, Sendable, Equatable {
     self.audio = audio
     self.feedback = feedback
     self.speech = speech
+    self.hotkeys = hotkeys
   }
 
   /// The spec's §4 starting-point defaults. `Config.defaults` MUST remain
@@ -357,6 +362,7 @@ public struct Config: Codable, Sendable, Equatable {
     ),
     audio: .defaults,
     feedback: .defaults,
-    speech: .defaults
+    speech: .defaults,
+    hotkeys: .defaults
   )
 }

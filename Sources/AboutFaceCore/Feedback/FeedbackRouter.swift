@@ -124,6 +124,22 @@ public actor FeedbackRouter {
   var lastAnnouncementAt: ContinuousClock.Instant?
   var lastAnnouncementAtByCondition: [FeedbackCondition: ContinuousClock.Instant] = [:]
 
+  // MARK: - §5.3 Query burst buffer + §8 repeat-last (FeedbackRouter+Query.swift)
+  //
+  // `recentOutputs` is a bounded ring of the most recently `ingest`ed
+  // `EngineOutput`s, appended to unconditionally (even while `isSilenced` —
+  // silence gates renderer calls only, §7.5, never the analysis bookkeeping
+  // `ingest` otherwise keeps running) and trimmed to
+  // `feedbackConfig.query.burstFrameCount`. See `recordForQuery(_:)`'s doc
+  // comment in `FeedbackRouter+Query.swift` for why a Query "burst" is
+  // defined this way rather than as a freshly-triggered capture.
+  var recentOutputs: [EngineOutput] = []
+  /// §8 repeat-last: the most recent phrase this router actually spoke
+  /// through `fire(...)` — `nil` until the first one. `performQuery()`
+  /// updates this too (bypassing `fire`), so repeating after a Query
+  /// re-speaks the query summary. See `repeatLastAnnouncement()`.
+  var lastSpokenPhrase: Lexicon.Phrase?
+
   public init(
     audio: any AudioRendering,
     speech: any SpeechRendering,
@@ -183,6 +199,8 @@ public actor FeedbackRouter {
   /// N-frame/dwell pipeline below are independent of each other and both
   /// run every call.
   public func ingest(_ output: EngineOutput, at time: ContinuousClock.Instant) async {
+    recordForQuery(output)
+
     let discrete = Self.discreteState(for: output)
 
     if discrete == pendingState {
