@@ -28,9 +28,10 @@
 ///    own §7.3 ladder), then §5.2's per-mode rate limit.
 ///
 /// See `FeedbackRouter+Condition.swift` for how a frame's `EngineOutput`
-/// becomes a `DiscreteState`, and `FeedbackRouter+Announcements.swift` for
-/// how a confirmed `DiscreteState` becomes (or doesn't become) a call to
-/// `audio`/`speech`.
+/// becomes a `DiscreteState`, `FeedbackRouter+Continuous.swift` for channel
+/// 1 (`updateContinuousSonification`), and `FeedbackRouter+Announcements
+/// .swift` for how a confirmed `DiscreteState` becomes (or doesn't become)
+/// a call to `audio`/`speech`.
 public actor FeedbackRouter {
   let audio: any AudioRendering
   let speech: any SpeechRendering
@@ -42,8 +43,9 @@ public actor FeedbackRouter {
 
   var isSilenced = false
   /// Dedupe for the continuous channel's nil sends (see
-  /// `updateContinuousSonification`): `true` until the first active target
-  /// goes out, so a stream that never had a face never spams `update(nil)`.
+  /// `updateContinuousSonification` in `FeedbackRouter+Continuous.swift`):
+  /// `true` until the first active target goes out, so a stream that never
+  /// had a face never spams `update(nil)`.
   var lastContinuousSendWasNil = true
 
   // MARK: - §7.2 N-frame + confirmed discrete state
@@ -114,11 +116,47 @@ public actor FeedbackRouter {
   // MARK: - §7.3 face-lost ladder
   //
   // `faceLostRung`: 0 = nothing fired yet, 1 = the §7.3 "1.5s" earcon has
-  // fired. Phase 4 adds 2 (≈5s spoken "No face.") and 3 (≈30s STOP +
-  // `userLikelyAway`) — see `FeedbackRouter+Announcements.swift`'s
-  // `tickAnnouncements(output:at:)` face-lost case for exactly where those
-  // slot in.
+  // fired, 2 = the "~5s" spoken "No face." has fired, 3 = the "~30s" STOP
+  // has fired (silence + `userLikelyAway`, below). See
+  // `tickFaceLostLadder(from:at:)` in `FeedbackRouter+FaceLost.swift` for
+  // exactly where each rung's timer and side effect live.
   var faceLostRung = 0
+
+  /// §7.3's rung-3 "STOP": becomes `true` the instant `faceLostRung`
+  /// reaches 3 and stays `true` until the face is reacquired. Cleared by
+  /// `handleFaceLostReacquisition` (`FeedbackRouter+FaceLost.swift`, called
+  /// from `onConfirmedStateChanged` in `FeedbackRouter+Announcements.swift`)
+  /// UNCONDITIONALLY — not only when a recovery announcement is actually
+  /// owed. The "only escalated episodes get cleared" shape would be
+  /// provably equivalent (rung 3 can only be reached after passing through
+  /// rungs 1 and 2), but that equivalence is an invariant held by ARGUMENT,
+  /// not enforced by the type system: if it is ever wrong — a future edit
+  /// to the ladder, a bug elsewhere — the unconditional clear is the only
+  /// thing standing between that bug and a router that goes permanently,
+  /// silently mute with no path back to sound, ever. Clearing the flag a
+  /// frame too eagerly costs nothing (it is already `false` in the
+  /// overwhelmingly common case); failing to clear it costs total loss of
+  /// function. See that method's own doc comment for the full reasoning.
+  ///
+  /// While `true`, both `fire(event:phrase:key:at:bypassRateLimit:)`
+  /// (`FeedbackRouter+Announcements.swift`) and
+  /// `updateContinuousSonification` (`FeedbackRouter+Continuous.swift`)
+  /// short-circuit on it UNCONDITIONALLY, before either one even looks at
+  /// `bypassRateLimit`/`isSilenced`. That has to be a blanket guard rather
+  /// than, say, a check folded into the rate-limit branch: §7.3 frames the
+  /// 30s stop as safety-critical ("the requirement an implementer will
+  /// forget... a tool that nags at an empty chair for the rest of a
+  /// meeting gets uninstalled"), and the heartbeat plus every face-lost
+  /// ladder rung ALREADY bypass the ordinary rate limit for their own
+  /// legitimate reasons — a guard hiding behind `bypassRateLimit` would do
+  /// nothing to stop any of them, and a future bypassing condition would
+  /// silently defeat rung 3 the same way. Deliberately independent of
+  /// `isSilenced` (§7.5 manual silence): the two mechanisms happen to have
+  /// the same audible effect (zero renderer calls) but are orthogonal in
+  /// cause — one is the user's own hotkey, the other is the router's own
+  /// inference that nobody is listening — so neither should read or set
+  /// the other.
+  var userLikelyAway = false
 
   // MARK: - §5.2 Monitor-mode rate limiting
   var lastAnnouncementAt: ContinuousClock.Instant?
@@ -159,6 +197,19 @@ public actor FeedbackRouter {
 
   public func setMode(_ mode: FeedbackMode) {
     self.mode = mode
+  }
+
+  /// Actor-safe read of §7.3's rung-3 `userLikelyAway` flag, for future
+  /// menu-bar/debug surfaces (§9's debug panel is the obvious eventual
+  /// consumer — "is the user still even at the desk" is exactly the kind
+  /// of state that panel exists to surface). Nothing calls this yet; that
+  /// is deliberate — it exists now so a later observer can poll the
+  /// CURRENT value without inventing its own way to reach into the actor.
+  /// A caller that needs to react to the transition rather than poll it
+  /// should use `EventSubscriber` (`EventSubscriber.swift`) instead — this
+  /// accessor has no notion of "changed," only "is."
+  public func isUserLikelyAway() -> Bool {
+    userLikelyAway
   }
 
   public func updateConfig(_ config: Config) {
@@ -214,7 +265,10 @@ public actor FeedbackRouter {
       let previous = confirmedState
       confirmedState = discrete
       confirmedStateStart = time
-      await onConfirmedStateChanged(from: previous, to: discrete, at: time)
+      // `output` threads through so §7.3's rung-3 recovery branch can
+      // resolve "the problem, if there is one" without re-deriving it —
+      // see `onConfirmedStateChanged`'s doc comment.
+      await onConfirmedStateChanged(from: previous, to: discrete, output: output, at: time)
     }
 
     await tickAnnouncements(output: output, at: time)
@@ -251,83 +305,6 @@ public actor FeedbackRouter {
   // function signature; swiftlint's opening_brace rule disagrees. Format
   // wins (see FeedbackRouter+Announcements.swift for the same
   // disagreement over multiline conditions).
-  // swiftlint:disable opening_brace
-  /// §6.2 continuous positional sonification. Per this round's brief:
-  /// "continuous `SonificationTarget` updates while a face is tracked and
-  /// out of dead zone... on entering good zone... stop positional updates."
-  /// That "out of dead zone" clause is checked directly against
-  /// `FramingState.inDeadZone` here — NOT gated by the announcement
-  /// pipeline's N-frame/dwell machinery, so positional feedback stays
-  /// real-time and resumes the instant `inDeadZone` flips back to `false`
-  /// (§4's hysteresis already prevents that flip from chattering; adding a
-  /// second debounce here would only add latency to a fast correction
-  /// loop §1 exists to keep fast).
-  ///
-  /// Also requires `signalState == .ok`: `framing` can be non-`nil` even
-  /// when `signalState` is `.noSignal` or `.lowConfidence` (a face was
-  /// found on an otherwise near-uniform or low-confidence frame — see
-  /// `makeOutput`'s test-support doc comment for the real
-  /// `AnalysisEngine.process(_:)` code path that produces this), and §7.4
-  /// ranks both of those ABOVE framing error in the priority ladder for
-  /// exactly this reason: a positional reading taken during an unreliable
-  /// signal is not trustworthy enough to sonify in real time, even though
-  /// it exists. This is the continuous channel's own application of that
-  /// same priority judgment — it has no ladder of its own to consult.
-  ///
-  /// **Tuning round 5 addition (gaze trim, default OFF):** inside the dead
-  /// zone, this used to simply stop calling `audio.update` at all (the
-  /// legacy "silence + heartbeat" posture — §6.1). It still does exactly
-  /// that when `gazeTrimTarget(output:framing:)` returns `nil` (flag off,
-  /// wrong mode, not yet confirmed good-zone, etc. — see that method's own
-  /// gating), so flag-off behavior is bit-for-bit unchanged. When it
-  /// returns a target, that target is published INSTEAD of halting —
-  /// always with `inDeadZone: true`, which is what keeps the beacon branch
-  /// above (`!currentTarget.inDeadZone` in `RenderState.mixedSample`) from
-  /// also firing, so the two continuous cues are mutually exclusive by
-  /// construction, never layered.
-  func updateContinuousSonification(_ output: EngineOutput, at time: ContinuousClock.Instant) async
-  {
-    // swiftlint:enable opening_brace
-    guard !isSilenced else { return }
-
-    // ALWAYS resolve to exactly one of {beacon target, trim target, nil}
-    // and send it (nil deduped). The previous shape returned early on
-    // non-ok states without ever sending nil, leaving the renderer
-    // droning its last target through face-lost — §6.1's exact failure
-    // ("if it can't see a face, it shouldn't emit a tone", app field
-    // finding). Resolving-then-sending also cuts the beacon the instant
-    // the dead zone is entered, rather than after the dwell-gated
-    // good-zone announcement.
-    // Atomic arrival (field finding: the cut preceding the chime by the
-    // confirmation latency was disorienting): the beacon keeps playing —
-    // `inDeadZone: false` forced — until the good-zone episode has FIRED
-    // its entry earcon (`dwellFiredForCurrentEpisode`), so the cut and the
-    // chime land together. Side benefit: raw-frame zone transits during
-    // overshoots no longer blink the tone off. During the confirmation
-    // window the error is ~0, so the user hears the pure center tone with
-    // the click crescendo at peak — the arrival finishing, not ambiguity.
-    let resolved: SonificationTarget?
-    if output.analysis.signalState == .ok, let framing = output.framing {
-      let arrivalAnnounced = confirmedState == .goodZone && dwellFiredForCurrentEpisode
-      if arrivalAnnounced {
-        resolved = gazeTrimTarget(output: output, framing: framing)
-      } else {
-        resolved = SonificationTarget(
-          errorX: framing.error.x,
-          errorY: framing.error.y,
-          distanceError: framing.distanceError,
-          inDeadZone: false
-        )
-      }
-    } else {
-      resolved = nil
-    }
-
-    if resolved == nil, lastContinuousSendWasNil { return }
-    lastContinuousSendWasNil = resolved == nil
-    await audio.update(resolved)
-  }
-
   // swiftlint:disable opening_brace
   /// Milliseconds between two `ContinuousClock.Instant`s. `Duration`'s
   /// `.components` gives whole seconds plus attoseconds (1s = 1e18
