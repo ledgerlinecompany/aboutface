@@ -25,19 +25,30 @@ import Carbon.HIToolbox
 /// (`@convention(c)`) — it cannot capture Swift context, so it captures
 /// nothing and reads only its own parameters, matching CLAUDE.md's
 /// toolchain rule to never let a non-`Sendable`/cross-isolation value leak
-/// across an opaque C boundary implicitly. The one value it needs back
-/// (`self`, passed as `inUserData`) is reconstituted from the `Unmanaged`
-/// opaque pointer only ONCE already inside a `Task { @MainActor in }` hop —
-/// a raw `UnsafeMutableRawPointer?` and a plain `UInt32` are the only things
-/// that actually cross the C-callback boundary, both trivially `Sendable`;
-/// the non-`Sendable` `HotkeyCenter` reference itself is never held or
-/// touched until code is already running on the main actor.
+/// across an opaque C boundary implicitly. The only value that crosses the
+/// C boundary into the `Task { @MainActor in }` hop is the fired combo's
+/// plain `UInt32` ID — trivially `Sendable`. The live instance is reached
+/// via the weak `Self.current` static, resolved only once already on the
+/// main actor (see that property's doc comment for why not Carbon's
+/// `inUserData` raw pointer).
 @MainActor
 final class HotkeyCenter {
   private var eventHandlerRef: EventHandlerRef?
   private var hotKeyRefs: [Config.HotkeyAction: EventHotKeyRef] = [:]
   private weak var model: PipelineModel?
   private var openSetupWindowAction: (() -> Void)?
+
+  /// How a fired hotkey finds its way back to the live instance — a WEAK
+  /// static, deliberately not Carbon's `inUserData` raw pointer: the C
+  /// callback hands off to a `Task { @MainActor }`, and a raw pointer
+  /// captured by that task could be dereferenced AFTER `deinit` freed the
+  /// object (callback fires, app tears down, task runs — dangling pointer,
+  /// undefined behavior at quit). A weak reference read on the main actor
+  /// simply resolves to `nil` in that window instead. The app only ever
+  /// creates one `HotkeyCenter` (`AboutFaceApp`'s single `@State`); if a
+  /// second were ever created, latest-wins here, matching what Carbon
+  /// itself would do with duplicate registrations.
+  private static weak var current: HotkeyCenter?
 
   /// Carbon's four-char-code hotkey "signature," namespacing this app's
   /// hotkey IDs — arbitrary but stable across launches (it is never
@@ -47,6 +58,7 @@ final class HotkeyCenter {
 
   init() {
     installEventHandler()
+    Self.current = self
   }
 
   /// A plain `deinit` on an `@MainActor` class is `nonisolated` by default
@@ -121,31 +133,31 @@ final class HotkeyCenter {
   /// Installs the single process-wide Carbon event handler that every
   /// registered hotkey's `kEventHotKeyPressed` event arrives through. The
   /// handler closure is intentionally capture-free (see the type-level doc
-  /// comment's Concurrency section) — `self` reaches it only via the opaque
-  /// `inUserData` pointer, Carbon's documented mechanism for exactly this.
+  /// comment's Concurrency section) — `self` is reached through the weak
+  /// `Self.current` static, resolved only once already on the main actor
+  /// (see that property's doc comment for why not Carbon's `inUserData`
+  /// raw pointer: a raw pointer captured by the Task could dangle at app
+  /// teardown; a weak reference just resolves to `nil`).
   private func installEventHandler() {
     var eventType = EventTypeSpec(
       eventClass: OSType(kEventClassKeyboard), eventKind: OSType(kEventHotKeyPressed))
-    let selfPtr = Unmanaged.passUnretained(self).toOpaque()
     InstallEventHandler(
       GetApplicationEventTarget(),
-      { _, eventRef, userData in
+      { _, eventRef, _ in
         guard let eventRef else { return OSStatus(eventNotHandledErr) }
         var hotKeyID = EventHotKeyID()
         let status = GetEventParameter(
           eventRef, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
           nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
         guard status == noErr else { return status }
-        // Only `Sendable` values (a raw pointer, a `UInt32`) cross into the
-        // Task below — see the type-level doc comment's Concurrency section.
+        // Only a `Sendable` `UInt32` crosses into the Task below — see the
+        // type-level doc comment's Concurrency section.
         let carbonID = hotKeyID.id
         Task { @MainActor in
-          guard let userData else { return }
-          let center = Unmanaged<HotkeyCenter>.fromOpaque(userData).takeUnretainedValue()
-          center.handleFiredHotKey(carbonID: carbonID)
+          HotkeyCenter.current?.handleFiredHotKey(carbonID: carbonID)
         }
         return noErr
-      }, 1, &eventType, selfPtr, &eventHandlerRef)
+      }, 1, &eventType, nil, &eventHandlerRef)
   }
 
   private func handleFiredHotKey(carbonID: UInt32) {
