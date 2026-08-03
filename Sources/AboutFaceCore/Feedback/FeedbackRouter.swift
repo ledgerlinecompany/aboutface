@@ -188,7 +188,7 @@ public actor FeedbackRouter {
     }
 
     await tickAnnouncements(output: output, at: time)
-  
+
     // Continuous channel runs LAST so a state transition's announcement and
     // its sonification consequence land on the same ingest — the atomic
     // arrival: enteredGoodZone fires above, and the beacon's cut (nil)
