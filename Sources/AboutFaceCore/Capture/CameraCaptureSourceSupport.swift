@@ -87,3 +87,53 @@ final class CameraSampleBufferDelegate: NSObject, AVCaptureVideoDataOutputSample
 // same line) and swift-format's line-length-driven wrapping don't fight
 // each other.
 extension CameraSampleBufferDelegate: @unchecked Sendable {}
+
+extension CameraCaptureSource {
+  /// Convenience for opening the system default video device, per §12.1's
+  /// note that explicit user selection (stored per profile) is the normal
+  /// path — this exists only for tests/tools/harnesses that don't have a
+  /// profile to read a stored `uniqueID` from. Returns `nil` if there is no
+  /// default video device (e.g. headless CI).
+  ///
+  /// Lives here rather than inline in `CameraCaptureSource.swift` for the
+  /// same file-length reason as `matchingFormat` below.
+  public static func defaultDevice(
+    width: Int = 1280,
+    height: Int = 720,
+    frameRate: Double = 30
+  ) -> CameraCaptureSource? {
+    guard let device = AVCaptureDevice.default(for: .video) else { return nil }
+    return CameraCaptureSource(
+      deviceUniqueID: device.uniqueID,
+      width: width,
+      height: height,
+      frameRate: frameRate
+    )
+  }
+
+  /// Whether `device` has SOME format matching the requested dimensions and
+  /// frame rate — validation only, for a clear up-front error rather than a
+  /// session that starts and then behaves unexpectedly. The matched
+  /// `AVCaptureDevice.Format` is deliberately never applied
+  /// (`device.activeFormat = ...`): `configureSession()`'s doc comment
+  /// explains why that is empirically futile on macOS, and what actually
+  /// governs the delivered dimensions instead.
+  ///
+  /// Lives here rather than inline in `CameraCaptureSource.swift` purely to
+  /// keep that file under SwiftLint's `file_length` limit — same reasoning
+  /// as the box types above.
+  static func matchingFormat(
+    device: AVCaptureDevice,
+    width: Int,
+    height: Int,
+    frameRate: Double
+  ) -> AVCaptureDevice.Format? {
+    device.formats.first { format in
+      let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+      guard Int(dimensions.width) == width, Int(dimensions.height) == height else { return false }
+      return format.videoSupportedFrameRateRanges.contains { range in
+        frameRate >= range.minFrameRate && frameRate <= range.maxFrameRate
+      }
+    }
+  }
+}

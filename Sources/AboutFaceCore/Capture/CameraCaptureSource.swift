@@ -113,25 +113,6 @@ public actor CameraCaptureSource: CaptureSource {
     self.continuation = continuation
   }
 
-  /// Convenience for opening the system default video device, per §12.1's
-  /// note that explicit user selection (stored per profile) is the normal
-  /// path — this exists only for tests/tools/harnesses that don't have a
-  /// profile to read a stored `uniqueID` from. Returns `nil` if there is no
-  /// default video device (e.g. headless CI).
-  public static func defaultDevice(
-    width: Int = 1280,
-    height: Int = 720,
-    frameRate: Double = 30
-  ) -> CameraCaptureSource? {
-    guard let device = AVCaptureDevice.default(for: .video) else { return nil }
-    return CameraCaptureSource(
-      deviceUniqueID: device.uniqueID,
-      width: width,
-      height: height,
-      frameRate: frameRate
-    )
-  }
-
   public func start() async throws {
     guard state != .running else { return }
 
@@ -252,9 +233,45 @@ public actor CameraCaptureSource: CaptureSource {
     }
 
     let output = AVCaptureVideoDataOutput()
+    // `kCVPixelBufferWidthKey`/`HeightKey` are what ACTUALLY govern the
+    // dimensions of the buffers this output delivers on macOS. Neither
+    // `device.activeFormat` (reverted by `startRunning()` — PR #53) nor
+    // `session.sessionPreset` (set below, and genuinely applied) controls
+    // them: measured on the reference hardware, a session with
+    // `.hd1280x720` and a request for 1280×720 delivered 1920×1080 buffers,
+    // and a request for 640×480 with `.vga640x480` did the same. Adding
+    // these two keys — and changing nothing else — produced exactly the
+    // requested dimensions in both cases.
+    //
+    // This mattered for a long time without being visible. PR #53 fixed the
+    // FRAME RATE half of the same family of bug (durations applied after
+    // `startRunning()`) and concluded the preset governed resolution; the
+    // resolution was never read back, and `SignalFormatter` reported the
+    // REQUESTED dimensions, so every surface in the app confidently echoed
+    // the number we had asked for. Setup ran at 1080p while reporting 720p
+    // for the whole of Phases 2–4. The only symptom was dropped frames at
+    // 30fps, which reads as a performance problem rather than a format one.
+    //
+    // Disproved on the way to this, recorded so nobody retries it: applying
+    // `sessionPreset` AFTER `addInput` rather than before (on the theory
+    // that adding an input re-evaluates the preset) changes nothing —
+    // still 1920×1080. The preset ordering below is therefore the original
+    // ordering, deliberately left alone.
+    //
+    // Verified with `aboutface-cli live`'s actual-vs-requested readout
+    // (`CapturedFrame.pixelDimensions`), which is the only reason any of
+    // this was observable. Do not remove that readout.
+    // swift-format wants a trailing comma on the last element of a
+    // multiline collection literal; swiftlint's trailing_comma rule forbids
+    // one. Same tool disagreement noted elsewhere in this codebase — format
+    // wins.
+    // swiftlint:disable trailing_comma
     output.videoSettings = [
-      kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+      kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+      kCVPixelBufferWidthKey as String: width,
+      kCVPixelBufferHeightKey as String: height,
     ]
+    // swiftlint:enable trailing_comma
     output.alwaysDiscardsLateVideoFrames = true
 
     let delegate = CameraSampleBufferDelegate(continuation: continuation, mirrorState: mirrorState)
@@ -289,21 +306,6 @@ public actor CameraCaptureSource: CaptureSource {
     connection.isVideoMirrored = false
 
     resolvedDevice = device
-  }
-
-  private static func matchingFormat(
-    device: AVCaptureDevice,
-    width: Int,
-    height: Int,
-    frameRate: Double
-  ) -> AVCaptureDevice.Format? {
-    device.formats.first { format in
-      let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-      guard Int(dimensions.width) == width, Int(dimensions.height) == height else { return false }
-      return format.videoSupportedFrameRateRanges.contains { range in
-        frameRate >= range.minFrameRate && frameRate <= range.maxFrameRate
-      }
-    }
   }
 
   private func observeSessionNotifications() {
