@@ -122,6 +122,42 @@ struct ConfigStoreTests {
     #expect(result.config.audio.positional.brightnessStyle == .saw)  // missing key defaulted
   }
 
+  @Test(
+    "Lenient decode: absent baseline-learning gaze keys (§13 Phase 5) fill in defaults via deep merge"
+  )
+  func lenientDecodeMissingGazeBaselineKeysDefaults() throws {
+    let url = temporaryURL()
+    try prepare(url)
+    defer { cleanUp(url) }
+
+    var config = Config.defaults
+    config.gaze.maxPitchDegrees = 12  // a tuned value elsewhere in the same block
+    try ConfigStore.save(config, to: url)
+
+    // Simulate a file written before `baselineLearningEnabled`/
+    // `baselineAdaptationSeconds`/`baselineClampDegrees` existed: strip just
+    // those three keys out of the nested `gaze` object, leaving the
+    // pre-existing `maxYawDegrees`/`maxPitchDegrees` (including the tuned
+    // value above) intact — same "older file, newer app, additive field
+    // nested inside an existing block" shape as
+    // `lenientDecodeMissingBrightnessStyleDefaults` above.
+    var stored = try #require(
+      try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    var gaze = try #require(stored["gaze"] as? [String: Any])
+    gaze.removeValue(forKey: "baselineLearningEnabled")
+    gaze.removeValue(forKey: "baselineAdaptationSeconds")
+    gaze.removeValue(forKey: "baselineClampDegrees")
+    stored["gaze"] = gaze
+    try JSONSerialization.data(withJSONObject: stored).write(to: url)
+
+    let result = ConfigStore.load(from: url)
+    #expect(result.issue == nil)
+    #expect(result.config.gaze.maxPitchDegrees == 12)  // tuned value preserved
+    #expect(result.config.gaze.baselineLearningEnabled == true)  // missing keys defaulted
+    #expect(result.config.gaze.baselineAdaptationSeconds == 45)
+    #expect(result.config.gaze.baselineClampDegrees == 25)
+  }
+
   /// **Documented decision (2026-08-02, brightness-style round):** an
   /// UNKNOWN `brightnessStyle` raw string (not merely absent — present but
   /// invalid, e.g. from a future app version's since-removed style, or

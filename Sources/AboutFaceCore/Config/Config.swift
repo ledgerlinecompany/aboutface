@@ -202,9 +202,56 @@ public struct Config: Codable, Sendable, Equatable {
     /// degrees.
     public var maxPitchDegrees: Double
 
-    public init(maxYawDegrees: Double, maxPitchDegrees: Double) {
+    /// Capture-free baseline learning (§13 Phase 5 hard MUST, maintainer:
+    /// "blind users will be hesitant to capture positioning they don't
+    /// know is right. Can we have a default that also works?").
+    /// `AnalysisEngine` maintains a slow running average of (yaw, pitch)
+    /// over frames the subject spends centered — their natural pose is the
+    /// pose they hold most while placed — instead of requiring "capture
+    /// current position as target" (§4 extension) before `gazeOnCamera`
+    /// means anything. When `true`, `gazeOnCamera` compares against that
+    /// learned baseline (seeded from `TargetFraming.neutral*Degrees` if
+    /// already captured, otherwise from the first eligible in-zone frame).
+    /// When `false`, behavior is EXACTLY the prior static comparison
+    /// against `TargetFraming.neutral*Degrees` — a compatibility escape
+    /// hatch, and what the pinned `AnalysisEngineGazeBaselineTests` assert.
+    /// Default `true`: this is the mechanism that makes `Config.defaults`
+    /// "genuinely usable with zero calibration" (§13 Phase 5) for gaze,
+    /// specifically — see `AnalysisEngine+GazeBaseline.swift`.
+    public var baselineLearningEnabled: Bool
+
+    /// Time constant (seconds) of the learned-baseline EMA: roughly how
+    /// long a sustained pose shift takes to become the new "neutral."
+    /// Converted to a per-frame alpha from the observed inter-frame
+    /// timestamp delta (`AnalysisEngine+GazeBaseline.swift`), not a fixed
+    /// frame-count window like `Config.smoothingWindow` — frame rate can
+    /// vary (backend, thermal throttling, corpus replay), and this knob
+    /// describes wall-clock dwelling behavior, not a frame count. 45s
+    /// default is a starting point (§0): long enough that a few seconds of
+    /// glancing at a second monitor cannot drag "neutral" away, short
+    /// enough that genuine posture drift over a session is still tracked.
+    public var baselineAdaptationSeconds: Double
+
+    /// The learned baseline may not wander more than this many degrees
+    /// (yaw and pitch independently) from its seed value — the pose it was
+    /// seeded from (a capture, or the first eligible in-zone frame). A
+    /// habit of glancing away, held long enough and often enough, must not
+    /// slowly drag "neutral" off-camera; this bounds that failure mode
+    /// regardless of `baselineAdaptationSeconds`.
+    public var baselineClampDegrees: Double
+
+    public init(
+      maxYawDegrees: Double,
+      maxPitchDegrees: Double,
+      baselineLearningEnabled: Bool = true,
+      baselineAdaptationSeconds: Double = 45,
+      baselineClampDegrees: Double = 25
+    ) {
       self.maxYawDegrees = maxYawDegrees
       self.maxPitchDegrees = maxPitchDegrees
+      self.baselineLearningEnabled = baselineLearningEnabled
+      self.baselineAdaptationSeconds = baselineAdaptationSeconds
+      self.baselineClampDegrees = baselineClampDegrees
     }
   }
 

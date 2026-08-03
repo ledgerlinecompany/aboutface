@@ -8,6 +8,18 @@ import Testing
 /// (`Config.TargetFraming.neutral*Degrees`), not absolute camera-ray
 /// angles — a laptop camera views the face from off the natural eyeline,
 /// so a natural head position read ~+30° chin-up in the field.
+///
+/// **Pinned to `baselineLearningEnabled = false` (§13 Phase 5's
+/// capture-free baseline, `AnalysisEngine+GazeBaseline.swift`).** These
+/// tests assert the STATIC captured/absolute comparison exactly (a single
+/// frame, checked against `Config.TargetFraming.neutral*Degrees` with no
+/// adaptation) — that behavior is now gated behind
+/// `Config.Gaze.baselineLearningEnabled == false` and is what the learned
+/// baseline falls back to before anything has seeded it or when disabled.
+/// Pinning here decouples this file from the learned baseline's own
+/// eligibility/timing rules (covered separately by
+/// `AnalysisEngineGazeLearningTests`) so a future change to seeding/dwell
+/// details cannot spuriously break what is really a static-mode contract.
 struct AnalysisEngineGazeBaselineTests {
 
   private func engine(
@@ -16,6 +28,7 @@ struct AnalysisEngineGazeBaselineTests {
     var config = Config.defaults
     config.targetFraming.neutralPitchDegrees = neutralPitch
     config.gaze.maxPitchDegrees = maxPitch
+    config.gaze.baselineLearningEnabled = false
     let backend = ScriptedBackend([observation(pitchEgocentric: pitchEgocentric)])
     return AnalysisEngine(backend: backend, config: config)
   }
