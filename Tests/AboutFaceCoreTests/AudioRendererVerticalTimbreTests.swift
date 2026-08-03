@@ -56,6 +56,11 @@ struct AudioRendererVerticalTimbreTests {
     // arithmetic in the doc comments below off their exact values. Pin
     // rather than re-derive.
     config.positional.errorQuantizationStep = 0
+    // Scheme B now defaults ON (2026-08-02, §16.2) — pin OFF so its
+    // click-train transients never bleed into this file's harmonic/
+    // sub-octave RATIO measurements, several of which sit inside B's
+    // 0.8×errorRange engagement envelope.
+    config.scheme.schemeBEnabled = false
     return config
   }
 

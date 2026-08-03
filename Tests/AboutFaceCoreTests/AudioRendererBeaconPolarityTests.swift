@@ -24,6 +24,11 @@ struct AudioRendererBeaconPolarityTests {
   private static var pinnedConfig: Config.Audio {
     var config = Config.Audio.defaults
     config.positional.errorQuantizationStep = 0
+    // Scheme B now defaults ON (2026-08-02, §16.2) — pin OFF so its
+    // click-train transients never bleed into this file's exact hand-
+    // derived pan/pitch measurements, which are meant to isolate Scheme A
+    // alone.
+    config.scheme.schemeBEnabled = false
     return config
   }
 

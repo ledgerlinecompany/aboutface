@@ -75,25 +75,41 @@ extension AnalysisEngine {
       abs(geometry.yaw - baselineYaw) <= Float(gaze.maxYawDegrees)
       && abs(geometry.pitch - baselinePitch) <= Float(gaze.maxPitchDegrees)
 
-    // Adapt AFTER computing `gazeOnCamera` above, per
+    // §4 extension, maintainer 2026-08-02: "Agreed, it's part of gaze" —
+    // roll gets the SAME learned-baseline comparison as yaw/pitch above,
+    // but headLevel is deliberately NEVER folded into `inDeadZone`/
+    // `gazeOnCamera`/`eligible` below: head tilt is a POSE problem, and the
+    // beacon has no rotational axis to guide a tilt correction with (the
+    // zone only gates what the beacon can actually guide the subject
+    // toward). It is advisory-only — see `FramingState.headLevel`'s doc
+    // comment — surfaced by `FeedbackRouter`'s in-zone advisory, never by
+    // gating settle.
+    let baselineRoll = effectiveBaselineRoll(target: target)
+    let headLevel = abs(geometry.roll - baselineRoll) <= Float(gaze.maxRollDegrees)
+
+    // Adapt AFTER computing `gazeOnCamera`/`headLevel` above, per
     // `AnalysisEngine+GazeBaseline.swift`'s doc comment: this frame's own
-    // pose must never leak into its own gaze judgment, only into the next
-    // frame's. Eligibility is the full §13 Phase 5 gate: a healthy signal,
-    // hysteresis-latched dead-zone membership (computed just above — this
-    // deliberately reuses the SAME smoothed `inDeadZone`, not a separate
-    // raw check, so "settled" means the same thing here as everywhere else
-    // in this file), and at-or-above-threshold confidence.
+    // pose must never leak into its own gaze/tilt judgment, only into the
+    // next frame's. Eligibility is the full §13 Phase 5 gate: a healthy
+    // signal, hysteresis-latched dead-zone membership (computed just above
+    // — this deliberately reuses the SAME smoothed `inDeadZone`, not a
+    // separate raw check, so "settled" means the same thing here as
+    // everywhere else in this file), and at-or-above-threshold confidence.
+    // Roll shares this exact gate — see `adaptLearnedBaseline`'s doc
+    // comment for why it is deliberately NOT also gated on `headLevel`.
     let eligible =
       signalState == .ok && inDeadZone
       && geometry.confidence >= Float(config.signal.lowConfidenceThreshold)
     adaptLearnedBaseline(
-      yaw: geometry.yaw, pitch: geometry.pitch, eligible: eligible, timestamp: timestamp)
+      yaw: geometry.yaw, pitch: geometry.pitch, roll: geometry.roll, eligible: eligible,
+      timestamp: timestamp)
 
     return FramingState(
       error: newSmoothedError,
       distanceError: newSmoothedDistanceError,
       inDeadZone: inDeadZone,
-      gazeOnCamera: gazeOnCamera
+      gazeOnCamera: gazeOnCamera,
+      headLevel: headLevel
     )
   }
 

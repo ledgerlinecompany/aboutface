@@ -20,6 +20,10 @@ struct AudioRendererQuantizationTests {
     // the hard-quantized case") is covered on its own terms by
     // `AudioRendererQuantizationGlideTests`.
     audio.positional.quantizationGlideMs = 0
+    // Scheme B now defaults ON (2026-08-02, §16.2) — pin OFF so its
+    // click-train transients never bleed into this file's exact
+    // dominant-frequency snap assertions.
+    audio.scheme.schemeBEnabled = false
     return audio
   }
 

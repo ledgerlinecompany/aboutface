@@ -106,6 +106,7 @@ func makeOutput(
   distanceError: Float = 0,
   inDeadZone: Bool = true,
   gazeOnCamera: Bool = true,
+  headLevel: Bool = true,
   yaw: Float = 0,
   pitch: Float = 0
 ) -> EngineOutput {
@@ -115,7 +116,8 @@ func makeOutput(
       error: SIMD2(errorX, errorY),
       distanceError: distanceError,
       inDeadZone: inDeadZone,
-      gazeOnCamera: gazeOnCamera
+      gazeOnCamera: gazeOnCamera,
+      headLevel: headLevel
     ) : nil
   // `yaw`/`pitch` default to 0 and are otherwise unused by any pre-existing
   // test — only the tuning-round-5 gaze-trim tests

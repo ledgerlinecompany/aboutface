@@ -21,6 +21,18 @@ import Testing
 struct AudioRendererBrightnessStyleTests {
   private static let sampleRate = 48000.0
 
+  /// `Config.Audio.defaults` with Scheme B pinned OFF. Scheme B now
+  /// defaults ON (2026-08-02, §16.2); this file's `errorY` values (`±0.1`,
+  /// `±0.3`, `0`) frequently sit inside its 0.8×errorRange engagement
+  /// envelope, and B's click-train transients would otherwise bleed into
+  /// the Goertzel harmonic-ratio measurements below, which are meant to
+  /// isolate the brightness/darkness timbre ingredient alone.
+  private static var pinnedConfig: Config.Audio {
+    var config = Config.Audio.defaults
+    config.scheme.schemeBEnabled = false
+    return config
+  }
+
   // MARK: - Overdrive: odd harmonics grow with |errorY|
 
   /// `tanh` waveshaping of a sine adds ONLY odd harmonics (see
@@ -119,7 +131,7 @@ struct AudioRendererBrightnessStyleTests {
 
   @Test("Default config (.saw): centered stays pure with beaconPolarity flipped")
   func defaultConfig_purityHoldsWithFlippedPolarity() async throws {
-    var flipped = Config.Audio.defaults
+    var flipped = Self.pinnedConfig
     flipped.positional.beaconPolarity = false
     let centered = try await measure(errorX: 0, errorY: 0, config: flipped)
     let bright = try await measure(errorX: 0, errorY: 0.3, config: flipped)
@@ -157,7 +169,7 @@ struct AudioRendererBrightnessStyleTests {
   /// tests stay meaningful if the shipped default ever changes again.
   private func measure(
     errorX: Float, errorY: Float, style: Config.BrightnessStyle? = nil,
-    config: Config.Audio = .defaults
+    config: Config.Audio = Self.pinnedConfig
   )
     async throws -> Measurement
   {

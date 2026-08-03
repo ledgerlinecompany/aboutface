@@ -11,18 +11,35 @@ import Testing
 /// relative/comparative assertions instead.
 struct AudioRendererPositionalTests {
 
+  /// `Config.Audio.defaults` with Scheme B pinned OFF. Scheme B now
+  /// defaults ON (2026-08-02, §16.2); many of this file's error magnitudes
+  /// (small `errorX`/`errorY`, near-zero `distanceError`) sit inside its
+  /// 0.8×errorRange engagement envelope, and its click-train transients
+  /// would otherwise bleed into these stereo-balance/dominant-frequency/
+  /// envelope-dip measurements, which are meant to isolate Scheme A's
+  /// positional mapping alone.
+  private static var pinnedConfig: Config.Audio {
+    var config = Config.Audio.defaults
+    config.scheme.schemeBEnabled = false
+    return config
+  }
+
   // MARK: - Stereo balance responds to errorX sign
 
   @Test("Stereo balance flips between opposite-sign errorX")
   func stereoBalanceRespondsToErrorXSign() async throws {
-    let rightRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let rightRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0.25, errorY: 0, distanceError: 0, inDeadZone: false))
     }
     let (rLeft, rRight) = try await AudioRendererTestSupport.renderFrames(
       rightRenderer, total: 8192)
 
-    let leftRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let leftRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: -0.25, errorY: 0, distanceError: 0, inDeadZone: false))
     }
@@ -39,7 +56,9 @@ struct AudioRendererPositionalTests {
 
   @Test("Centered errorX (0) produces roughly balanced stereo output")
   func centeredErrorXProducesBalancedOutput() async throws {
-    let renderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let renderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0.2, distanceError: 0, inDeadZone: false))
     }
@@ -54,7 +73,9 @@ struct AudioRendererPositionalTests {
 
   @Test("Dominant frequency differs between opposite-sign errorY")
   func dominantFrequencyRespondsToErrorYSign() async throws {
-    let aboveRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let aboveRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0.3, distanceError: 0, inDeadZone: false))
     }
@@ -63,7 +84,9 @@ struct AudioRendererPositionalTests {
     let aboveFreq = AudioRendererTestSupport.dominantFrequency(
       aboveLeft, sampleRate: 48000, minHz: 220, maxHz: 880)
 
-    let belowRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let belowRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: -0.3, distanceError: 0, inDeadZone: false))
     }
@@ -87,14 +110,18 @@ struct AudioRendererPositionalTests {
     // tracking magnitude, which is this test's point —
     // `AudioRendererDistanceDirectionTests.zeroErrorIsSteady` covers the
     // exactly-0 anchor case directly.
-    let nearRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let nearRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.03, inDeadZone: false))
     }
     let (nearLeft, _) = try await AudioRendererTestSupport.renderFrames(nearRenderer, total: 48000)
     let nearDips = AudioRendererTestSupport.envelopeDipCount(nearLeft, blockSize: 480)
 
-    let farRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let farRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.3, inDeadZone: false))
     }
@@ -111,11 +138,13 @@ struct AudioRendererPositionalTests {
 
   @Test("Speakers output mode narrows pan magnitude relative to headphones")
   func speakersModeNarrowsPan() async throws {
-    var speakersConfig = Config.Audio.defaults
+    var speakersConfig = Self.pinnedConfig
     speakersConfig.outputMode = .speakers
     let target = SonificationTarget(errorX: 0.3, errorY: 0, distanceError: 0, inDeadZone: false)
 
-    let headphonesRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let headphonesRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(target)
     }
     let (hLeft, hRight) = try await AudioRendererTestSupport.renderFrames(
@@ -123,14 +152,9 @@ struct AudioRendererPositionalTests {
     let headphonesBalance = abs(
       AudioRendererTestSupport.rms(hLeft) - AudioRendererTestSupport.rms(hRight))
 
-    // swift-format wraps the closure's `renderer in` onto its own line once
-    // the opening-brace line is too long; swiftlint's closure_parameter_position
-    // rule wants it on the same line as `{`. Format wins (see
-    // ConfigStore.swift for the same kind of workaround, a different rule).
-    // swiftlint:disable closure_parameter_position
-    let speakersRenderer = try await AudioRendererTestSupport.makeRenderer(config: speakersConfig) {
-      renderer in
-      // swiftlint:enable closure_parameter_position
+    let speakersRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: speakersConfig
+    ) { renderer in
       await renderer.update(target)
     }
     let (sLeft, sRight) = try await AudioRendererTestSupport.renderFrames(
@@ -143,12 +167,14 @@ struct AudioRendererPositionalTests {
 
   @Test("Speakers output mode widens the pitch range relative to headphones")
   func speakersModeWidensPitchRange() async throws {
-    var speakersConfig = Config.Audio.defaults
+    var speakersConfig = Self.pinnedConfig
     speakersConfig.outputMode = .speakers
     let target = SonificationTarget(errorX: 0, errorY: 0.3, distanceError: 0, inDeadZone: false)
     let reference = Config.Audio.defaults.positional.referenceToneHz
 
-    let headphonesRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let headphonesRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(target)
     }
     let (hLeft, _) = try await AudioRendererTestSupport.renderFrames(
@@ -156,14 +182,9 @@ struct AudioRendererPositionalTests {
     let headphonesFreq = AudioRendererTestSupport.dominantFrequency(
       hLeft, sampleRate: 48000, minHz: 100, maxHz: 1200)
 
-    // swift-format wraps the closure's `renderer in` onto its own line once
-    // the opening-brace line is too long; swiftlint's closure_parameter_position
-    // rule wants it on the same line as `{`. Format wins (see
-    // ConfigStore.swift for the same kind of workaround, a different rule).
-    // swiftlint:disable closure_parameter_position
-    let speakersRenderer = try await AudioRendererTestSupport.makeRenderer(config: speakersConfig) {
-      renderer in
-      // swiftlint:enable closure_parameter_position
+    let speakersRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: speakersConfig
+    ) { renderer in
       await renderer.update(target)
     }
     let (sLeft, _) = try await AudioRendererTestSupport.renderFrames(speakersRenderer, total: 16384)
@@ -180,6 +201,9 @@ struct AudioRendererPositionalTests {
 
   @Test("Scheme C: large horizontal error (vertical solved) tracks errorX, not errorY")
   func sequentialScheme_unsolvedHorizontal_tracksErrorX() async throws {
+    // No Scheme B pin needed here (unlike this file's other configs):
+    // `schemeBSampleIfActive` requires `positional == .panPitch`, so
+    // Scheme C is architecturally immune to B regardless of `schemeBEnabled`.
     var config = Config.Audio.defaults
     config.scheme.positional = .sequential
     // errorX far outside sequentialAxisThreshold (0.15 * 0.35 ≈ 0.0525);
@@ -198,6 +222,9 @@ struct AudioRendererPositionalTests {
 
   @Test("Scheme C: solved horizontal (errorX ≈ 0) advances to tracking errorY")
   func sequentialScheme_solvedHorizontal_tracksErrorY() async throws {
+    // No Scheme B pin needed here (unlike this file's other configs):
+    // `schemeBSampleIfActive` requires `positional == .panPitch`, so
+    // Scheme C is architecturally immune to B regardless of `schemeBEnabled`.
     var config = Config.Audio.defaults
     config.scheme.positional = .sequential
     // errorX inside the threshold ("solved"); errorY large and positive.

@@ -34,6 +34,10 @@ struct AudioRendererTimbreOnsetTests {
     // the hand-derived `|normalized| == 0.5` exactness these tests rely
     // on. Pin rather than re-derive.
     config.positional.errorQuantizationStep = 0
+    // Scheme B now defaults ON (2026-08-02, §16.2) — pin OFF so its
+    // click-train transients never bleed into this file's harmonic-ratio
+    // onset-curve measurements.
+    config.scheme.schemeBEnabled = false
     return config
   }
 

@@ -74,7 +74,7 @@
       "overdriveMaxDrive": 6,
       "panSpeakerAttenuation": 0.5,
       "pitchSpeakerRangeExpansion": 1.5,
-      "quantizationGlideMs": 80,
+      "quantizationGlideMs": 30,
       "referenceToneHz": 440,
       "sequentialAxisThreshold": 0.15,
       "timbreOnsetExponent": 2,
@@ -84,10 +84,13 @@
     "scheme": {
       "positional": "panPitch",
       "schemeBClickDurationMs": 6,
-      "schemeBClickGain": 0.35,
+      "schemeBClickGain": 0.18,
+      "schemeBDistanceEngageError": 0.15,
       "schemeBEnabled": true,
-      "schemeBMaxBeatHz": 8,
-      "schemeBRefinementFraction": 0.2
+      "schemeBFullRateAtError": 0.08,
+      "schemeBMaxBeatHz": 10,
+      "schemeBRateCurve": 2,
+      "schemeBRefinementFraction": 0.8
     }
   },
   "deadZone": {
@@ -102,9 +105,11 @@
   },
   "dwellMs": 800,
   "feedback": {
-    "faceLostEarconDelayMs": 1500,
+    "faceLostEarconDelayMonitorMs": 1500,
+    "faceLostEarconDelaySetupMs": 500,
     "faceLostSpeechDelayMs": 5000,
     "faceLostStopDelayMs": 30000,
+    "goodZoneChimeDelayMs": 0,
     "heartbeatIntervalMs": 7000,
     "monitor": {
       "minAnnouncementIntervalMs": 20000,
@@ -115,7 +120,11 @@
     "setup": {}
   },
   "gaze": {
+    "baselineAdaptationSeconds": 45,
+    "baselineClampDegrees": 25,
+    "baselineLearningEnabled": true,
     "maxPitchDegrees": 15,
+    "maxRollDegrees": 10,
     "maxYawDegrees": 15
   },
   "hysteresisExitRatio": 1.4,

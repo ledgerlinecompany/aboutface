@@ -25,6 +25,14 @@ reproducibility/provenance of the ORIGINAL one-variable-each design; do not
 expect a re-run to reproduce the exact round-1 numbers now that the
 baseline they're patched against has changed underneath them.
 
+**Regenerated again (roll advisory PR):** every profile below was
+regenerated a second time against `Config.defaults` as of the roll-advisory
+change — `Config.Gaze.maxRollDegrees` (new field) and `schemeBEnabled`
+(flips to `true`, §16.2 closed — see the round-2 section below) both land
+in every profile's `gaze`/`audio.scheme` blocks now. Same provenance
+mechanism each time: `aboutface-cli config-defaults` for a fresh baseline,
+then the one jq patch each profile's row below documents.
+
 | Profile | Round-1 change (as trialed) | Round-1 result |
 |---|---|---|
 | `p0-baseline` | none | control; re-run LAST as `p0-again` to bracket practice effects — still lost to `p5` on both speed and steadiness |
@@ -40,19 +48,30 @@ Metrics compared per session (all in `aboutface-trials.json`): median
 pleasantness matters as much as speed for a tool worn hours a day (§7's
 "tolerable tool" bar).
 
-## Round 2 (2026-08-02 action round) — new profiles
+## Round 2 (2026-08-02 action round) — results, §16.2 closed
 
 `p2`/`p3` are NOT re-added as round-2 variables — both hypotheses were
 refuted, so their fields stay at whatever round 1's baseline had them at
 (kept in the table above purely for reproducibility, per the maintainer's
 instruction not to silently drop a refuted result). Two new profiles
-reopen the one round-1 result that stayed genuinely unresolved:
+reopened the one round-1 result that stayed genuinely unresolved:
 
-| Profile | Change (relative to new defaults) | Hypothesis |
-|---|---|---|
-| `p6-schemeb-continuous` | `errorQuantizationStep` forced back to `0` (continuous) + `schemeBEnabled` ON | **the fair `p1` retry.** Round 1's `p1` trial ran under a continuous beacon; the percussive click train (this PR) fixes the register-collision that made `p1` unjudgeable, so re-trialing under the SAME continuous conditions isolates whether the redesign alone (not quantization too) resolves it. |
-| `p7-schemeb-quantized` | new defaults (quantized `0.03`) as-is + `schemeBEnabled` ON | **the combination test.** Do the beacon's tonal-purity snap and Scheme B's rhythmic-silence null compose into a stronger "you're there," or does layering two channels clutter the signal? Note this file is currently IDENTICAL to the regenerated `p1-scheme-b` (both are "new defaults + schemeBEnabled true") — kept as a separate named file because it plays a distinct role in the round-2 hypothesis set, not because the JSON differs. |
+| Profile | Change (relative to round-1-era defaults) | Hypothesis | Result |
+|---|---|---|---|
+| `p6-schemeb-continuous` | `errorQuantizationStep` forced back to `0` (continuous) + `schemeBEnabled` ON | **the fair `p1` retry.** Round 1's `p1` trial ran under a continuous beacon; the percussive click train fixes the register-collision that made `p1` unjudgeable, so re-trialing under the SAME continuous conditions isolates whether the redesign alone (not quantization too) resolves it. | **"that works."** No repeat of `p1`'s "wasn't sure if I was supposed to get it to match the other one" — the click train read as unambiguously distinct from the beacon even under continuous mapping. |
+| `p7-schemeb-quantized` | quantized `0.03` (round-1's own winner) + `schemeBEnabled` ON | **the combination test.** Do the beacon's tonal-purity snap and Scheme B's rhythmic-silence null compose into a stronger "you're there," or does layering two channels clutter the signal? | **Won outright.** Tonal-purity snap + rhythmic-silence null gave the clearest "you're there" of any profile trialed across both rounds — compose, not clutter. |
 
-Run order recommendation: `p6` before `p7`, so the continuous-vs-quantized
-comparison isolates quantization's own contribution before judging the
-full combination.
+**§16.2 closed** (`docs/spec.md` §16, `docs/tuning/2026-08-02-convergence-experiment.md`'s
+closure note): `Config.AudioScheme.schemeBEnabled` now defaults `true`.
+`p0-baseline` therefore now includes Scheme B as part of what "the
+defaults" means — it is no longer a round-1-era, B-off snapshot. One
+consequence, after regenerating every profile below against the new
+defaults: `p1-scheme-b`, `p5-quantized-fine`, and `p7-schemeb-quantized`
+each patch exactly the one field that now already matches the new
+default (`schemeBEnabled`, or `errorQuantizationStep` for `p5`), so all
+three are bit-identical to `p0-baseline` post-regeneration — the same
+"kept as a separate file for provenance, not because the JSON differs"
+situation `p7` was already in relative to `p1` before this round. `p6`
+remains the one round-2 profile that still differs from the new baseline
+(it deliberately forces `errorQuantizationStep` back to `0` to isolate
+the continuous-mapping condition).

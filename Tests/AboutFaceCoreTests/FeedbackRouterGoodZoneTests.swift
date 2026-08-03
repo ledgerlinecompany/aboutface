@@ -107,6 +107,28 @@ struct FeedbackRouterGoodZoneTests {
     #expect(await speech.calls == [.speak(Lexicon.Instruction.centered)])
   }
 
+  @Test(
+    "head tilt on arrival does not block enteredGoodZone (roll's cousin of the gaze regression)")
+  func headTiltOnArrivalDoesNotBlockEnteredGoodZone() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .setup)
+    let clock = ContinuousClock()
+    let t0 = clock.now
+
+    // §4 extension: roll joins the gaze advisory (maintainer, 2026-08-02:
+    // "Agreed, it's part of gaze") — `headLevel` is deliberately NOT part
+    // of `inDeadZone` (`AnalysisEngine+Framing.swift`'s doc comment: the
+    // beacon has no rotational axis to guide a tilt correction with), so a
+    // tilted arrival must classify as `.goodZone`, same as gaze-off does
+    // above, and still fire the entry chime.
+    let output = makeOutput(signalState: .ok, inDeadZone: true, headLevel: false)
+
+    await ingestRepeated(router, output, at: t0, count: 5)
+    #expect(await audio.playedEvents() == [.enteredGoodZone])
+    #expect(await speech.calls == [.speak(Lexicon.Instruction.centered)])
+  }
+
   @Test("holding good zone for 21s fires heartbeats at 7s, 14s, and 21s")
   func heartbeatsEvery7Seconds() async {
     let audio = MockAudioRenderer()

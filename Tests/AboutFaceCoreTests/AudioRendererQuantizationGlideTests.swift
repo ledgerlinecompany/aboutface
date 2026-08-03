@@ -20,13 +20,19 @@ struct AudioRendererQuantizationGlideTests {
   /// output — not merely "close," bit-identical.
   @Test("Continuous default (step = 0): glide setting has no effect on output")
   func continuousPathUnaffectedByGlide() async throws {
+    // Scheme B now defaults ON (2026-08-02, §16.2) — pin OFF on both sides
+    // below so its click-train transients (which read glide/quantization
+    // state of their own) can never masquerade as a stray glide-state
+    // touch in this bit-identity comparison.
     var noGlide = Config.Audio.defaults
     noGlide.positional.errorQuantizationStep = 0
     noGlide.positional.quantizationGlideMs = 0
+    noGlide.scheme.schemeBEnabled = false
 
     var withGlide = Config.Audio.defaults
     withGlide.positional.errorQuantizationStep = 0
     withGlide.positional.quantizationGlideMs = 80
+    withGlide.scheme.schemeBEnabled = false
 
     // An off-grid, two-axis target — not a round number on any axis — so a
     // stray glide-state touch anywhere in the pan/pitch path would show up.
@@ -61,13 +67,17 @@ struct AudioRendererQuantizationGlideTests {
   /// glide out to where you are even if you don't move").
   @Test("Glide engages on target CHANGES (and only on changes, not activation)")
   func glideDiffersFromHardQuantizedEarlyOn() async throws {
+    // Scheme B pinned OFF (2026-08-02, §16.2 default flip) — see this
+    // file's other config pairs for why.
     var hard = Config.Audio.defaults
     hard.positional.errorQuantizationStep = 0.03
     hard.positional.quantizationGlideMs = 0
+    hard.scheme.schemeBEnabled = false
 
     var glided = Config.Audio.defaults
     glided.positional.errorQuantizationStep = 0.03
     glided.positional.quantizationGlideMs = 80
+    glided.scheme.schemeBEnabled = false
 
     let initial = SonificationTarget(errorX: 0, errorY: 0.09, distanceError: 0, inDeadZone: false)
     let changed = SonificationTarget(errorX: 0, errorY: 0.3, distanceError: 0, inDeadZone: false)
@@ -122,13 +132,17 @@ struct AudioRendererQuantizationGlideTests {
   /// the dominant-frequency scan.
   @Test("Settled glide output matches the hard-quantized dominant frequency")
   func settledOutputMatchesHardQuantized() async throws {
+    // Scheme B pinned OFF (2026-08-02, §16.2 default flip) — see this
+    // file's other config pairs for why.
     var hard = Config.Audio.defaults
     hard.positional.errorQuantizationStep = 0.03
     hard.positional.quantizationGlideMs = 0
+    hard.scheme.schemeBEnabled = false
 
     var glided = Config.Audio.defaults
     glided.positional.errorQuantizationStep = 0.03
     glided.positional.quantizationGlideMs = 80
+    glided.scheme.schemeBEnabled = false
 
     let target = SonificationTarget(errorX: 0, errorY: 0.3, distanceError: 0, inDeadZone: false)
 
@@ -174,13 +188,17 @@ struct AudioRendererQuantizationGlideTests {
   /// `settledOutputMatchesHardQuantized` above for the same technique.
   @Test("Glide converges exactly to zero (the null) after settling")
   func convergesExactlyToZero() async throws {
+    // Scheme B pinned OFF (2026-08-02, §16.2 default flip) — see this
+    // file's other config pairs for why.
     var hard = Config.Audio.defaults
     hard.positional.errorQuantizationStep = 0.03
     hard.positional.quantizationGlideMs = 0
+    hard.scheme.schemeBEnabled = false
 
     var glided = Config.Audio.defaults
     glided.positional.errorQuantizationStep = 0.03
     glided.positional.quantizationGlideMs = 80
+    glided.scheme.schemeBEnabled = false
 
     let hardRenderer = try await AudioRendererTestSupport.makeRenderer(config: hard) { renderer in
       await renderer.update(

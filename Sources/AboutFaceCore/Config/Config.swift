@@ -201,6 +201,19 @@ public struct Config: Codable, Sendable, Equatable {
     /// `FramingState.gazeOnCamera` requires `|pitch|` at or below this many
     /// degrees.
     public var maxPitchDegrees: Double
+    /// `FramingState.headLevel` requires `|roll|` at or below this many
+    /// degrees, measured against the learned roll baseline (§4 extension,
+    /// maintainer 2026-08-02: "Agreed, it's part of gaze" — roll joins the
+    /// same learned-baseline machinery as yaw/pitch, below). Unlike
+    /// `maxYawDegrees`/`maxPitchDegrees`, this threshold backs an
+    /// ADVISORY-ONLY signal: head tilt is a pose problem the beacon cannot
+    /// guide a correction for, so `headLevel` is deliberately excluded from
+    /// `FramingState.inDeadZone` — see that field's own doc comment. Default
+    /// `10`: tighter than `maxYawDegrees`/`maxPitchDegrees` (15) since a
+    /// held tilt is more visually/socially conspicuous on camera than an
+    /// equivalent yaw/pitch deviation, but still a starting point (§0), not
+    /// a fixed constant.
+    public var maxRollDegrees: Double
 
     /// Capture-free baseline learning (§13 Phase 5 hard MUST, maintainer:
     /// "blind users will be hesitant to capture positioning they don't
@@ -233,7 +246,7 @@ public struct Config: Codable, Sendable, Equatable {
     public var baselineAdaptationSeconds: Double
 
     /// The learned baseline may not wander more than this many degrees
-    /// (yaw and pitch independently) from its seed value — the pose it was
+    /// (yaw, pitch, and roll independently) from its seed value — the pose it was
     /// seeded from (a capture, or the first eligible in-zone frame). A
     /// habit of glancing away, held long enough and often enough, must not
     /// slowly drag "neutral" off-camera; this bounds that failure mode
@@ -243,12 +256,14 @@ public struct Config: Codable, Sendable, Equatable {
     public init(
       maxYawDegrees: Double,
       maxPitchDegrees: Double,
+      maxRollDegrees: Double = 10,
       baselineLearningEnabled: Bool = true,
       baselineAdaptationSeconds: Double = 45,
       baselineClampDegrees: Double = 25
     ) {
       self.maxYawDegrees = maxYawDegrees
       self.maxPitchDegrees = maxPitchDegrees
+      self.maxRollDegrees = maxRollDegrees
       self.baselineLearningEnabled = baselineLearningEnabled
       self.baselineAdaptationSeconds = baselineAdaptationSeconds
       self.baselineClampDegrees = baselineClampDegrees
@@ -332,7 +347,8 @@ public struct Config: Codable, Sendable, Equatable {
     ),
     gaze: Gaze(
       maxYawDegrees: 15,
-      maxPitchDegrees: 15
+      maxPitchDegrees: 15,
+      maxRollDegrees: 10
     ),
     display: Display(
       degreesStep: 2,

@@ -47,9 +47,13 @@ struct ConfigAudioTests {
     #expect(Config.Audio.defaults.scheme.positional == .panPitch)
   }
 
-  @Test("Scheme B (zero-beat) ships disabled by default, per §16")
-  func schemeBDisabledByDefault() {
-    #expect(Config.Audio.defaults.scheme.schemeBEnabled == false)
+  @Test("Scheme B (percussive arrival herald) ships enabled by default — §16.2 closed 2026-08-02")
+  func schemeBEnabledByDefault() {
+    // Round 1 shipped it OFF pending tuning ("unjudgeable" `p1` result).
+    // Round 2's re-trial of the percussive redesign (`p6`/`p7` —
+    // `docs/tuning/2026-08-02-convergence-experiment.md`'s closure note)
+    // came back "that works," closing §16.2 in favor of on-by-default.
+    #expect(Config.Audio.defaults.scheme.schemeBEnabled == true)
   }
 
   @Test("Scheme B refinement fraction: 0.8, widened again by round-2d pacing feedback")
