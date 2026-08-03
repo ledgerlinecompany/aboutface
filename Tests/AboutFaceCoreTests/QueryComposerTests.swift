@@ -88,7 +88,7 @@ struct QueryComposerTests {
         Lexicon.State.centered,
         Lexicon.State.lightingFine,
         Lexicon.State.gazeOn,
-        Lexicon.State.headLevelState,
+        Lexicon.State.headLevel,
         Lexicon.State.otherPeopleNone,
       ])
     // swiftlint:enable trailing_comma
@@ -205,7 +205,7 @@ struct QueryComposerTests {
     #expect(
       summary.orderedPhrases == [
         Lexicon.State.centered, Lexicon.State.tooDark, Lexicon.State.gazeOn,
-        Lexicon.State.headLevelState, Lexicon.State.otherPeopleNone,
+        Lexicon.State.headLevel, Lexicon.State.otherPeopleNone,
       ])
     // swiftlint:enable trailing_comma
   }

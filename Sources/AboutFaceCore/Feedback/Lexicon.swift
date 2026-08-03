@@ -140,7 +140,7 @@ public enum Lexicon {
     // silence ambiguity — "did my hotkey even register").
     public static let lightingFine = Phrase.fixed("Lighting is fine.")
     public static let gazeOn = Phrase.fixed("You are looking at the camera.")
-    public static let headLevelState = Phrase.fixed("Your head is level.")
+    public static let headLevel = Phrase.fixed("Your head is level.")
     public static let otherPeoplePresent = Phrase.fixed("Other people are in frame.")
     public static let otherPeopleNone = Phrase.fixed("No one else in frame.")
     public static let allClear = Phrase.fixed("All good.")

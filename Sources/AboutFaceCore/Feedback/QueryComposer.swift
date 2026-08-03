@@ -59,7 +59,7 @@ public enum QueryComposer {
     /// gaze-on-camera majority is "off," `Lexicon.State.headTilted` if the
     /// head-level majority is "not level" — both, either, or (outside
     /// `problemsOnly`) neither, in which case it instead holds the two
-    /// "fine" phrases `gazeOn` + `headLevelState` together, mirroring how a
+    /// "fine" phrases `gazeOn` + `headLevel` together, mirroring how a
     /// held tilt while otherwise well-placed is ALREADY treated as an
     /// independent advisory rather than a placement problem elsewhere in
     /// this codebase (see `FramingState.headLevel`'s own doc comment).
@@ -181,7 +181,7 @@ public enum QueryComposer {
     if headTiltMajority { phrases.append(Lexicon.State.headTilted) }
 
     guard phrases.isEmpty else { return phrases }
-    return problemsOnly ? [] : [Lexicon.State.gazeOn, Lexicon.State.headLevelState]
+    return problemsOnly ? [] : [Lexicon.State.gazeOn, Lexicon.State.headLevel]
   }
 
   // swiftlint:disable opening_brace
