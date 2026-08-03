@@ -83,6 +83,33 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   public var setup: ModeLimits
   public var monitor: ModeLimits
 
+  /// §5.3 Query mode tunables. See `Query`'s own doc comment.
+  public var query: Query
+
+  /// §5.3: "One-shot burst of analysis (~10 frames, ~300ms), then a single
+  /// terse spoken summary" and "'problems only' variant that omits fields
+  /// that are fine." See `FeedbackRouter+Query.swift`'s type-level doc
+  /// comment for exactly what "burst" means in this codebase (a ring of the
+  /// most recently `ingest`ed frames, not a freshly-triggered capture) and
+  /// why `burstFrameCount` — not a millisecond duration — is the
+  /// Config-keyed knob: `FeedbackRouter` has no notion of capture cadence of
+  /// its own, only a count of frames already handed to it.
+  public struct Query: Codable, Sendable, Equatable {
+    /// §5.3 "~10 frames" — how many of the most recently ingested
+    /// `EngineOutput`s `FeedbackRouter.performQuery(at:)` aggregates over.
+    public var burstFrameCount: Int
+    /// §5.3 "problems only" variant: omit fields (or, for the merged
+    /// gaze/tilt field, whichever half of it) that are fine.
+    public var problemsOnly: Bool
+
+    public init(burstFrameCount: Int, problemsOnly: Bool) {
+      self.burstFrameCount = burstFrameCount
+      self.problemsOnly = problemsOnly
+    }
+
+    public static let defaults = Query(burstFrameCount: 10, problemsOnly: false)
+  }
+
   /// A mode's rate-limit ceiling on discrete announcements (§5.1: "no rate
   /// limiting beyond the dwell time" for Setup — both fields `nil`; §5.2:
   /// "max 1 announcement per 20s. Same condition not repeated within 3
@@ -114,7 +141,8 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     heartbeatIntervalMs: Int,
     goodZoneChimeDelayMs: Int = 0,
     setup: ModeLimits,
-    monitor: ModeLimits
+    monitor: ModeLimits,
+    query: Query = .defaults
   ) {
     self.nFrameSetup = nFrameSetup
     self.nFrameMonitor = nFrameMonitor
@@ -126,6 +154,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     self.goodZoneChimeDelayMs = goodZoneChimeDelayMs
     self.setup = setup
     self.monitor = monitor
+    self.query = query
   }
 
   /// §7.2/§7.3/§6.1/§5.2 starting-point defaults — tune against the test
@@ -143,7 +172,8 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     heartbeatIntervalMs: 7000,
     goodZoneChimeDelayMs: 0,
     setup: ModeLimits(minAnnouncementIntervalMs: nil, minSameConditionIntervalMs: nil),
-    monitor: ModeLimits(minAnnouncementIntervalMs: 20000, minSameConditionIntervalMs: 180_000)
+    monitor: ModeLimits(minAnnouncementIntervalMs: 20000, minSameConditionIntervalMs: 180_000),
+    query: .defaults
   )
 }
 

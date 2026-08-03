@@ -350,6 +350,9 @@ extension FeedbackRouter {
     }
     if let phrase {
       await speech.speak(phrase)
+      // §8 repeat-last bookkeeping — see `lastSpokenPhrase`'s doc comment
+      // in `FeedbackRouter.swift`.
+      lastSpokenPhrase = phrase
     }
   }
 }
