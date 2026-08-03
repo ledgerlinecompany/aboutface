@@ -2,16 +2,19 @@ import Testing
 
 @testable import AboutFaceCore
 
-/// §7.3's face-lost escalation ladder, Phase 3 scope (rungs 0–1 only):
-/// "0 – [delay]: Nothing... [delay]: Distinct earcon. Non-positional." Plus
-/// recovery: "On face reacquisition... announce recovery once." The rung-1
-/// delay is now MODE-SELECTED (app field finding, 2026-08-02: "it takes
-/// ~1.5s for the no-face warning to sound after the tone stops") — Setup's
-/// active convergence loop uses 500ms (`FeedbackConfig
+/// §7.3's face-lost escalation ladder, all four rungs: "0 – [delay]:
+/// Nothing... [delay]: Distinct earcon. Non-positional... ~5s: Spoken...
+/// ~30s: STOP." Plus recovery: "On face reacquisition... announce recovery
+/// once." The rung-1 delay is MODE-SELECTED (app field finding, 2026-08-02:
+/// "it takes ~1.5s for the no-face warning to sound after the tone stops")
+/// — Setup's active convergence loop uses 500ms (`FeedbackConfig
 /// .faceLostEarconDelaySetupMs`), Monitor keeps the original 1500ms
 /// (`faceLostEarconDelayMonitorMs`) per §7.3's own "covers turning to a
 /// second monitor, reaching for coffee" rationale. See
 /// `FeedbackRouter.faceLostEarconDelayMs`'s doc comment for the full story.
+/// Rungs 2/3 and recovery live in `FeedbackRouter+FaceLost.swift`; the
+/// rung-0/1 tests below predate that file (Phase 3) and stay mode-split the
+/// same way for continuity with it.
 struct FeedbackRouterFaceLostTests {
 
   @Test("Setup: nothing happens before 500ms of face loss")
@@ -42,12 +45,17 @@ struct FeedbackRouterFaceLostTests {
     await router.ingest(faceLostOutput(), at: t0.plus(ms: 500))
 
     #expect(await audio.calls == [.play(.faceLost)])
-    // Phase 3 ships no spoken rung yet (§7.3 rung 2, ~5s, is Phase 4).
+    // Rung 2 (~5s, spoken "No face.") hasn't come due yet.
     #expect(await speech.calls.isEmpty)
 
-    // Continuing to hold face-lost must not refire the earcon.
-    await router.ingest(faceLostOutput(), at: t0.plus(ms: 10_000))
+    // Continuing to hold face-lost must not refire the earcon. Stays
+    // strictly before rung 2's 5000ms boundary
+    // (`FeedbackRouterFaceLostEscalationTests` covers that transition) so
+    // this test pins down rung 1's own "fires at most once" latch in
+    // isolation.
+    await router.ingest(faceLostOutput(), at: t0.plus(ms: 4999))
     #expect(await audio.calls == [.play(.faceLost)])
+    #expect(await speech.calls.isEmpty)
   }
 
   @Test("Monitor: nothing happens before 1500ms of face loss")
@@ -83,9 +91,12 @@ struct FeedbackRouterFaceLostTests {
     // Continuing to hold face-lost must not refire the earcon. Bypasses
     // Monitor's rate limit deliberately (§7.3's ladder is exempt — see
     // `tickFaceLostLadder`'s doc comment), so this is purely the "fires at
-    // most once per episode" latch under test, not the rate limiter.
-    await router.ingest(faceLostOutput(), at: t0.plus(ms: 10_000))
+    // most once per episode" latch under test, not the rate limiter. Stays
+    // strictly before rung 2's 5000ms boundary
+    // (`FeedbackRouterFaceLostEscalationTests` covers that transition).
+    await router.ingest(faceLostOutput(), at: t0.plus(ms: 4999))
     #expect(await audio.calls == [.play(.faceLost)])
+    #expect(await speech.calls.isEmpty)
   }
 
   @Test("reacquiring the face after the earcon fires faceReacquired once")

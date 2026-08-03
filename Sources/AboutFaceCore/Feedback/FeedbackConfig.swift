@@ -29,16 +29,19 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   public var nFrameMonitor: Int
 
   /// §7.3 face-lost escalation ladder, milliseconds elapsed since the
-  /// (N-frame-confirmed) face-lost condition began. Phase 3 ships rung 0
-  /// (nothing) and rung 1, the distinct earcon — MODE-SELECTED as of the
-  /// app field finding below, rather than the single `faceLostEarconDelayMs`
-  /// this used to be. `faceLostSpeechDelayMs` (rung 2, ~5s, spoken "No
-  /// face.") and `faceLostStopDelayMs` (rung 3, ~30s, STOP +
-  /// `userLikelyAway`) stay single-valued, unaffected by this split —
-  /// reserved fields, present now so Phase 4 doesn't need another Config
-  /// shape change, but `FeedbackRouter` does not read them yet. See
-  /// `FeedbackRouter.tickAnnouncements(output:at:)`'s face-lost case for
-  /// exactly where Phase 4 slots in.
+  /// (N-frame-confirmed) face-lost condition began. Rung 1, the distinct
+  /// earcon, is MODE-SELECTED as of the app field finding below, rather
+  /// than the single `faceLostEarconDelayMs` this used to be.
+  /// `faceLostSpeechDelayMs` (rung 2, ~5s, spoken "No face.") and
+  /// `faceLostStopDelayMs` (rung 3, ~30s, STOP + `userLikelyAway`) stay
+  /// single-valued, unaffected by this split — the escalation posture
+  /// §7.3 asks for doesn't vary by mode the way rung 1's timing does (§5.2
+  /// already carves Monitor's speech OUT of its earcons-only default
+  /// specifically for this ladder, so there is no per-mode "should this
+  /// speak at all" left to key a second field on). See
+  /// `FeedbackRouter.tickFaceLostLadder(from:at:)` in
+  /// `FeedbackRouter+FaceLost.swift` for exactly how each field gates its
+  /// rung.
   ///
   /// **Split into per-mode fields (app field finding, 2026-08-02): "it
   /// takes ~1.5s for the no-face warning to sound after the tone stops."**
@@ -61,6 +64,36 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   public var faceLostEarconDelayMonitorMs: Int
   public var faceLostSpeechDelayMs: Int
   public var faceLostStopDelayMs: Int
+
+  /// Maintainer decision, 2026-08-03: "speak and earcon by default, but
+  /// turning off the speech is a choice on both sides" — "both sides"
+  /// meaning the departure (rung 2's "No face.") and the return (rung 3's
+  /// recovery phrase) are each INDEPENDENTLY switchable off, and neither
+  /// switch touches the earcon it accompanies. Both default `true` (§0/§11:
+  /// a user-facing tunable, not a compile-time constant, like every other
+  /// field here) because §7.3's escalation is safety-relevant — opting out
+  /// of being told "the app thinks you're gone" should be a deliberate act,
+  /// not an accident of a default nobody looked at.
+  ///
+  /// Gates rung 2's spoken "No face." (`Lexicon.Instruction.noFace`) only.
+  /// `false` still fires rung 1's earcon on schedule and still advances the
+  /// ladder to rung 2 and then rung 3 (STOP) at their normal delays — see
+  /// `FeedbackRouter.tickFaceLostLadder(from:at:)`'s own doc comment for
+  /// why disabling the phrase must never disable the rung transition or
+  /// rung 3's reachability. With this `false`, rung 2 becomes silent in
+  /// both channels it could have used (no event, no phrase), so `fire`'s
+  /// own no-op short-circuit means it produces zero renderer calls while
+  /// still updating `faceLostRung`.
+  public var faceLostSpeechEnabled: Bool
+  /// Gates the spoken recovery phrase on reacquisition from a rung-3 away
+  /// episode — "Back, centered." or the live problem's instruction, per
+  /// `FeedbackRouter.handleFaceLostReacquisition(from:to:output:at:)`.
+  /// `false` still fires the `.faceReacquired` earcon and still clears
+  /// `userLikelyAway` unconditionally; the toggle governs speech only, never
+  /// the exit from silence. (Rung 1/2-only recoveries already speak nothing
+  /// regardless of this flag — see that method's own doc comment — so this
+  /// only ever has an audible effect on episodes that reached rung 3.)
+  public var faceLostRecoverySpeechEnabled: Bool
 
   /// §6.1 "Holding good zone" liveness heartbeat interval, milliseconds.
   /// "The heartbeat is not optional" — users need to distinguish "good" from
@@ -138,6 +171,8 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostEarconDelayMonitorMs: Int,
     faceLostSpeechDelayMs: Int,
     faceLostStopDelayMs: Int,
+    faceLostSpeechEnabled: Bool = true,
+    faceLostRecoverySpeechEnabled: Bool = true,
     heartbeatIntervalMs: Int,
     goodZoneChimeDelayMs: Int = 0,
     setup: ModeLimits,
@@ -150,6 +185,8 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     self.faceLostEarconDelayMonitorMs = faceLostEarconDelayMonitorMs
     self.faceLostSpeechDelayMs = faceLostSpeechDelayMs
     self.faceLostStopDelayMs = faceLostStopDelayMs
+    self.faceLostSpeechEnabled = faceLostSpeechEnabled
+    self.faceLostRecoverySpeechEnabled = faceLostRecoverySpeechEnabled
     self.heartbeatIntervalMs = heartbeatIntervalMs
     self.goodZoneChimeDelayMs = goodZoneChimeDelayMs
     self.setup = setup
@@ -169,6 +206,8 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostEarconDelayMonitorMs: 1500,
     faceLostSpeechDelayMs: 5000,
     faceLostStopDelayMs: 30000,
+    faceLostSpeechEnabled: true,
+    faceLostRecoverySpeechEnabled: true,
     heartbeatIntervalMs: 7000,
     goodZoneChimeDelayMs: 0,
     setup: ModeLimits(minAnnouncementIntervalMs: nil, minSameConditionIntervalMs: nil),

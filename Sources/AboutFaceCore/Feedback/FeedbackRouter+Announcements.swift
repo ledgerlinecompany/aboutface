@@ -23,9 +23,18 @@ extension FeedbackRouter {
   /// state-exit side effects that don't belong inside `tickAnnouncements`:
   /// canceling the good-zone heartbeat schedule, and firing the §7.3
   /// face-reacquired recovery event.
+  ///
+  /// `output` is the frame that TRIGGERED this confirmation (the one
+  /// `FeedbackRouter.ingest(_:at:)` was processing when `pendingStreak`
+  /// crossed the N-frame threshold) — threaded through purely so the rung-3
+  /// recovery branch below can resolve "the problem, if there is one"
+  /// (§7.3) via the SAME `announcementPayload(for:output:)` machinery
+  /// `tickGenericDwell` already uses, rather than a parallel classifier
+  /// that could drift out of sync with it.
   func onConfirmedStateChanged(
     from previous: DiscreteState?,
     to next: DiscreteState,
+    output: EngineOutput,
     at time: ContinuousClock.Instant
   ) async {
     dwellFiredForCurrentEpisode = false
@@ -54,22 +63,12 @@ extension FeedbackRouter {
       headTiltAnnouncedForEpisode = false
     }
 
-    if case .problem(.faceLost) = previous, next != previous {
-      // §7.3: "On face reacquisition... announce recovery once." Phase 3
-      // only models rungs 0–1 (nothing, then the 1.5s earcon) — there is no
-      // `userLikelyAway` flag yet to gate this on (that lands with rungs
-      // 2–3 in Phase 4), so the Phase-3-scoped rule is: recovery fires
-      // whenever the ladder had escalated at least to the earcon (rung 1)
-      // before reacquisition. A face-lost episode that never reached rung 1
-      // (reacquired inside the 1.5s grace window) is, by §7.3's own design,
-      // meant to be inaudible in both directions — nothing on the way down,
-      // nothing on the way back up.
-      let hadEscalated = faceLostRung >= 1
-      faceLostRung = 0
-      if hadEscalated {
-        await fire(event: .faceReacquired, phrase: nil, key: nil, at: time, bypassRateLimit: true)
-      }
-    }
+    // §7.3 face-lost recovery: a no-op unless `previous` was face-lost (the
+    // guard lives at the top of the callee). Delegated to
+    // `FeedbackRouter+FaceLost.swift` rather than inlined here — see that
+    // function's own doc comment for why the whole §7.3 lifecycle
+    // (escalate/STOP/recover) lives together in one file.
+    await handleFaceLostReacquisition(from: previous, to: next, output: output, at: time)
   }
 
   /// Checks the CURRENT `confirmedState` against its elapsed-time timers
@@ -92,34 +91,6 @@ extension FeedbackRouter {
     case .indeterminate:
       break
     }
-  }
-
-  /// §7.3 face-lost escalation ladder. Phase 3 ships rung 0 (nothing) and
-  /// rung 1 (a distinct, non-positional earcon), at a MODE-SELECTED delay —
-  /// `FeedbackRouter.faceLostEarconDelayMs` (500ms Setup / 1500ms Monitor
-  /// defaults — see that property's doc comment for the app field finding
-  /// that split it). `feedbackConfig.faceLostSpeechDelayMs` (rung 2, ~5s,
-  /// spoken "No face.") and `faceLostStopDelayMs` (rung 3, ~30s, STOP +
-  /// `userLikelyAway`) are reserved config fields already — Phase 4 adds
-  /// `faceLostRung == 1 && elapsed >= faceLostSpeechDelayMs` and
-  /// `faceLostRung == 2 && elapsed >= faceLostStopDelayMs` cases right
-  /// here, each bumping `faceLostRung` the same way rung 1 does below.
-  ///
-  /// Bypasses the §5.2 Monitor rate limit deliberately: §5.2 carves out
-  /// "earcons only by default... except face-lost which escalates to
-  /// speech" as a special case, and §7.3 frames the 30s stop as a
-  /// safety-critical behavior ("a tool that nags at an empty chair... gets
-  /// uninstalled" cuts both ways — silence must be equally reliable). A
-  /// face-lost rung must never be silently dropped by an unrelated
-  /// condition having just consumed the rate-limit budget.
-  private func tickFaceLostLadder(
-    from start: ContinuousClock.Instant, at time: ContinuousClock.Instant
-  ) async {
-    guard faceLostRung < 1 else { return }
-    let elapsedMs = Self.milliseconds(from: start, to: time)
-    guard elapsedMs >= faceLostEarconDelayMs else { return }
-    faceLostRung = 1
-    await fire(event: .faceLost, phrase: nil, key: nil, at: time, bypassRateLimit: true)
   }
 
   // swiftlint:disable opening_brace
@@ -214,7 +185,15 @@ extension FeedbackRouter {
   /// `tickGoodZoneGaze(output:at:)`/`tickGoodZoneRoll(output:at:)` above,
   /// the good-zone-internal advisories that replaced them. Kept here only
   /// for switch exhaustiveness.
-  private static func announcementPayload(
+  ///
+  /// Not `private`: `FeedbackRouter+FaceLost.swift`'s
+  /// `faceLostRecoveryPhrase(for:output:)` calls this directly (§7.3
+  /// recovery: "the problem, if there is one" reuses this SAME payload
+  /// resolution rather than a parallel classifier) — `private` in an
+  /// extension is scoped to the extension body, not the whole type, so a
+  /// cross-file caller needs at least `internal`, the implicit default
+  /// here.
+  static func announcementPayload(
     for condition: FeedbackCondition,
     output: EngineOutput
   ) -> (AudioEvent?, Lexicon.Phrase?) {
@@ -311,13 +290,18 @@ extension FeedbackRouter {
 
   /// The single call site every announcement (generic dwell, good-zone
   /// entry, heartbeat, face-lost ladder, face-reacquired) routes through.
-  /// Order matters: silence is checked before anything else (§7.5 — silence
-  /// must produce zero renderer calls, not just zero AUDIBLE output), then
-  /// the no-op short-circuit (nothing to say ⇒ don't consume a rate-limit
-  /// slot for it), then rate limiting (unless `bypassRateLimit`, used by
-  /// the heartbeat/face-lost-ladder/face-reacquired call sites — see their
-  /// call sites above for why each is exempt), then finally the actual
-  /// `audio`/`speech`/`EventSubscriber` calls.
+  /// Order matters: silence (§7.5) and §7.3's rung-3 `userLikelyAway` STOP
+  /// are both checked before anything else — each must produce zero
+  /// renderer calls, not just zero AUDIBLE output — and specifically
+  /// BEFORE the rate-limit branch below, not folded into it: the
+  /// heartbeat/face-lost-ladder/face-reacquired call sites all pass
+  /// `bypassRateLimit: true` for their own legitimate reasons (see their
+  /// call sites), so a guard placed only inside that branch would let every
+  /// one of them straight through and rung 3 would never actually go
+  /// silent. Then the no-op short-circuit (nothing to say ⇒ don't consume a
+  /// rate-limit slot for it), then rate limiting itself (unless
+  /// `bypassRateLimit`), then finally the actual `audio`/`speech`/
+  /// `EventSubscriber` calls.
   ///
   /// `key: nil` marks firings that never participate in per-condition rate
   /// limiting even when `bypassRateLimit` is `false` (not currently used
@@ -332,6 +316,12 @@ extension FeedbackRouter {
     bypassRateLimit: Bool = false
   ) async {
     guard !isSilenced else { return }
+    // §7.3 rung 3 — see `userLikelyAway`'s doc comment in
+    // `FeedbackRouter.swift` for the full rationale, and
+    // `onConfirmedStateChanged`'s face-lost branch above for why the
+    // recovery announcement that ends an away episode is never itself
+    // caught here (it clears the flag before calling `fire`).
+    guard !userLikelyAway else { return }
     guard event != nil || phrase != nil else { return }
 
     if !bypassRateLimit {
