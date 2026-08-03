@@ -99,6 +99,13 @@ public enum Lexicon {
     // Gaze (§3.3 `FramingState.gazeOnCamera`).
     public static let lookAtCamera = Phrase.fixed("Look at camera.")
 
+    // Roll (§4 extension, `FramingState.headLevel`; maintainer, 2026-08-02:
+    // "Agreed, it's part of gaze" — a held head tilt while placed gets the
+    // same in-zone advisory treatment as gaze-off, via
+    // `FeedbackRouter.tickGoodZoneRoll`. No `AudioEvent` — same "tones never
+    // mean look/tilt" contract `lookAtCamera` already keeps.
+    public static let level = Phrase.fixed("Level.")
+
     // §7.3 face-lost recovery: "announce recovery once ('Back, centered.'
     // — or the problem, if there is one)". This is the "no problem" case;
     // the "or the problem" branch reuses the ordinary condition phrases
@@ -121,5 +128,6 @@ public enum Lexicon {
     public static let noSignal = Phrase.fixed("No signal.")
     public static let tooDark = Phrase.fixed("Too dark to detect a face.")
     public static let gazeOff = Phrase.fixed("You are not looking at the camera.")
+    public static let headTilted = Phrase.fixed("Head tilted.")
   }
 }

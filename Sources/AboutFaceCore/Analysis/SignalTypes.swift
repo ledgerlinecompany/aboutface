@@ -133,12 +133,30 @@ public struct FramingState: Sendable {
   public let inDeadZone: Bool
   /// From yaw/pitch magnitude, or true gaze if available.
   public let gazeOnCamera: Bool
+  /// `|roll − learned roll baseline| <= Config.Gaze.maxRollDegrees` (§4
+  /// extension, maintainer 2026-08-02: "Agreed, it's part of gaze" — roll
+  /// joins the same learned-baseline machinery as `gazeOnCamera`, see
+  /// `AnalysisEngine+GazeBaseline.swift`). **ADVISORY ONLY — deliberately
+  /// NOT part of `inDeadZone`.** Head tilt is a pose problem, not a
+  /// placement one: there is no rotational axis in the positional
+  /// sonification for the beacon to guide a tilt correction with, so a
+  /// held tilt while otherwise well-placed still enters and stays in the
+  /// good zone; `headLevel == false` only ever surfaces as
+  /// `FeedbackRouter`'s in-zone advisory (`Lexicon.Instruction.level`),
+  /// mirroring how `gazeOnCamera` itself moved out of the good-zone gate
+  /// for the identical reason. Additive field (default `true`, "level")
+  /// so pre-existing `FramingState(...)` call sites keep compiling.
+  public let headLevel: Bool
 
-  public init(error: SIMD2<Float>, distanceError: Float, inDeadZone: Bool, gazeOnCamera: Bool) {
+  public init(
+    error: SIMD2<Float>, distanceError: Float, inDeadZone: Bool, gazeOnCamera: Bool,
+    headLevel: Bool = true
+  ) {
     self.error = error
     self.distanceError = distanceError
     self.inDeadZone = inDeadZone
     self.gazeOnCamera = gazeOnCamera
+    self.headLevel = headLevel
   }
 }
 

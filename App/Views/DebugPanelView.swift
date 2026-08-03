@@ -107,6 +107,10 @@ struct DebugPanelView: View {
           title: "Max pitch for gaze-on-camera",
           value: model.binding(\.gaze.maxPitchDegrees),
           range: 0...45, step: 1, format: Format.degrees)
+        ConfigSliderRow(
+          title: "Max roll for head-level",
+          value: model.binding(\.gaze.maxRollDegrees),
+          range: 0...45, step: 1, format: Format.degrees)
       } onReset: {
         model.resetToDefault(\.gaze)
       }

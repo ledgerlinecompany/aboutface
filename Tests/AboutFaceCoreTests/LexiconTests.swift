@@ -40,6 +40,7 @@ struct LexiconTests {
       Lexicon.Instruction.noSignal,
       Lexicon.Instruction.tooDark,
       Lexicon.Instruction.lookAtCamera,
+      Lexicon.Instruction.level,
       Lexicon.Instruction.recovered,
     ]
     let states: [Lexicon.Phrase] = [
@@ -54,6 +55,7 @@ struct LexiconTests {
       Lexicon.State.noSignal,
       Lexicon.State.tooDark,
       Lexicon.State.gazeOff,
+      Lexicon.State.headTilted,
     ]
     // swiftlint:enable trailing_comma
 

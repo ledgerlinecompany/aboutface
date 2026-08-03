@@ -748,7 +748,11 @@ hysteresis does not chatter on borderline cases, and they are what makes swappin
 Flag these rather than deciding unilaterally:
 
 1. Exact earcon sound design — needs to be authored by ear, not specified here.
-2. Whether Scheme B (zero-beat) should be on by default once tuned.
+2. ~~Whether Scheme B (zero-beat) should be on by default once tuned.~~
+   **Resolved 2026-08-02:** yes — round 2's re-trial of the percussive
+   redesign came back "that works" (blind verdict), `p7-schemeb-quantized`
+   won outright. `Config.AudioScheme.schemeBEnabled` now defaults `true`.
+   See `docs/tuning/2026-08-02-convergence-experiment.md`'s closure note.
 3. Eloquence/Vocalizer voice availability (see §6.3) — outcome affects the
    voice-picker UI.
 4. Whether Monitor mode should auto-enable on camera-in-use by default, or

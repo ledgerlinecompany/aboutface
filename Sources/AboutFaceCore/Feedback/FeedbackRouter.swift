@@ -88,6 +88,18 @@ public actor FeedbackRouter {
   var gazeOffConfirmedStart: ContinuousClock.Instant?
   var gazeAnnouncedForEpisode = false
 
+  // MARK: - §4 extension, roll joins the gaze advisory (maintainer,
+  // 2026-08-02: "Agreed, it's part of gaze")
+  //
+  // A SECOND in-zone advisory sub-machine, structurally identical to and
+  // fully independent of the gaze-off one immediately above — its own
+  // N-frame streak, its own dwell clock, its own once-per-episode latch.
+  // Tracks `!FramingState.headLevel` instead of `!gazeOnCamera`. See
+  // `tickGoodZoneRoll(output:at:)` in `FeedbackRouter+Announcements.swift`.
+  var headTiltPendingStreak = 0
+  var headTiltConfirmedStart: ContinuousClock.Instant?
+  var headTiltAnnouncedForEpisode = false
+
   // MARK: - Gaze trim (tuning round 5, maintainer-designed prototype,
   // default OFF — see `Config.AudioGazeTrim` and
   // `FeedbackRouter+GazeTrim.swift`). EMA state for the yaw/pitch

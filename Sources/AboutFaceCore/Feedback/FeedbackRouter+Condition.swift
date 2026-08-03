@@ -6,8 +6,8 @@
 /// bottom and takes the first case whose gate is true, so the ladder's
 /// order lives in exactly one place (this declaration) rather than a
 /// separately-maintained array that could drift out of sync with it.
-/// **`.gazeOff` is the one exception to "walks it" — see its own doc
-/// comment below.**
+/// **`.gazeOff` and `.headTilt` are the exceptions to "walks it" — see their
+/// own doc comments below.**
 ///
 /// Each case's gate lives in `Gates.evaluate(_:output:)`. Two of §7.4's
 /// seven numbered rungs are intentionally NOT wired to real signals this
@@ -84,6 +84,25 @@ public enum FeedbackCondition: Sendable, Equatable, Hashable, CaseIterable {
   /// episode. See that method's doc comment in
   /// `FeedbackRouter+Announcements.swift` for the full in-zone shape.
   case gazeOff
+  /// **Roll joins the gaze advisory (§4 extension, maintainer 2026-08-02:
+  /// "Agreed, it's part of gaze").** Head tilt is a POSE problem, same
+  /// category as gaze: `AnalysisEngine+Framing.swift` deliberately keeps
+  /// `FramingState.headLevel` out of `inDeadZone` (the beacon has no
+  /// rotational axis to guide a tilt correction with — the zone only gates
+  /// what the beacon can actually guide), so, exactly like `.gazeOff`
+  /// above, this case is EXCLUDED from the ladder walk
+  /// `FeedbackRouter.discreteState(for:)` does and never blocks
+  /// `.goodZone` classification or the `enteredGoodZone` chime. Its
+  /// `Gates.evaluate` predicate is instead consulted directly by
+  /// `FeedbackRouter.tickGoodZoneRoll(output:at:)` — a second in-zone
+  /// advisory sub-machine, parallel to and fully independent of
+  /// `tickGoodZoneGaze` (own N-frame streak, own dwell clock, own
+  /// once-per-episode latch), speaking
+  /// `Lexicon.Instruction.level` at most once per episode. See that
+  /// method's doc comment in `FeedbackRouter+Announcements.swift` for the
+  /// full in-zone shape and how it and gaze arbitrate when both are
+  /// pending at once.
+  case headTilt
 }
 
 /// A frame's fully-resolved discrete state: either a `FeedbackCondition`
@@ -125,25 +144,32 @@ extension FeedbackRouter {
         // (placement, therefore `inDeadZone`, already established by
         // definition at that call site).
         return output.framing.map { !$0.gazeOnCamera } ?? false
+      case .headTilt:
+        // Same shape as `.gazeOff` immediately above, one axis over: the
+        // raw "is the head NOT level right now" reading, consulted only by
+        // `FeedbackRouter.tickGoodZoneRoll(output:at:)` from within an
+        // already-confirmed `.goodZone` episode.
+        return output.framing.map { !$0.headLevel } ?? false
       }
     }
   }
 
   /// Resolves one frame's `EngineOutput` to a `DiscreteState` by walking
   /// §7.4's ladder (`FeedbackCondition.allCases`, top to bottom, EXCLUDING
-  /// `.gazeOff` — see that case's doc comment for why) and taking the first
-  /// matching gate. If none match, the frame is either `.goodZone` (signal
-  /// `.ok`, framing present, in dead zone — gaze is no longer part of this
-  /// classification, on purpose, per the 2026-08-02 field finding) or
-  /// `.indeterminate` — the latter is a defensive fallback for a `.ok`
-  /// signal state with no `framing` (a contract violation by
-  /// `AnalysisEngine`'s own documented invariant, "framing is nil exactly
-  /// when analysis.primary is nil," which should be unreachable when
-  /// `signalState == .ok`) and never drives an announcement (see
-  /// `tickAnnouncements(output:at:)`'s `.indeterminate` case).
+  /// `.gazeOff`/`.headTilt` — see those cases' doc comments for why) and
+  /// taking the first matching gate. If none match, the frame is either
+  /// `.goodZone` (signal `.ok`, framing present, in dead zone — gaze/roll
+  /// are no longer part of this classification, on purpose, per the
+  /// 2026-08-02 field finding and its roll extension) or `.indeterminate`
+  /// — the latter is a defensive fallback for a `.ok` signal state with no
+  /// `framing` (a contract violation by `AnalysisEngine`'s own documented
+  /// invariant, "framing is nil exactly when analysis.primary is nil,"
+  /// which should be unreachable when `signalState == .ok`) and never
+  /// drives an announcement (see `tickAnnouncements(output:at:)`'s
+  /// `.indeterminate` case).
   static func discreteState(for output: EngineOutput) -> DiscreteState {
     if let condition = FeedbackCondition.allCases.first(where: {
-      $0 != .gazeOff && Gates.evaluate($0, output: output)
+      $0 != .gazeOff && $0 != .headTilt && Gates.evaluate($0, output: output)
     }) {
       return .problem(condition)
     }

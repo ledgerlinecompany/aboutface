@@ -67,7 +67,7 @@ extension Config {
       ),
       scheme: AudioScheme(
         positional: .panPitch,
-        schemeBEnabled: false,
+        schemeBEnabled: true,
         schemeBRefinementFraction: 0.8,
         schemeBMaxBeatHz: 10,
         schemeBFullRateAtError: 0.08,
@@ -155,10 +155,15 @@ extension Config {
   public struct AudioScheme: Codable, Sendable, Equatable {
     /// Default `.panPitch` (Scheme A, §6.2).
     public var positional: AudioPositionalScheme
-    /// Scheme B (§16 maintainer decision, 2026-08-01: ships behind this
-    /// flag, default OFF, until tuned against the corpus; the decision to
-    /// flip the default is deferred). See `schemeBMaxBeatHz`'s doc comment
-    /// for what Scheme B actually sounds like as of the 2026-08-02
+    /// Scheme B (§16 maintainer decision, 2026-08-01: shipped behind this
+    /// flag, default OFF, until tuned against the corpus). **§16.2 closed,
+    /// 2026-08-02:** round 2's re-trial (`p6-schemeb-continuous`,
+    /// `p7-schemeb-quantized` — see
+    /// `docs/tuning/2026-08-02-convergence-experiment.md`'s closure note)
+    /// resolved the round-1 "unjudgeable" result — maintainer's verdict on
+    /// the percussive arrival-herald form, blind to which profile was live:
+    /// "that works." Default flipped to `true`. See `schemeBMaxBeatHz`'s doc
+    /// comment for what Scheme B actually sounds like as of the 2026-08-02
     /// percussive redesign, and `RenderState+SchemeB.swift`'s top-level doc
     /// comment for the round-2d "arrival herald" identity change (no longer
     /// XY-only refinement — heralds the full three-axis settle).

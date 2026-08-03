@@ -13,11 +13,25 @@ import Testing
 /// comment for the full derivation these tests check against.
 struct AudioRendererDistanceDirectionTests {
 
+  /// `Config.Audio.defaults` with Scheme B pinned OFF. Scheme B now
+  /// defaults ON (2026-08-02, §16.2); this file's `errorX`/`errorY` are
+  /// always `0` (well inside B's XY engagement envelope), so its click-
+  /// train transients would otherwise bleed into every gate-envelope/
+  /// duty-cycle/dip-count measurement below, which are meant to isolate
+  /// the distance gate alone.
+  private static var pinnedConfig: Config.Audio {
+    var config = Config.Audio.defaults
+    config.scheme.schemeBEnabled = false
+    return config
+  }
+
   // MARK: - Sign distinction: too-close chops vs. too-far swell
 
   @Test("Too-close and too-far gate envelopes have measurably different duty cycles")
   func signDistinguishesGateShape() async throws {
-    let closeRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let closeRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.3, inDeadZone: false))
     }
@@ -25,7 +39,9 @@ struct AudioRendererDistanceDirectionTests {
       closeRenderer, total: 48000)
     let closeDuty = dutyBelowMidpoint(closeLeft, blockSize: 480)
 
-    let farRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let farRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: -0.3, inDeadZone: false))
     }
@@ -59,13 +75,17 @@ struct AudioRendererDistanceDirectionTests {
     // bottom; farPulseDepth 0.4 → swell floor ~0.6. Comparing minimum
     // block-RMS as a fraction of each side's own maximum makes the check
     // robust to overall gain.
-    let closeRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let closeRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.35, inDeadZone: false))
     }
     let (closeLeft, _) = try await AudioRendererTestSupport.renderFrames(
       closeRenderer, total: 48000)
-    let farRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let farRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: -0.35, inDeadZone: false))
     }
@@ -90,7 +110,9 @@ struct AudioRendererDistanceDirectionTests {
     // defaults (audibleRampStartError 0.02, multiplier 2), an error of
     // 0.04 — barely outside the distance dead zone — must already carry
     // FULL chop depth (previously depth ∝ 0.04/0.3 ≈ 13% of max: silent).
-    let justOutside = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let justOutside = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.04, inDeadZone: false))
     }
@@ -102,7 +124,9 @@ struct AudioRendererDistanceDirectionTests {
 
     // At the ramp start itself (== default distance dead-zone edge), the
     // tone must be steady: "steady = distance is right."
-    let atThreshold = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let atThreshold = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: 0.02, inDeadZone: false))
     }
@@ -116,7 +140,9 @@ struct AudioRendererDistanceDirectionTests {
 
   @Test("Zero distance error produces no amplitude modulation (flat envelope)")
   func zeroErrorIsSteady() async throws {
-    let renderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let renderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: 0, inDeadZone: false))
     }
@@ -149,7 +175,9 @@ struct AudioRendererDistanceDirectionTests {
   }
 
   private func assertRateTracksMagnitude(sign: Float) async throws {
-    let smallRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let smallRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: sign * 0.03, inDeadZone: false))
     }
@@ -157,7 +185,9 @@ struct AudioRendererDistanceDirectionTests {
       smallRenderer, total: 48000)
     let smallDips = AudioRendererTestSupport.envelopeDipCount(smallLeft, blockSize: 480)
 
-    let largeRenderer = try await AudioRendererTestSupport.makeRenderer { renderer in
+    let largeRenderer = try await AudioRendererTestSupport.makeRenderer(
+      config: Self.pinnedConfig
+    ) { renderer in
       await renderer.update(
         SonificationTarget(errorX: 0, errorY: 0, distanceError: sign * 0.3, inDeadZone: false))
     }
@@ -176,7 +206,7 @@ struct AudioRendererDistanceDirectionTests {
 
   @Test("Disabling directional pulse makes too-close and too-far envelopes match")
   func directionalPulseDisabledIsSignIndependent() async throws {
-    var config = Config.Audio.defaults
+    var config = Self.pinnedConfig
     config.distance.directionalPulseEnabled = false
 
     // swift-format wraps the closure's `renderer in` onto its own line once
@@ -217,7 +247,7 @@ struct AudioRendererDistanceDirectionTests {
 
   @Test("Gate stays continuous as distanceError ramps through zero")
   func signFlipStaysContinuous() async throws {
-    let renderer = AudioRenderer(config: .defaults, mode: .offline)
+    let renderer = AudioRenderer(config: Self.pinnedConfig, mode: .offline)
     try await renderer.start()
 
     // Step distanceError linearly from +0.3 (too close) to -0.3 (too far)

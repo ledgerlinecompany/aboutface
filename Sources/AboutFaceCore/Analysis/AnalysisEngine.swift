@@ -89,21 +89,27 @@ public actor AnalysisEngine {
   // Declared here for the same "every stored property lives in one place"
   // reason as the smoothing state above, but deliberately NOT reset by
   // `resetSmoothingState()`/on face loss — see that method's doc comment.
-  // `learnedBaselineYaw`/`Pitch` are `nil` exactly when nothing has seeded
-  // the baseline yet (no capture, no eligible in-zone frame). `baselineSeed*`
-  // record the seed value the clamp is measured from (capture, or the first
-  // seed from an in-zone frame) — distinct from the current learned value,
-  // which drifts within the clamp as the EMA adapts. `lastFrameTimestamp`
-  // is the previous geometry-bearing frame's timestamp, used to convert
-  // `Config.Gaze.baselineAdaptationSeconds` into a per-frame alpha from the
-  // observed frame cadence; it IS reset on face loss (a stale cadence
-  // reference across a gap is meaningless — same reasoning as the smoothing
-  // state, just for timing rather than position), which only affects the
-  // alpha of the next adaptation, never the learned value itself.
+  // `learnedBaselineYaw`/`Pitch`/`Roll` are `nil` exactly when nothing has
+  // seeded the baseline yet (no capture, no eligible in-zone frame).
+  // `baselineSeed*` record the seed value the clamp is measured from
+  // (capture, or the first seed from an in-zone frame) — distinct from the
+  // current learned value, which drifts within the clamp as the EMA adapts.
+  // `lastFrameTimestamp` is the previous geometry-bearing frame's
+  // timestamp, used to convert `Config.Gaze.baselineAdaptationSeconds` into
+  // a per-frame alpha from the observed frame cadence; it IS reset on face
+  // loss (a stale cadence reference across a gap is meaningless — same
+  // reasoning as the smoothing state, just for timing rather than
+  // position), which only affects the alpha of the next adaptation, never
+  // the learned value itself. Roll joined this machinery 2026-08-02
+  // (maintainer: "Agreed, it's part of gaze") — see
+  // `AnalysisEngine+GazeBaseline.swift`'s top-level doc comment and
+  // `FramingState.headLevel`.
   var learnedBaselineYaw: Float?
   var learnedBaselinePitch: Float?
+  var learnedBaselineRoll: Float?
   var baselineSeedYaw: Float?
   var baselineSeedPitch: Float?
+  var baselineSeedRoll: Float?
   var lastFrameTimestamp: CMTime?
 
   public init(backend: any FaceAnalysisBackend, config: Config = .defaults) {
@@ -112,8 +118,10 @@ public actor AnalysisEngine {
     if let seed = Self.captureSeed(previous: nil, new: config) {
       learnedBaselineYaw = seed.yaw
       learnedBaselinePitch = seed.pitch
+      learnedBaselineRoll = seed.roll
       baselineSeedYaw = seed.yaw
       baselineSeedPitch = seed.pitch
+      baselineSeedRoll = seed.roll
     }
   }
 
@@ -139,8 +147,10 @@ public actor AnalysisEngine {
     if let seed = Self.captureSeed(previous: previous, new: config) {
       learnedBaselineYaw = seed.yaw
       learnedBaselinePitch = seed.pitch
+      learnedBaselineRoll = seed.roll
       baselineSeedYaw = seed.yaw
       baselineSeedPitch = seed.pitch
+      baselineSeedRoll = seed.roll
     }
   }
 

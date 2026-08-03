@@ -178,3 +178,39 @@ audible-ramp-start threshold, and only then did the crescendo track the
   least-distinguishable clicks in the final instants before arrival. Same
   device as `Config.AudioPositional.timbreOnsetExponent`'s superlinear
   onset curve, applied to a different signal.
+
+## Round 2 closure (2026-08-02) — §16.2 resolved, Scheme B on by default
+
+Round 2's two profiles (`Fixtures/tuning-profiles/README.md`) re-opened the
+round-1 `p1` "unjudgeable" result now that Scheme B is a percussive click
+train (round-2c) with lagging-axis governance and the wider, curved
+approach ramp (round-2d), not the two-tone zero-beat design that collided
+with Scheme A's own register:
+
+- **`p6-schemeb-continuous`** (the fair `p1` retry — continuous beacon,
+  Scheme B on): re-trialing under the SAME continuous-mapping conditions
+  `p1` ran under isolates whether the percussive redesign alone, independent
+  of beacon quantization, resolves the register collision.
+- **`p7-schemeb-quantized`** (the combination test — quantized beacon,
+  Scheme B on): tests whether the beacon's tonal-purity snap
+  (`errorQuantizationStep`, now default `0.03`) and Scheme B's rhythmic-
+  silence null compose into a stronger "you're there," or clutter it.
+
+**Verdict, blind to which profile was live: "that works."** The click train
+read as unambiguously distinct from the beacon in both the continuous
+(`p6`) and quantized (`p7`) conditions — no repeat of `p1`'s "I wasn't sure
+if I was supposed to get it to match the other one." `p7` won outright: the
+combination of tonal-purity snap and rhythmic-silence null gave the
+clearest "you're there" of any profile trialed across both rounds, closing
+the "clutter vs. compose" question in favor of compose.
+
+**Decision:** `Config.AudioScheme.schemeBEnabled` default flips `false →
+true`. §16.2 ("Whether Scheme B should be on by default once tuned") is
+resolved — see `docs/spec.md` §16. `p0-baseline` (and every other profile
+that doesn't explicitly disable it) now includes Scheme B as part of what
+"the defaults" means; `p1-scheme-b`/`p5-quantized-fine`/`p7-schemeb-
+quantized` collapse to being bit-identical to `p0-baseline` after
+regeneration, since the one field each used to patch (`schemeBEnabled`,
+`errorQuantizationStep`) now already matches the new default — kept as
+separate files purely for provenance, per `Fixtures/tuning-profiles
+/README.md`.
