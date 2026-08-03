@@ -66,6 +66,15 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   /// "The heartbeat is not optional" — users need to distinguish "good" from
   /// "the app crashed."
   public var heartbeatIntervalMs: Int
+  /// Extra delay between good-zone CONFIRMATION (N-frame filtered) and the
+  /// entry earcon. Default 0 — atomic-arrival fix (field finding: "the
+  /// chime is about half a second after the sound cuts out… disorienting"):
+  /// the beacon now plays through the confirmation window and the cut and
+  /// chime fire together at confirmation. §7.1's 800ms dwell is
+  /// deliberately NOT applied to this one transition — its anti-chatter
+  /// job is already done here by N-frame confirmation plus §4 hysteresis,
+  /// and §6.1's no-ambiguous-silence requirement outranks uniform dwell.
+  public var goodZoneChimeDelayMs: Int
 
   /// §5.1/§5.2 per-mode rate limiting, and §16 (maintainer decision,
   /// 2026-08-01): "Monitor auto-enable will default ON... design your
@@ -103,6 +112,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostSpeechDelayMs: Int,
     faceLostStopDelayMs: Int,
     heartbeatIntervalMs: Int,
+    goodZoneChimeDelayMs: Int = 0,
     setup: ModeLimits,
     monitor: ModeLimits
   ) {
@@ -113,6 +123,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     self.faceLostSpeechDelayMs = faceLostSpeechDelayMs
     self.faceLostStopDelayMs = faceLostStopDelayMs
     self.heartbeatIntervalMs = heartbeatIntervalMs
+    self.goodZoneChimeDelayMs = goodZoneChimeDelayMs
     self.setup = setup
     self.monitor = monitor
   }
@@ -130,6 +141,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostSpeechDelayMs: 5000,
     faceLostStopDelayMs: 30000,
     heartbeatIntervalMs: 7000,
+    goodZoneChimeDelayMs: 0,
     setup: ModeLimits(minAnnouncementIntervalMs: nil, minSameConditionIntervalMs: nil),
     monitor: ModeLimits(minAnnouncementIntervalMs: 20000, minSameConditionIntervalMs: 180_000)
   )

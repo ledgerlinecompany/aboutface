@@ -20,7 +20,7 @@ struct FeedbackRouterGazeTrimTests {
     return config
   }
 
-  @Test("flag off: legacy stop-updates behavior is unchanged (default config)")
+  @Test("flag off: no trim target ever appears; the plain atomic-arrival sequence is unchanged")
   func flagOff_preservesLegacyStopUpdates() async {
     let audio = MockAudioRenderer()
     let speech = MockSpeechRenderer()
@@ -29,15 +29,35 @@ struct FeedbackRouterGazeTrimTests {
     let clock = ContinuousClock()
     let t0 = clock.now
 
-    await ingestRepeated(router, goodZoneOutput(), at: t0, count: 5)
-    await router.ingest(goodZoneOutput(), at: t0.plus(ms: 800))  // enters good zone
+    await ingestRepeated(router, goodZoneOutput(), at: t0, count: 5)  // confirms + fires atomically
     await router.ingest(goodZoneOutput(), at: t0.plus(ms: 1000))
     await router.ingest(goodZoneOutput(), at: t0.plus(ms: 2000))
 
-    // Exactly the pre-existing assertion from `FeedbackRouterGoodZoneTests
-    // .entersGoodZoneOnce`: only the one-shot earcon, never an
-    // `audio.update` call.
-    #expect(await audio.calls == [.play(.enteredGoodZone)])
+    // Same exact atomic-arrival call sequence
+    // `FeedbackRouterGoodZoneTests.entersGoodZoneOnce` derives frame-by-
+    // frame, for this test's default (gaze-trim-OFF) config: with the
+    // flag off, `gazeTrimTarget` always returns `nil` (its own
+    // `config.audio.gazeTrim.enabled` guard, checked first), so once
+    // arrival is announced `updateContinuousSonification` resolves to
+    // `nil` on every hold frame too — no per-frame trim `.update` calls,
+    // the "legacy" pure silence-and-heartbeat posture this test's name
+    // refers to. That is a NARROWER claim than "no `.update` calls at
+    // all," though: atomic arrival's beacon-through-confirmation and the
+    // arrival cut itself (`.update(nil)`) fire regardless of the trim
+    // flag — see `FeedbackConfig.goodZoneChimeDelayMs`'s doc comment.
+    let beaconTarget = SonificationTarget(
+      errorX: 0, errorY: 0, distanceError: 0, inDeadZone: false)
+    // swiftlint:disable trailing_comma
+    let expected: [MockAudioRenderer.Call] = [
+      .update(beaconTarget),
+      .update(beaconTarget),
+      .update(beaconTarget),
+      .update(beaconTarget),
+      .play(.enteredGoodZone),
+      .update(nil),
+    ]
+    // swiftlint:enable trailing_comma
+    #expect(await audio.calls == expected)
   }
 
   @Test("enabled + Setup + confirmed good zone: trim targets flow every frame")
@@ -49,11 +69,17 @@ struct FeedbackRouterGazeTrimTests {
     let clock = ContinuousClock()
     let t0 = clock.now
 
-    // 5 identical frames confirms `.goodZone` (nFrameSetup == 5); a 6th
-    // frame is the first one `gazeTrimTarget` can see `confirmedState ==
-    // .goodZone` (set during the 5th ingest, read at the START of the
-    // 6th — see `updateContinuousSonification`'s call ordering in
-    // `ingest(_:at:)`).
+    // 5 identical frames confirms `.goodZone` (nFrameSetup == 5) AND fires
+    // `enteredGoodZone` atomically, in that same 5th `ingest` call
+    // (`goodZoneChimeDelayMs` default 0 — see
+    // `FeedbackRouterGoodZoneTests.entersGoodZoneOnce`'s derivation).
+    // Because `ingest` now runs discrete processing (which sets
+    // `confirmedState` and fires the entry earcon) BEFORE the continuous
+    // channel, THIS SAME 5th frame already has `gazeTrimTarget` see
+    // `confirmedState == .goodZone` — trim flows starting immediately, no
+    // extra frame needed to "catch up." The extra ingest below merely
+    // proves it keeps flowing on a subsequent hold frame too (this test's
+    // actual point, per its name).
     let output = goodZoneOutput(yaw: 15, pitch: -5)  // yawDeviation = 10, pitchDeviation = 0
     await ingestRepeated(router, output, at: t0, count: 5)
     await router.ingest(output, at: t0.plus(ms: 10))
@@ -79,6 +105,11 @@ struct FeedbackRouterGazeTrimTests {
     let t0 = clock.now
 
     let trimOutput = goodZoneOutput(yaw: 15, pitch: -5)
+    // Confirms `.goodZone` + fires atomically; trim flows starting the
+    // very same 5th frame (see `enabledInSetup_confirmedGoodZone_
+    // trimTargetsFlow` above), so `calls.last` is already a trim update
+    // right after the batch — the extra ingest below just re-confirms it
+    // holds on a subsequent frame too.
     await ingestRepeated(router, trimOutput, at: t0, count: 5)
     await router.ingest(trimOutput, at: t0.plus(ms: 10))
     let trimCall = await audio.calls.last
@@ -87,11 +118,17 @@ struct FeedbackRouterGazeTrimTests {
       return
     }
 
-    // Same shape as `FeedbackRouterGoodZoneTests.exitResumesPositionalUpdates`:
-    // the very next out-of-dead-zone frame resumes the beacon immediately,
-    // not gated by N-frame confirmation.
+    // Same N-frame-confirmed-exit requirement as
+    // `FeedbackRouterGoodZoneTests.exitResumesPositionalUpdates`: atomic
+    // arrival gates the continuous channel's post-arrival branch on
+    // `confirmedState` (the N-frame-CONFIRMED discrete state), not the raw
+    // per-frame `framing.inDeadZone` — so a single raw exit frame stays
+    // routed through `gazeTrimTarget` (whose own `confirmedState ==
+    // .goodZone` guard still passes) rather than reverting to the beacon.
+    // The beacon only resumes once 5 consecutive out-of-dead-zone frames
+    // reconfirm `confirmedState` away from `.goodZone`.
     let exitOutput = framingErrorOutput(errorX: 0.5)
-    await router.ingest(exitOutput, at: t0.plus(ms: 20))
+    await ingestRepeated(router, exitOutput, at: t0.plus(ms: 20), count: 5)
 
     let expectedBeaconTarget = SonificationTarget(
       errorX: 0.5, errorY: 0, distanceError: 0, inDeadZone: false)

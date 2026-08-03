@@ -26,6 +26,30 @@ actor MockAudioRenderer: AudioRendering {
   func update(_ target: SonificationTarget?) async { calls.append(.update(target)) }
   func play(_ event: AudioEvent) async { calls.append(.play(event)) }
   func setSilenced(_ silenced: Bool) async { calls.append(.setSilenced(silenced)) }
+
+  /// `calls` filtered down to just the `.play(_:)` events, in order —
+  /// dropping `.update`/`.start`/`.stop`/`.setSilenced` noise.
+  ///
+  /// Atomic arrival (see `FeedbackRouter.ingest(_:at:)`'s and
+  /// `updateContinuousSonification`'s doc comments) means the continuous
+  /// beacon now plays THROUGH the N-frame confirmation window instead of
+  /// staying silent — an `.update(target)` call for every raw in-zone frame
+  /// before the episode's entry earcon has fired. That is real, correct
+  /// behavior (`FeedbackRouterGoodZoneTests.entersGoodZoneOnce` pins the
+  /// exact interleaved sequence down once, in full), but it means a test
+  /// whose actual INTENT is "did these discrete events fire, in this
+  /// order" — not "here is every continuous update interleaved with
+  /// them" — would otherwise have to hand-count N-frame-threshold-many
+  /// `.update` calls just to keep an exact `calls ==` match passing, and
+  /// re-count them again every time the threshold or beacon cadence
+  /// changes. Filtering to events here keeps those tests pinned to what
+  /// they actually assert about.
+  func playedEvents() async -> [AudioEvent] {
+    calls.compactMap { call in
+      guard case .play(let event) = call else { return nil }
+      return event
+    }
+  }
 }
 
 actor MockSpeechRenderer: SpeechRendering {
