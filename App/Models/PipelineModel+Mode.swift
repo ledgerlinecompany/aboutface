@@ -8,14 +8,14 @@ import SwiftUI
 /// that file's doc comment); everything here is still `PipelineModel`'s own
 /// implementation, not a separate public surface.
 ///
-/// The prior PR landed `setMode(_:)` as plumbing only, called by nothing but
-/// the debug panel's mode `Picker` and tests. This PR adds the triggers:
-/// `toggleMonitor()` below (⌘⌃⇧M / `MenuBarExtra`) is one of the three —
-/// see `App/Models/CameraGatingDriver.swift` for the camera-busy trigger,
-/// which calls `setMode(_:)`/`start()`/`stop()` directly rather than
-/// through `toggleMonitor()` (its `CameraGatingEvent`s are a different,
-/// three-way decision than a plain on/off toggle — see that file's doc
-/// comment).
+/// `setMode(_:)` started as plumbing only, called by nothing but the debug
+/// panel's mode `Picker` and tests; `toggleMonitor()` below adds the
+/// ⌘⌃⇧M / `MenuBarExtra` trigger. A third trigger — automatic switching from
+/// a camera-busy signal — was built (`AboutFaceCore`'s
+/// `CameraGatingStateMachine`) but is not wired to call `setMode(_:)` here;
+/// see spec §12.2's finding (the busy signal it depended on does not work)
+/// and §16.4 (the maintainer decision not to ship it regardless, pending a
+/// different trigger) before wiring it back in.
 extension PipelineModel {
 
   /// The debug panel's mode `Picker` binds through `FeedbackMode`'s raw

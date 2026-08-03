@@ -189,10 +189,11 @@ struct DebugPanelView: View {
 
   // MARK: - Mode (§5, §13 Phase 4)
 
-  /// Reachable-by-hand mode switch — still useful alongside the automatic
-  /// triggers (camera-gating, the `monitorToggle` hotkey, `MenuBarExtra`;
-  /// see `PipelineModel+Mode.swift` and `CameraGatingDriver.swift`) for
-  /// forcing a mode directly while developing/tuning. Plain `Section`, not
+  /// Reachable-by-hand mode switch — still useful alongside the other
+  /// triggers (the `monitorToggle` hotkey, `MenuBarExtra`; see
+  /// `PipelineModel+Mode.swift`) for forcing a mode directly while
+  /// developing/tuning. Camera-busy auto-switching was built but is not
+  /// wired in — see spec §12.2/§16.4. Plain `Section`, not
   /// `ConfigSection`: `mode` is
   /// `PipelineModel` session state, not a `Config` field, so there is no
   /// per-section "reset to defaults" that means anything beyond just

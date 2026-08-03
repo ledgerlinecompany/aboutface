@@ -7,6 +7,12 @@ import Foundation
 /// (CI rule: no test may require a live camera, and genuinely exercising
 /// "another app grabbed the camera" needs a second real process — see that
 /// type's doc comment).
+///
+/// **Currently unwired** — see `CameraGating.swift`'s doc comment. §12.2
+/// found that `isInUseByAnotherApplication`, the signal
+/// `AVCaptureDeviceBusyProvider` (the real conformance) reads, does not
+/// detect a conferencing app on current macOS. Read that finding before
+/// wiring this protocol's consumers back into a live activation path.
 public protocol CameraBusyProvider: Sendable {
   /// A synchronous read of the current busy state.
   func currentValue() -> Bool

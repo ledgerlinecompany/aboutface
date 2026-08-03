@@ -20,18 +20,11 @@ struct AboutFaceApp: App {
   // `hotkeyBootstrap` doc comment for why that is the right place rather
   // than here.
   @State private var hotkeyCenter = HotkeyCenter()
-  // §12.2 camera-in-use gating: one `CameraGatingDriver` for the app's
-  // lifetime, same ownership shape as `hotkeyCenter` above — see that
-  // type's doc comment for why its observation Task must outlive any
-  // single window rather than being scoped to one view's `.task`.
-  @State private var cameraGatingDriver = CameraGatingDriver()
 
   var body: some Scene {
     WindowGroup("About Face — Setup", id: "setup") {
-      SetupWindowView(
-        model: model, hotkeyCenter: hotkeyCenter, cameraGatingDriver: cameraGatingDriver
-      )
-      .frame(minWidth: 480, minHeight: 420)
+      SetupWindowView(model: model, hotkeyCenter: hotkeyCenter)
+        .frame(minWidth: 480, minHeight: 420)
     }
     .defaultSize(width: 560, height: 680)
 

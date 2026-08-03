@@ -547,13 +547,107 @@ Continuity Camera devices come and go.
 
 ### 12.2 Camera-in-use gating
 
-`AVCaptureDevice.isInUseByAnotherApplication` (macOS only) signals that a device
-is busy. Use it to idle at near-zero cost and spin up Monitor mode when a
-conferencing app grabs the camera; it is also a good trigger for auto-dropping
-out of Setup so the app stops chirping once the call starts.
+The feature this section wants is still correct and still desired: idle at
+near-zero cost while the app is quiescent, and spin up Monitor mode the
+instant a conferencing app grabs the camera — also a good trigger for
+auto-dropping out of Setup so the app stops chirping once the call starts.
+What follows is the detection mechanism, which does not work, and what to do
+until it's replaced.
 
-**Verify empirically whether this property is genuinely KVO-observable.** If not,
-poll at 1 Hz. Document which path was taken.
+**Finding, 2026-08-03, macOS 26.5.2, Apple Silicon, built-in FaceTime HD
+Camera:** `AVCaptureDevice.isInUseByAnotherApplication` does not detect a
+conferencing app using the camera. This is the empirical verification this
+section originally asked for, and the result is worse than "not
+KVO-observable" — polling at 1 Hz, the prescribed fallback, does not help,
+because the property never becomes true at all. Measured with a real Zoom
+call live and the user's video on, both read at the same moment against the
+same device:
+
+- `AVCaptureDevice.isInUseByAnotherApplication` → **false**
+- CoreMediaIO `kCMIODevicePropertyDeviceIsRunningSomewhere` → **true**
+
+The CoreMediaIO reading is what proves Zoom was genuinely streaming at that
+instant, so this is not a case of mismeasuring an idle app —
+`isInUseByAnotherApplication` reads false while the camera is demonstrably in
+use elsewhere.
+
+Corroborating measurement: two separate processes captured from the same
+physical camera at the same time, at different requested formats (1280×720
+and 640×480), and each received exactly the format it requested — macOS
+shared the device rather than granting either process exclusive access.
+`isInUseByAnotherApplication` read false throughout on both sides, including
+while the second process was actively capturing.
+
+The likely explanation — an inference, not a verified mechanism — is that
+this section's original premise assumed a conferencing app *grabs* the
+camera in a way that produces a detectable exclusive acquisition. On current
+macOS the camera is shared, so there may be no such acquisition to detect,
+and `isInUseByAnotherApplication` is answering a narrower question than "is
+someone else using this camera right now."
+
+**Candidate replacement:** CoreMediaIO's
+`kCMIODevicePropertyDeviceIsRunningSomewhere` — read via
+`CMIOObjectGetPropertyData` against the device's `CMIOObjectID`, global
+scope; it is a read with no side effects and opens no capture session of its
+own. It tracked capture correctly and reversibly in testing: false when
+idle, true while a process streamed, false again after that process exited.
+It has an asymmetry that must be understood before anyone builds on it,
+stated prominently here so it is not discovered halfway through
+implementation: it reads true when **any** process is streaming, including
+About Face itself. That makes it usable for detecting *activation* — "a call
+started while we were idle" — but once Monitor is running and holding the
+camera, the property stays true regardless of what the conferencing app
+does, so it **cannot** detect *deactivation* — "the call ended." A gating
+implementation built on this property needs a separate signal for noticing
+the call ended; that does not fall out of this property for free.
+
+**Proposed direction (maintainer, not yet settled):** the maintainer has
+proposed reframing this feature away from auto-activation entirely —
+verbatim: *"the switch from no to yes might instead be some kind of
+spoken/earcon trigger to remember to turn on monitoring."* This fits the
+property's actual shape better than the original design did, for a specific
+reason worth recording: the deactivation asymmetry above only matters for
+*auto-activation*, which needs to know when the call ends. A **reminder**
+only needs the rising edge — exactly the half
+`kCMIODevicePropertyDeviceIsRunningSomewhere` reports reliably. Better still,
+a reminder is armed exactly when About Face is idle and not itself
+capturing, which is the one state where "any process is streaming" is
+unambiguous — the only process it could be is someone else's. The property's
+central weakness disappears rather than needing a workaround. It also
+answers the maintainer's original objection to the auto-activation design (a
+trigger nobody can predict is worse than none): "when another app starts
+using your camera, About Face reminds you" is a rule a user can hold in
+their head, and the app never makes noise on its own.
+
+This is a proposed direction, not a settled requirement — "might," in the
+maintainer's words — and the behavioral details are genuinely open, listed
+here rather than answered:
+
+- Spoken vs. earcon.
+- Exact wording, which would have to enter `Lexicon.swift`'s closed
+  vocabulary (§6.3) once decided.
+- Whether the reminder is dismissible.
+- Whether it repeats or fires once per rising edge.
+- How it interacts with §7.5 manual silence.
+
+One constraint is not open, because it follows directly from the property's
+semantics rather than being a design choice: the reminder must be armed only
+while About Face is **not** capturing, or it will fire on itself the moment
+Monitor or Setup opens the camera.
+
+**Status: not shipped.** Neither camera-gated auto-activation nor the
+reminder direction above is wired into the app; both await a maintainer
+decision — see §16.4. Monitor mode remains reachable by the ⌘⌃⇧M hotkey (§8)
+and the menu bar item; both work exactly as before, unaffected either way.
+The pure decision machine (`CameraGatingStateMachine`), the platform-probe
+layer (`CameraInUseMonitor`/`CameraBusyProvider`/`AVCaptureDeviceBusyProvider`),
+and their tests remain in the codebase, and the platform-probe layer is
+reusable regardless of which direction is chosen. `CameraGatingStateMachine`
+specifically is shaped for auto-activation's three-way off/setup/monitor
+decision table; a reminder's decision logic — arm while idle, fire once on
+the rising edge — is a different and likely simpler question that is not
+decided here. Do not re-wire any of this into a live activation or reminder
+path without first reading this finding.
 
 ### 12.3 Mismatch warning
 
@@ -561,6 +655,21 @@ The API tells you a device is busy, **not which app holds it**. So the heuristic
 is: if some device other than the user's selection reports in-use while the
 selected one does not, warn that the conferencing app may be using a different
 camera. Warning is informational and dismissible, never blocking.
+
+**Dependency on §12.2's finding:** as specified, this heuristic is
+`isInUseByAnotherApplication` read across devices — and §12.2 found that
+property never becomes true on current macOS. Built as specified, this
+warning would compile, never crash, and never fire; it would look
+implemented while silently doing nothing. Do not build this against
+`isInUseByAnotherApplication`. `kCMIODevicePropertyDeviceIsRunningSomewhere`
+is a candidate substitute: unlike `isInUseByAnotherApplication` it is read
+per-device — the reference probe enumerated every device on the test
+machine (the built-in camera, an iPhone Continuity camera, and a Desk View
+camera) and reported each one's running state independently — which is a
+natural fit for exactly this cross-device comparison, and it works
+precisely when the mismatch warning matters: while About Face is idle and
+not itself capturing. Designing and building the replacement is separate,
+later work, not decided here.
 
 ### 12.4 Virtual cameras — silent-wrongness risk
 
@@ -590,6 +699,14 @@ setting** — the conferencing app's state and this app's state can differ.
 Write an explicit test/tool that opens the selected device **while another app
 holds it** and logs the format actually granted. Do not assume the requested
 format is honored.
+
+**Run 2026-08-03: passed.** Two processes captured from the same physical
+camera at the same time, each at a different requested format (1280×720 and
+640×480), and each received exactly the format it requested; probing did not
+disturb the live Zoom call already using the device. This is the same
+measurement §12.2 records in full, because it also bears on the shared-camera
+model behind that section's finding — the concurrent-access test itself did
+not fail.
 
 ---
 
@@ -636,6 +753,12 @@ mismatch detection, virtual camera and Center Stage warnings.
 *Acceptance:* a 30-minute session with the user leaving the desk for 10 minutes
 produces the correct escalate-then-stop-then-recover sequence and nothing else;
 CPU and thermal impact measured and documented.
+
+**Camera-in-use gating exception (2026-08-03):** the state machine and
+platform probe are built and tested, but §12.2's detection mechanism does not
+work on current macOS, so gating is not wired into a live activation path.
+Monitor mode ships via the ⌘⌃⇧M hotkey and menu bar item instead; the rest of
+this phase's scope is otherwise complete as listed.
 
 ### Phase 4.5 — Design coherence pass
 
@@ -756,4 +879,20 @@ Flag these rather than deciding unilaterally:
 3. Eloquence/Vocalizer voice availability (see §6.3) — outcome affects the
    voice-picker UI.
 4. Whether Monitor mode should auto-enable on camera-in-use by default, or
-   require explicit opt-in per profile.
+   require explicit opt-in per profile. **Updated 2026-08-03:** moot as
+   originally framed — §12.2's proposed detection mechanism does not work, so
+   there is currently no camera-in-use signal to gate on. Maintainer decision:
+   do not ship camera-gated auto-activation even once a working mechanism
+   exists, without also solving how to explain the trigger to a user — an
+   activation trigger nobody can predict is worse than no trigger, "even if
+   it's built correctly."
+
+   **Narrowed 2026-08-03:** the maintainer has proposed a direction — not
+   auto-activation, but a spoken/earcon reminder to turn Monitor on by hand
+   when another app starts using the camera; see §12.2's "Proposed
+   direction." The trigger is now identified. What is open is what the app
+   should DO on that rising edge: spoken vs. earcon, exact wording (would
+   enter `Lexicon.swift`'s closed vocabulary, §6.3), whether the reminder is
+   dismissible, whether it repeats or fires once per rising edge, and how it
+   interacts with §7.5 manual silence. Do not re-wire §12.2's machinery into
+   a live activation or reminder path until those are decided.
