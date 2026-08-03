@@ -637,6 +637,34 @@ mismatch detection, virtual camera and Center Stage warnings.
 produces the correct escalate-then-stop-then-recover sequence and nothing else;
 CPU and thermal impact measured and documented.
 
+### Phase 4.5 — Design coherence pass
+
+Added 2026-08-02, from maintainer field experience: by this point the app's
+surfaces have grown feature-by-feature ("a bit haphazard, a lot of the
+wording in the settings is hard to parse"). Before first-run and packaging,
+a deliberate pass over language and structure — features frozen, coherence
+the only goal:
+
+- **One vocabulary.** A written glossary: one name per concept (the beacon,
+  the refinement clicks, placed/good zone, the trim, capture), used
+  identically in UI labels, accessibility hints, spoken phrases, docs, and
+  code comments. New strings after this pass must use glossary terms.
+- **Every user-facing string reviewed spoken-first.** Labels and hints must
+  parse on one listen at speed, without visual grouping to lean on.
+  Function-before-key phrasing throughout (already the CLI convention).
+- **Settings split by audience.** The §9 debug panel is a tuning
+  instrument; end users need a small, plain-language settings surface
+  (voice, speech rate, volumes, output device, scheme) with the full panel
+  behind an "advanced tuning" door. §11's "everything adjustable, nothing
+  required" implies this two-tier shape.
+- **Structure by user need, not code history.** Window and section ordering
+  reviewed against actual task flows (get positioned; check status; tune).
+
+*Acceptance:* a fresh VoiceOver user (not the maintainer) can navigate
+Setup and basic settings and correctly explain what each control does from
+its label and hint alone; the glossary exists and the repo's strings match
+it.
+
 ### Phase 5 — Profiles, first-run, packaging
 
 Profile system, guided first-run calibration, MAS packaging and submission.
