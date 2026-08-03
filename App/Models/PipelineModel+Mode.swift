@@ -8,10 +8,14 @@ import SwiftUI
 /// that file's doc comment); everything here is still `PipelineModel`'s own
 /// implementation, not a separate public surface.
 ///
-/// This PR is the mode PLUMBING only — nothing calls `setMode` yet in normal
-/// use (task brief: "a SEPARATE later PR wires the triggers"). The debug
-/// panel's mode control (`DebugPanelView+Mode.swift`) is the only caller
-/// today, alongside tests.
+/// The prior PR landed `setMode(_:)` as plumbing only, called by nothing but
+/// the debug panel's mode `Picker` and tests. This PR adds the triggers:
+/// `toggleMonitor()` below (⌘⌃⇧M / `MenuBarExtra`) is one of the three —
+/// see `App/Models/CameraGatingDriver.swift` for the camera-busy trigger,
+/// which calls `setMode(_:)`/`start()`/`stop()` directly rather than
+/// through `toggleMonitor()` (its `CameraGatingEvent`s are a different,
+/// three-way decision than a plain on/off toggle — see that file's doc
+/// comment).
 extension PipelineModel {
 
   /// The debug panel's mode `Picker` binds through `FeedbackMode`'s raw
@@ -193,6 +197,45 @@ extension PipelineModel {
     mirrorState = source.mirrorState
 
     beginConsuming(engine: engine, source: source, targetAnalysisHz: modeSettings.analysisHz)
+  }
+
+  // MARK: - §8 Monitor toggle (⌘⌃⇧M, §16.4 MenuBarExtra)
+
+  /// The single call site both `HotkeyCenter.dispatch(_:)`'s
+  /// `.monitorToggle` case and the `MenuBarExtra`'s toggle button use.
+  /// Executes whichever `MonitorToggleIntent` the pure, unit-tested
+  /// decision in `AboutFaceCore` returns for the CURRENT `isRunning`/`mode`
+  /// — this method deliberately does no deciding of its own (CLAUDE.md:
+  /// "keep logic in `AboutFaceCore`, keep `App/` thin").
+  ///
+  /// Returns the resulting Monitor-on/off state so a caller with no window
+  /// open — the whole point of a global hotkey — can still announce what
+  /// just happened (see `HotkeyCenter.dispatch(_:)`'s `.monitorToggle`
+  /// case). `false` covers both "now stopped" and "failed to start" (e.g.
+  /// no camera selected, permission denied) — check `captureErrorMessage`
+  /// to tell those apart, same as every other start-path failure in this
+  /// file.
+  @discardableResult
+  public func toggleMonitor() async -> Bool {
+    switch MonitorToggleIntent.decide(isRunning: isRunning, mode: mode) {
+    case .startMonitor:
+      // Not running: `setMode(_:)` while `isRunning == false` just flips
+      // the `mode` field (its own capture-restart half no-ops on a stopped
+      // pipeline — see that method's doc comment) so the `start()` right
+      // after opens the camera directly at Monitor's 640×480@15 format,
+      // never briefly at Setup's before a second restart.
+      await setMode(.monitor)
+      await start()
+      return isRunning && mode == .monitor
+    case .switchToMonitor:
+      // Already running in Setup: restart capture in place at Monitor's
+      // format. No `start()` call — there is nothing to start.
+      await setMode(.monitor)
+      return true
+    case .stop:
+      await stop()
+      return false
+    }
   }
 
   /// Spawns the per-frame consume loop over `engine.stream(from:

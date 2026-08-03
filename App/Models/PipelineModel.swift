@@ -5,7 +5,6 @@
 // swiftlint:disable sorted_imports
 import AVFoundation
 import AboutFaceCore
-import AppKit
 import Observation
 import SwiftUI
 
@@ -66,18 +65,20 @@ public struct AccessibilitySnapshot: Sendable, Equatable {
 /// `@Observable` so those views only re-render on the properties they
 /// actually read.
 ///
-/// Split across three files purely to stay under SwiftLint's file-length
+/// Split across several files purely to stay under SwiftLint's file-length
 /// limit, the same reasoning `AnalysisEngine`'s `+Framing`/`+Geometry` file
 /// split uses — everywhere below is still `PipelineModel`'s own
 /// implementation, not a separate public surface:
-/// - `PipelineModel.swift` (this file): stored state, `init`, camera
-///   permission, and the capture/engine session lifecycle.
+/// - `PipelineModel.swift` (this file): stored state, `init`, and the
+///   capture/engine session lifecycle.
+/// - `PipelineModel+Camera.swift`: explicit camera selection (§12.1) and
+///   camera permission (§9/§12).
 /// - `PipelineModel+Config.swift`: `Config` load/save/reset/export/import
 ///   and the slider `Binding` helpers (§9/§11).
 /// - `PipelineModel+Target.swift`: "capture current position as target"
 ///   (§4).
 /// - `PipelineModel+Mode.swift`: `setMode(_:)`, Setup↔Monitor (§5, §13
-///   Phase 4).
+///   Phase 4), and the `toggleMonitor()` trigger (§16.4).
 ///
 /// ## Two throttle rates, one upstream stream (spec §9)
 ///
@@ -104,7 +105,11 @@ public final class PipelineModel {
 
   public let cameraDiscovery = CameraDiscovery()
   public var selectedCameraID: String?
-  public private(set) var permissionState: CameraPermissionState
+  // `internal(set)`, not `private(set)`: written from `requestCameraPermission()`
+  // in `PipelineModel+Camera.swift` — Swift's `private` scopes to the
+  // declaring *file*, not the whole type, same note as `config`'s doc
+  // comment below.
+  public internal(set) var permissionState: CameraPermissionState
 
   // MARK: - Config (§11)
 
@@ -130,10 +135,11 @@ public final class PipelineModel {
   /// real window and converges the user's framing before anything goes to
   /// the background. `internal(set)`, not `private(set)`, for the same
   /// cross-file-visibility reason as `config` above: written from
-  /// `setMode(_:)` in `PipelineModel+Mode.swift`. This PR only wires the
-  /// mechanism; nothing calls `setMode` yet except tests and the debug
-  /// panel's mode control — the camera-gating/hotkey/menu-bar triggers that
-  /// actually flip it in normal use are a separate PR (task brief).
+  /// `setMode(_:)` in `PipelineModel+Mode.swift`. Flipped in normal use by
+  /// three triggers (§16.4 task brief): the debug panel's mode `Picker`,
+  /// `toggleMonitor()` (⌘⌃⇧M / `MenuBarExtra`, both in
+  /// `PipelineModel+Mode.swift`), and `CameraGatingDriver` (App/) reacting
+  /// to the selected camera going busy/free.
   public internal(set) var mode: FeedbackMode = .setup
 
   // MARK: - Feedback chain (§5.1, §13 Phase 3) — see `PipelineModel+Audio.swift`
@@ -232,35 +238,31 @@ public final class PipelineModel {
       configLoadIssue = nil
     }
 
+    // Auto-default ONLY — deliberately assigns `selectedCameraID` directly
+    // rather than going through `selectCamera(_:)` below, and MUST keep
+    // doing so. This exists so `start()` has *something* to open on a
+    // fresh install with zero user interaction; it must never be persisted
+    // into `Config.Camera.selectedCameraID`. If a future edit routes this
+    // assignment through `selectCamera(_:)` instead, every fresh install
+    // becomes `Config.isConfigured`-true (`Config+Configured.swift`) the
+    // instant camera discovery finds a device — silently defeating §16.4's
+    // "never auto-enable on a fresh unconfigured install" gate from the
+    // opposite direction it exists to guard. See `selectCamera(_:)`'s doc
+    // comment for the counterpart half of this contract. (Maintainer
+    // field finding, this PR: this predicate's camera half was dead code
+    // until this fix — nothing previously wrote `Config.Camera
+    // .selectedCameraID` at all.)
     if selectedCameraID == nil {
       selectedCameraID = cameraDiscovery.devices.first?.id
     }
   }
 
-  // MARK: - Camera permission (§9/§12)
-
-  /// Requests camera access if not already determined. No-op otherwise —
-  /// once the user has answered, only System Settings can change it, which
-  /// is what `openSystemSettingsForCameraPrivacy()` is for.
-  public func requestCameraPermission() async {
-    guard permissionState == .notDetermined else { return }
-    let granted = await withCheckedContinuation { continuation in
-      AVCaptureDevice.requestAccess(for: .video) { granted in
-        continuation.resume(returning: granted)
-      }
-    }
-    permissionState = granted ? .authorized : .denied
-  }
-
-  /// Deep-links to the Camera privacy pane so a denied user can fix it
-  /// without hunting through System Settings (spec §9's permission-flow
-  /// requirement: "show a clear message + System Settings link when
-  /// denied").
-  public func openSystemSettingsForCameraPrivacy() {
-    let urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
-    guard let url = URL(string: urlString) else { return }
-    NSWorkspace.shared.open(url)
-  }
+  // `selectCamera(_:)` (§12.1 explicit selection) and the camera-permission
+  // pair (`requestCameraPermission()`/`openSystemSettingsForCameraPrivacy()`,
+  // §9/§12) live in `PipelineModel+Camera.swift`, not here, purely to stay
+  // under SwiftLint's file-length limit — same split precedent as
+  // `PipelineModel+Mode.swift`/`+Target.swift`/`+Config.swift` (see this
+  // file's own type-level doc comment).
 
   // MARK: - Session lifecycle
 

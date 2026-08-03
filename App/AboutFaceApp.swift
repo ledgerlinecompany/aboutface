@@ -1,15 +1,16 @@
 import AboutFaceCore
 import SwiftUI
 
-/// The Phase 2 app shell (spec §13 Phase 2, §9): a Setup window and a
-/// separate Debug Panel window, both bound to one shared `PipelineModel`
-/// instance so starting the camera in one and adjusting a slider in the
-/// other both affect the same running `AnalysisEngine`.
+/// The app shell (spec §13 Phase 2/4, §9): a Setup window, a Debug Panel
+/// window, and (as of §16.4) a `MenuBarExtra`, all bound to one shared
+/// `PipelineModel` instance so starting the camera in one and adjusting a
+/// slider in another both affect the same running `AnalysisEngine`.
 ///
-/// `LSUIElement` (menu-bar-only, §5.2) is deliberately NOT set yet —
-/// Monitor mode arrives in Phase 4, and a Dock icon makes Phase 2/3
-/// development and VoiceOver testing easier (see `project.yml`'s matching
-/// comment).
+/// `LSUIElement` (menu-bar-only, §5.2) is deliberately NOT set — that is an
+/// explicit maintainer packaging decision, not this PR's to make (task
+/// brief). The `MenuBarExtra` below is an ADDITIONAL surface alongside the
+/// Dock icon, which still makes VoiceOver testing and normal window
+/// management easier during development.
 @main
 struct AboutFaceApp: App {
   @State private var model = PipelineModel()
@@ -19,11 +20,18 @@ struct AboutFaceApp: App {
   // `hotkeyBootstrap` doc comment for why that is the right place rather
   // than here.
   @State private var hotkeyCenter = HotkeyCenter()
+  // §12.2 camera-in-use gating: one `CameraGatingDriver` for the app's
+  // lifetime, same ownership shape as `hotkeyCenter` above — see that
+  // type's doc comment for why its observation Task must outlive any
+  // single window rather than being scoped to one view's `.task`.
+  @State private var cameraGatingDriver = CameraGatingDriver()
 
   var body: some Scene {
     WindowGroup("About Face — Setup", id: "setup") {
-      SetupWindowView(model: model, hotkeyCenter: hotkeyCenter)
-        .frame(minWidth: 480, minHeight: 420)
+      SetupWindowView(
+        model: model, hotkeyCenter: hotkeyCenter, cameraGatingDriver: cameraGatingDriver
+      )
+      .frame(minWidth: 480, minHeight: 420)
     }
     .defaultSize(width: 560, height: 680)
 
@@ -35,5 +43,12 @@ struct AboutFaceApp: App {
         .frame(minWidth: 480, minHeight: 420)
     }
     .defaultSize(width: 560, height: 760)
+
+    // §16.4's minimal menu bar surface (task brief part 4): current mode,
+    // Monitor toggle, and a way back into the Setup window — see
+    // `MenuBarContentView`'s doc comment for the accessibility contract.
+    MenuBarExtra("About Face", systemImage: "video") {
+      MenuBarContentView(model: model)
+    }
   }
 }

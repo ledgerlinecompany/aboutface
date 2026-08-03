@@ -57,6 +57,12 @@ extension PipelineModel {
       updated.targetFraming.neutralPitchDegrees = Double(geometry.pitch)
       updated.targetFraming.neutralRollDegrees = Double(geometry.roll)
     }
+    // §16.4's "app configured" marker (`Config.isConfigured`) — this is the
+    // one and only place it is set `true`. See `Config.TargetFraming
+    // .captured`'s doc comment for why it is an explicit flag rather than
+    // inferred from these values differing from `Config.defaults
+    // .targetFraming`.
+    updated.targetFraming.captured = true
     updateConfig(updated)
 
     AccessibilityNotification.Announcement("Target captured").post()

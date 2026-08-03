@@ -22,9 +22,8 @@ extension Config {
     public var query: Hotkey
     /// ⌘⌃⇧S default — opens/focuses the Setup window.
     public var setupToggle: Hotkey
-    /// ⌘⌃⇧M default — Monitor mode toggle. Registered even though the
-    /// Monitor controller itself is a sibling PR's scope (this round wires
-    /// the hotkey and a no-op stub — see `HotkeyCenter`'s doc comment).
+    /// ⌘⌃⇧M default — Monitor mode toggle (App/`HotkeyCenter`'s
+    /// `.monitorToggle` case calls `PipelineModel.toggleMonitor()`).
     public var monitorToggle: Hotkey
     /// ⌘⌃⇧T default — "capture current position as target" (§4).
     public var captureTarget: Hotkey
