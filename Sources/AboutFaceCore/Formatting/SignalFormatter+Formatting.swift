@@ -123,14 +123,33 @@ extension SignalFormatter {
     "\(count) \(count == 1 ? "face" : "faces") detected"
   }
 
-  static func formatCaptureFormat(_ descriptor: CaptureFormatDescriptor) -> String {
+  /// Renders the REQUESTED capture format, and — the §9 point of this
+  /// function's `actual` parameter — flags it explicitly when the camera's
+  /// ACTUAL delivered dimensions (`actual`, from a real
+  /// `CapturedFrame.pixelDimensions`) disagree. `actual` defaults to `nil`
+  /// (matching behavior before this existed: just the request) for callers
+  /// that only have the request, or that haven't seen a frame yet.
+  ///
+  /// Deliberately factual, not corrective: this never "fixes" `descriptor`
+  /// to match `actual`, and says nothing when they agree beyond the plain
+  /// requested string — a mismatch is exactly the signal PR #53 showed a
+  /// maintainer needs (a requested format silently NOT taking effect), and
+  /// silently reporting the request as if it were confirmed truth would
+  /// reproduce that same failure one layer up.
+  static func formatCaptureFormat(
+    _ descriptor: CaptureFormatDescriptor, actual: PixelDimensions? = nil
+  ) -> String {
     let fps: String
     if descriptor.frameRate.rounded() == descriptor.frameRate {
       fps = String(Int(descriptor.frameRate))
     } else {
       fps = fixed(descriptor.frameRate, decimals: 1)
     }
-    return "\(descriptor.width)×\(descriptor.height) @ \(fps)fps"
+    let requested = "\(descriptor.width)×\(descriptor.height) @ \(fps)fps"
+    guard let actual, actual.width != descriptor.width || actual.height != descriptor.height else {
+      return requested
+    }
+    return "\(requested), camera actually delivered \(actual.width)×\(actual.height)"
   }
 
   static func formatMirrorState(_ mirrorState: MirrorState) -> String {

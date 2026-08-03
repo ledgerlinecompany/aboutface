@@ -182,7 +182,8 @@ public actor AnalysisEngine {
         primary: nil,
         lighting: lighting
       )
-      return EngineOutput(analysis: analysis, framing: nil)
+      return EngineOutput(
+        analysis: analysis, framing: nil, capturedPixelDimensions: frame.pixelDimensions)
     }
 
     // Lighting wants Vision raw space, pre-egocentric (its own doc
@@ -206,7 +207,8 @@ public actor AnalysisEngine {
     )
     let framing = framingState(for: geometry, signalState: signalState, timestamp: frame.timestamp)
 
-    return EngineOutput(analysis: analysis, framing: framing)
+    return EngineOutput(
+      analysis: analysis, framing: framing, capturedPixelDimensions: frame.pixelDimensions)
   }
 
   /// Consumes `source.frames` and yields one `EngineOutput` per ANALYZED
@@ -323,8 +325,22 @@ public struct EngineOutput: Sendable {
   public let analysis: FrameAnalysis
   public let framing: FramingState?
 
-  public init(analysis: FrameAnalysis, framing: FramingState?) {
+  /// The ACTUAL pixel dimensions of the `CapturedFrame` that produced this
+  /// output (`CapturedFrame.pixelDimensions`'s own doc comment has the full
+  /// "requested is not delivered" rationale, PR #53). `process(_:)` sets
+  /// this on every `EngineOutput` it returns, live or nil. Additive field,
+  /// default `nil` — every pre-existing `EngineOutput(analysis:framing:)`
+  /// call site (test fixtures that hand-build an output rather than routing
+  /// one through `process(_:)`) keeps compiling; `nil` there is accurate,
+  /// not a placeholder, since no real pixel buffer backs those fixtures.
+  public let capturedPixelDimensions: PixelDimensions?
+
+  public init(
+    analysis: FrameAnalysis, framing: FramingState?,
+    capturedPixelDimensions: PixelDimensions? = nil
+  ) {
     self.analysis = analysis
     self.framing = framing
+    self.capturedPixelDimensions = capturedPixelDimensions
   }
 }

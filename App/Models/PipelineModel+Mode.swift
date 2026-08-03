@@ -140,10 +140,33 @@ extension PipelineModel {
     guard let engine else { return }
 
     captureGeneration += 1
-    consumeTask?.cancel()
+    let previousConsumeTask = consumeTask
     consumeTask = nil
+    previousConsumeTask?.cancel()
     await captureSource?.stop()
     captureSource = nil
+
+    // Await the OLD consume task's own completion here — deliberately,
+    // not "redundant with `cancel()`" above. `cancel()` is cooperative: it
+    // only sets a flag `engine.stream(from:)`'s internal frame-forwarding
+    // `Task` checks between frames, so at the moment `captureSource?.stop()`
+    // returns, that task can still be suspended mid-`await process(frame)`
+    // on the OLD source's last buffered frame. `process(_:)` runs on the
+    // shared `AnalysisEngine` actor (reused across the switch — see trap
+    // (b) above), so it CANNOT race the new source's frames through that
+    // same actor — but without this `await`, nothing stops the OLD task's
+    // now-in-flight `ingest(_:)`/`feedFeedbackChain(_:)` calls from landing
+    // on `self` AFTER frames from the NEW source already have, handing
+    // `AnalysisEngine`'s §4/§7 temporal smoothing and hysteresis state (and
+    // the feedback chain's own dwell timers) one stale, out-of-order
+    // sample — the one ordering those state machines assume they never
+    // see. Awaiting here, after `cancel()` AND after `captureSource?.stop()`
+    // (stopping the source is what makes `source.frames` finish, which is
+    // what lets the old task's `for try await` loop actually exit —
+    // awaiting BEFORE `stop()` would deadlock, since the loop would never
+    // terminate), closes that window: nothing below this line runs until
+    // whatever the old task was still doing has fully drained.
+    await previousConsumeTask?.value
 
     let modeSettings = config.camera.settings(for: newMode)
     let source = CameraCaptureSource(
@@ -164,6 +187,9 @@ extension PipelineModel {
     captureSource = source
     captureFormat = SignalFormatter.CaptureFormatDescriptor(
       width: modeSettings.width, height: modeSettings.height, frameRate: modeSettings.frameRate)
+    // Same "unknown until confirmed" reset as `start()` — a mode switch is,
+    // for capture-format-confirmation purposes, a fresh session.
+    actualCaptureDimensions = nil
     mirrorState = source.mirrorState
 
     beginConsuming(engine: engine, source: source, targetAnalysisHz: modeSettings.analysisHz)
@@ -188,6 +214,14 @@ extension PipelineModel {
   /// a transition it no longer represents). Comparing the captured
   /// `generation` against the current `captureGeneration` before writing
   /// either property makes a superseded task's tail a no-op.
+  ///
+  /// `restartCapture(deviceID:for:)` above ALSO explicitly awaits the old
+  /// consume task's completion before this is called for the new one,
+  /// which closes the specific race this guard was originally added for
+  /// (a superseded tail running concurrently with a new one). This
+  /// generation check stays anyway as defense in depth — cheap, and it
+  /// costs nothing to be correct even if some future call path stops
+  /// awaiting the old task the way `restartCapture` does today.
   func beginConsuming(
     engine: AnalysisEngine,
     source: CameraCaptureSource,

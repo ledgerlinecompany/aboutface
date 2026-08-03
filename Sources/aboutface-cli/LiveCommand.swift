@@ -23,11 +23,19 @@ struct Live: AsyncParsableCommand {
 
         achievedFps=<framesProcessed / secondsElapsed>
         droppedFramesEstimate=<requestedFps * secondsElapsed - framesProcessed>
+        actualWidth=<...> actualHeight=<...> requestedWidth=<...> requestedHeight=<...>
 
       "Dropped" here is an estimate relative to the requested rate, not a count of frames the \
       capture layer is known to have discarded — this harness has no lower-level visibility into \
       AVFoundation's own drop accounting. A near-zero estimate at a requested 30fps is the §13 \
       Phase 1 acceptance signal ("runs a live camera at 30Hz without dropping frames").
+
+      The actual/requested width and height are two SEPARATE readings, not one derived from the \
+      other (PR #53: a requested format can silently fail to take effect on macOS) — actual is \
+      read directly off the first delivered frame's pixel buffer \
+      (CapturedFrame.pixelDimensions), requested is echoed back from --width/--height verbatim. \
+      Printing differently is the mismatch signal this line exists to catch; this harness does \
+      not compare them for you or editorialize about it.
 
       If no camera is available, or the user has not granted camera permission, this prints a \
       clear message and exits with a non-zero status rather than crashing.
@@ -70,10 +78,21 @@ struct Live: AsyncParsableCommand {
       throw ExitCode.failure
     }
 
-    let (frameCount, elapsedSeconds) = await runLoop(engine: engine, source: source)
+    let result = await runLoop(engine: engine, source: source)
     await source.stop()
 
-    printSummary(frameCount: frameCount, elapsedSeconds: elapsedSeconds)
+    printSummary(result)
+  }
+
+  /// `runLoop(engine:source:)`'s return value — a named struct rather than a
+  /// 3-member tuple purely to stay within SwiftLint's `large_tuple` limit
+  /// (2 members), same reasoning as `Tests/AboutFaceCoreTests`' `TestRGB`/
+  /// `Dimensions` helper types (see `AnalysisEngineTestSupport.swift`/
+  /// `CaptureSourceTests.swift`).
+  private struct RunResult {
+    let frameCount: Int
+    let elapsedSeconds: Double
+    let actualDimensions: PixelDimensions?
   }
 
   private func makeSource() -> CameraCaptureSource? {
@@ -93,17 +112,25 @@ struct Live: AsyncParsableCommand {
   private func runLoop(
     engine: AnalysisEngine,
     source: CameraCaptureSource
-  ) async -> (frameCount: Int, elapsedSeconds: Double) {
+  ) async -> RunResult {
     let clock = ContinuousClock()
     let start = clock.now
     let deadline = start.advanced(by: .seconds(seconds))
 
     var frameCount = 0
     var lastReportedSecond = -1
+    // Latched from the FIRST frame that carries one, same "confirm once,
+    // don't keep re-reading" shape as `PipelineModel.actualCaptureDimensions`
+    // — the format is not expected to change mid-session, so there's
+    // nothing more to learn from later frames.
+    var actualDimensions: PixelDimensions?
 
     do {
       for try await output in engine.stream(from: source) {
         frameCount += 1
+        if actualDimensions == nil {
+          actualDimensions = output.capturedPixelDimensions
+        }
         let elapsed = clock.now - start
         let elapsedWholeSeconds = Int(elapsed.components.seconds)
         if elapsedWholeSeconds != lastReportedSecond {
@@ -120,7 +147,9 @@ struct Live: AsyncParsableCommand {
       print("Live analysis stopped early due to an error: \(error)")
     }
 
-    return (frameCount, Self.seconds(clock.now - start))
+    return RunResult(
+      frameCount: frameCount, elapsedSeconds: Self.seconds(clock.now - start),
+      actualDimensions: actualDimensions)
   }
 
   /// `Duration.components` gives whole seconds plus attoseconds, not a
@@ -134,7 +163,9 @@ struct Live: AsyncParsableCommand {
     return max(fractional, 0.001)
   }
 
-  private func printSummary(frameCount: Int, elapsedSeconds: Double) {
+  private func printSummary(_ result: RunResult) {
+    let frameCount = result.frameCount
+    let elapsedSeconds = result.elapsedSeconds
     let achievedFps = Double(frameCount) / elapsedSeconds
     let requestedFrames = fps * elapsedSeconds
     let droppedEstimate = max(0, requestedFrames - Double(frameCount))
@@ -148,5 +179,22 @@ struct Live: AsyncParsableCommand {
     print(
       "droppedFramesEstimate=\(String(format: "%.1f", droppedEstimate)) "
         + "(requestedFrames=\(String(format: "%.1f", requestedFrames)) - achieved=\(frameCount))")
+    // §5.2/PR #53: the requested format is not proof of the delivered one —
+    // read directly off the first captured frame's pixel buffer
+    // (`CapturedFrame.pixelDimensions`), not echoed from --width/--height.
+    // Printed as two independent readings, side by side, so a mismatch is
+    // visible from a terminal without opening the app (this is the "checkable
+    // headlessly" requirement this line exists to satisfy) — deliberately
+    // not compared/flagged here; a human (or a future script) reads both
+    // numbers and judges for themselves.
+    if let actualDimensions = result.actualDimensions {
+      print(
+        "actualWidth=\(actualDimensions.width) actualHeight=\(actualDimensions.height) "
+          + "requestedWidth=\(width) requestedHeight=\(height)")
+    } else {
+      print(
+        "actualWidth=unknown actualHeight=unknown (no frame was ever received) "
+          + "requestedWidth=\(width) requestedHeight=\(height)")
+    }
   }
 }

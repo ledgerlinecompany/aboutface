@@ -93,4 +93,19 @@ struct SignalFormatterSnapshotTests {
     #expect(byField[.captureFormat] == "1280×720 @ 30fps")
     #expect(byField[.mirrorState] == "Not mirrored")
   }
+
+  @Test("snapshot(): a requested/actual capture-format mismatch surfaces in the .captureFormat row")
+  func snapshot_captureFormatMismatch_isSurfaced() {
+    let engineOutput = formatterTestOutput(
+      signalState: .noFace, faceCount: 0, primary: nil, lighting: formatterTestLighting(),
+      framing: nil)
+    let rows = SignalFormatter.snapshot(
+      output: engineOutput, backendName: "Apple Vision",
+      captureFormat: .init(width: 640, height: 480, frameRate: 15),
+      actualCaptureDimensions: PixelDimensions(width: 1280, height: 720),
+      mirrorState: .notMirrored)
+
+    let byField = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.value) })
+    #expect(byField[.captureFormat] == "640×480 @ 15fps, camera actually delivered 1280×720")
+  }
 }

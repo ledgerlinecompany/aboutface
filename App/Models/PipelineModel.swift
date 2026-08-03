@@ -172,6 +172,17 @@ public final class PipelineModel {
   // `setMode(_:)`'s capture restart updates both when the format changes.
   public internal(set) var captureFormat: SignalFormatter.CaptureFormatDescriptor?
   public internal(set) var mirrorState: MirrorState?
+  /// The ACTUAL pixel dimensions the camera has delivered this session,
+  /// latched from the FIRST `EngineOutput` a fresh capture actually
+  /// produces (`ingest(_:)`, below) — `nil` from the moment `captureFormat`
+  /// is (re)assigned in `start()`/`setMode(_:)`'s capture restart until
+  /// that first frame arrives. Distinct from `captureFormat` on purpose:
+  /// `captureFormat` is what was REQUESTED, this is what was CONFIRMED —
+  /// see `CapturedFrame.pixelDimensions`'s doc comment for why trusting the
+  /// request alone reproduces PR #53's bug one layer up. Read by
+  /// `SignalFormatter.snapshot`'s `.captureFormat` row, which flags a
+  /// mismatch explicitly rather than silently reporting the request.
+  public internal(set) var actualCaptureDimensions: PixelDimensions?
   public let backendDisplayName = VisionBackend.displayName
 
   // MARK: - Private engine/session state
@@ -266,12 +277,11 @@ public final class PipelineModel {
 
     captureErrorMessage = nil
     // §5's per-mode capture format (Config-keyed, §0/§11 — see
-    // `Config.Camera.ModeCaptureSettings`'s doc comment for why this
-    // replaced the former `setupWidth`/`setupHeight`/`setupFrameRate`
-    // statics). `start()` always begins in whatever `mode` currently is
-    // (`.setup` by default); `setMode(_:)` in `PipelineModel+Mode.swift`
-    // is what changes `mode` and restarts capture on an already-running
-    // pipeline.
+    // `CameraModeCaptureSettings`'s doc comment for why this replaced the
+    // former `setupWidth`/`setupHeight`/`setupFrameRate` statics). `start()`
+    // always begins in whatever `mode` currently is (`.setup` by default);
+    // `setMode(_:)` in `PipelineModel+Mode.swift` is what changes `mode`
+    // and restarts capture on an already-running pipeline.
     let modeSettings = config.camera.settings(for: mode)
     let source = CameraCaptureSource(
       deviceUniqueID: deviceID,
@@ -292,6 +302,10 @@ public final class PipelineModel {
     engine = newEngine
     captureFormat = SignalFormatter.CaptureFormatDescriptor(
       width: modeSettings.width, height: modeSettings.height, frameRate: modeSettings.frameRate)
+    // Unknown until the first frame actually arrives — see
+    // `actualCaptureDimensions`'s doc comment. A fresh session (this is
+    // one) must not keep showing a previous session's confirmed dimensions.
+    actualCaptureDimensions = nil
     mirrorState = source.mirrorState
     isRunning = true
     signalStateLine = "Starting…"
@@ -336,6 +350,17 @@ public final class PipelineModel {
   func ingest(_ output: EngineOutput) {
     latestOutput = output
 
+    // Latches on the FIRST real frame of the session and never overwrites
+    // after that — `actualCaptureDimensions`'s doc comment has the full
+    // rationale. Deliberately unthrottled (unlike `visualOutput`/
+    // `accessibilitySnapshot` below): the point is to catch the confirmed
+    // format as early as possible, not on whatever frame happens to land on
+    // a throttle boundary, and after the first non-nil write this is a
+    // cheap no-op on every subsequent frame.
+    if actualCaptureDimensions == nil, let dimensions = output.capturedPixelDimensions {
+      actualCaptureDimensions = dimensions
+    }
+
     let now = ContinuousClock.now
     if now - lastVisualUpdate >= visualInterval {
       lastVisualUpdate = now
@@ -349,6 +374,7 @@ public final class PipelineModel {
           output: output,
           backendName: backendDisplayName,
           captureFormat: captureFormat,
+          actualCaptureDimensions: actualCaptureDimensions,
           mirrorState: mirrorState,
           display: config.display
         )
