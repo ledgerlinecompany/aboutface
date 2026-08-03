@@ -30,6 +30,9 @@ import ArgumentParser
 ///   how quickly and consistently the maintainer reaches the ideal
 ///   viewing position, with `--config` as the tuning-profile A/B
 ///   mechanism. See `TrialCommand.swift`.
+/// - `probe-camera` — the §12.6 concurrent-access test: opens a camera,
+///   requests a format, and logs the format actually granted plus
+///   `isInUseByAnotherApplication`. See `ProbeCameraCommand.swift`.
 @main
 struct AboutFaceCLI: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
@@ -40,7 +43,7 @@ struct AboutFaceCLI: AsyncParsableCommand {
     version: "0.0.0-phase3 (Config schema v\(Config.defaults.version))",
     subcommands: [
       Replay.self, Live.self, Audition.self, RecordCorpus.self, VerifyCorpus.self, Trial.self,
-      ConfigDefaults.self,
+      ConfigDefaults.self, ProbeCamera.self,
     ]  // swiftlint:disable:previous trailing_comma
   )
 }
