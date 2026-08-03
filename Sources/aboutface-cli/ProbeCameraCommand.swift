@@ -70,10 +70,17 @@ struct ProbeCamera: AsyncParsableCommand {
       "requested format: \(result.requestedWidth)x\(result.requestedHeight) "
         + "at \(formatted(result.requestedFrameRate)) fps")
     print(
-      "exact format match found: \(result.exactFormatMatchFound ? "yes" : "no, used nearest available")"
-    )
+      "device reports an exact matching format: \(result.exactFormatMatchFound ? "yes" : "no")")
     print(
-      "device active format granted: \(result.deviceGrantedWidth)x\(result.deviceGrantedHeight) "
+      "session preset for requested size applied: \(result.sessionPresetMatched ? "yes" : "no")")
+    if !result.sessionPresetMatched {
+      print(
+        "note: no known session preset for this size -- used the session's default preset "
+          + "instead. See below for what that actually granted.")
+    }
+    print(
+      "device active format granted (read after start, after first frame): "
+        + "\(result.deviceGrantedWidth)x\(result.deviceGrantedHeight) "
         + "at \(formatted(result.deviceGrantedFrameRate)) fps")
     print(
       "delivered frame: \(result.deliveredFrameWidth)x\(result.deliveredFrameHeight), "
@@ -87,6 +94,16 @@ struct ProbeCamera: AsyncParsableCommand {
       print(
         "note: device active format and delivered frame dimensions DISAGREE -- "
           + "the requested format was not honored as-is.")
+    }
+
+    let requestedDishonored =
+      result.deviceGrantedWidth != result.requestedWidth
+      || result.deviceGrantedHeight != result.requestedHeight
+    if requestedDishonored {
+      print(
+        "note: granted format does not match the REQUESTED format -- "
+          + "requested \(result.requestedWidth)x\(result.requestedHeight), "
+          + "granted \(result.deviceGrantedWidth)x\(result.deviceGrantedHeight).")
     }
   }
 

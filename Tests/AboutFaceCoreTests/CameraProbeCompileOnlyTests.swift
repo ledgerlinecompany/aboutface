@@ -1,3 +1,4 @@
+import AVFoundation
 import Testing
 
 @testable import AboutFaceCore
@@ -37,5 +38,33 @@ struct CameraProbeCompileOnlyTests {
     // kCVPixelFormatType_32BGRA == 'BGRA' as a four-character code.
     let code: UInt32 = 0x4247_5241
     #expect(PixelFormatCode.string(from: code) == "BGRA")
+  }
+}
+
+/// `CameraSessionPreset` (the fix for the production bug `probe-camera`
+/// found — see that type's doc comment): maps the exact sizes the spec ever
+/// requests to a concrete `AVCaptureSession.Preset`, and returns `nil` for
+/// anything else. Pure mapping logic, no session/device involved, so no
+/// live camera is needed to test it.
+struct CameraSessionPresetTests {
+  @Test("640x480 (§5.2 Monitor) maps to .vga640x480")
+  func vga640x480() {
+    #expect(CameraSessionPreset.preset(forWidth: 640, height: 480) == .vga640x480)
+  }
+
+  @Test("1280x720 (§5.1 Setup) maps to .hd1280x720")
+  func hd1280x720() {
+    #expect(CameraSessionPreset.preset(forWidth: 1280, height: 720) == .hd1280x720)
+  }
+
+  @Test("1920x1080 maps to .hd1920x1080")
+  func hd1920x1080() {
+    #expect(CameraSessionPreset.preset(forWidth: 1920, height: 1080) == .hd1920x1080)
+  }
+
+  @Test("An unmapped size returns nil")
+  func unmappedSizeReturnsNil() {
+    #expect(CameraSessionPreset.preset(forWidth: 800, height: 600) == nil)
+    #expect(CameraSessionPreset.preset(forWidth: 0, height: 0) == nil)
   }
 }
