@@ -14,7 +14,6 @@ import SwiftUI
 struct SetupWindowView: View {
   @Bindable var model: PipelineModel
   let hotkeyCenter: HotkeyCenter
-  let cameraGatingDriver: CameraGatingDriver
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
@@ -64,17 +63,6 @@ struct SetupWindowView: View {
     .task { hotkeyBootstrap() }
     .onChange(of: model.config.hotkeys) { _, newValue in
       hotkeyCenter.updateRegistrations(newValue)
-    }
-    // §12.2 camera-in-use gating: same "Setup WindowGroup is the first
-    // scene, guaranteed to exist at launch" reasoning as `hotkeyBootstrap()`
-    // below — bootstrapped here even though the driver's own observation
-    // Task then runs independently of this view's lifecycle (see
-    // `CameraGatingDriver`'s doc comment). `configure(model:)` itself is a
-    // one-time no-op past its first call, so re-running this `.task` on
-    // window reopen is harmless.
-    .task { cameraGatingDriver.configure(model: model) }
-    .onChange(of: model.selectedCameraID) { _, newDeviceID in
-      cameraGatingDriver.selectedCameraDidChange(newDeviceID)
     }
   }
 

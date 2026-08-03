@@ -4,6 +4,17 @@ import Foundation
 /// The real `CameraBusyProvider` for §12.2's camera-in-use gating: watches
 /// `AVCaptureDevice.isInUseByAnotherApplication` for the selected device.
 ///
+/// ## Currently unwired
+///
+/// §12.2 found, empirically, that `isInUseByAnotherApplication` does not
+/// detect a conferencing app using the camera on current macOS (measured
+/// 2026-08-03, macOS 26.5.2) — it reads `false` even while another process
+/// is verifiably streaming from the same device. Nothing in `App/` currently
+/// consumes this type's output in a live activation path. See §12.2's
+/// finding and `CameraGating.swift`'s doc comment before re-wiring it, and
+/// do not delete it as dead code — it is kept correct and tested for reuse
+/// once a working busy signal replaces `isInUseByAnotherApplication`.
+///
 /// ## Which path does this take?
 ///
 /// Apple declares `isInUseByAnotherApplication` `@objc dynamic` in the

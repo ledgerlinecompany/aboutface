@@ -136,10 +136,12 @@ public final class PipelineModel {
   /// the background. `internal(set)`, not `private(set)`, for the same
   /// cross-file-visibility reason as `config` above: written from
   /// `setMode(_:)` in `PipelineModel+Mode.swift`. Flipped in normal use by
-  /// three triggers (§16.4 task brief): the debug panel's mode `Picker`,
+  /// two shipping triggers: the debug panel's mode `Picker` and
   /// `toggleMonitor()` (⌘⌃⇧M / `MenuBarExtra`, both in
-  /// `PipelineModel+Mode.swift`), and `CameraGatingDriver` (App/) reacting
-  /// to the selected camera going busy/free.
+  /// `PipelineModel+Mode.swift`). A third trigger — auto-activation from the
+  /// selected camera going busy/free — was built (`AboutFaceCore`'s
+  /// `CameraGatingStateMachine`/`CameraInUseMonitor`) but is not wired in;
+  /// see spec §12.2's finding and §16.4 before reviving it.
   public internal(set) var mode: FeedbackMode = .setup
 
   // MARK: - Feedback chain (§5.1, §13 Phase 3) — see `PipelineModel+Audio.swift`

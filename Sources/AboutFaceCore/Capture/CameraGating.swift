@@ -5,9 +5,22 @@
 /// actually live. This is the second, strictly separate layer §12.2 asks
 /// for: `CameraInUseMonitor` is the platform probe (raw busy/free signal,
 /// `AVFoundation`-backed); this type turns that signal into mode-transition
-/// decisions and knows nothing about `AVFoundation` at all. Wiring the
-/// emitted `CameraGatingEvent`s to the real app mode controller is a later
-/// PR — this one delivers the tested machine plus the probe.
+/// decisions and knows nothing about `AVFoundation` at all.
+///
+/// ## Currently unwired — read this before wiring it back up
+///
+/// This machine is correct and fully tested, but nothing in `App/` currently
+/// feeds it live observations or acts on its emitted events. §12.2 found
+/// that the busy signal this whole feature depends on
+/// (`AVCaptureDevice.isInUseByAnotherApplication`, read by
+/// `AVCaptureDeviceBusyProvider` below) does not detect a conferencing app
+/// using the camera on current macOS — see that section's finding for the
+/// measurements. The maintainer's decision (§16.4) is not to ship
+/// camera-gated auto-activation, even once a working detection mechanism
+/// exists, without also solving how to explain the trigger to a user. Do not
+/// re-wire this machine into a live activation path without reading §12.2
+/// first, and do not delete it as dead code — it is the tested, reusable
+/// half of this feature; only the detection mechanism failed.
 ///
 /// ## Rules (§12.2, maintainer §16.4 decision)
 ///

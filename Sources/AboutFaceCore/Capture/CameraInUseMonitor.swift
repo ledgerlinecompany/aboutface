@@ -16,6 +16,12 @@
 /// (no `AVFoundation` import) type that turns this actor's busy/free stream
 /// into mode-transition events — see that file's doc comment for why the
 /// two are kept apart.
+///
+/// **Currently unwired**, same as `CameraGatingStateMachine`: the busy
+/// signal this actor republishes (`AVCaptureDeviceBusyProvider`'s reading of
+/// `isInUseByAnotherApplication`) does not detect a conferencing app on
+/// current macOS — see §12.2's finding and `CameraGatingStateMachine`'s
+/// doc comment before wiring this back into a live activation path.
 public actor CameraInUseMonitor {
   public nonisolated let busyStates: AsyncStream<Bool>
 
