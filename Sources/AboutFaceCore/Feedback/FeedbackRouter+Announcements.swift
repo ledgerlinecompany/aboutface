@@ -117,8 +117,11 @@ extension FeedbackRouter {
   }
 
   // swiftlint:disable opening_brace
-  /// §6.1 good-zone handling: the 800ms-dwell-gated `.enteredGoodZone`
-  /// confirmation (once), then — on every later frame this episode — the
+  /// §6.1 good-zone handling: the `.enteredGoodZone` confirmation fires at
+  /// N-frame-confirmed zone entry plus `goodZoneChimeDelayMs` (default 0 —
+  /// see that field's doc comment for the atomic-arrival rationale; the
+  /// continuous beacon keeps playing until this fires, so the cut and the
+  /// chime land together), then — on every later frame this episode — the
   /// gaze-off advisory (`tickGoodZoneGaze`) and the 7s-cadence liveness
   /// heartbeat, both independent of each other. Setup mode additionally
   /// speaks `Lexicon.Instruction.centered` on entry (§5.1: Setup speaks
@@ -140,7 +143,7 @@ extension FeedbackRouter {
     // swiftlint:enable opening_brace
     if !dwellFiredForCurrentEpisode {
       let elapsedMs = Self.milliseconds(from: start, to: time)
-      guard elapsedMs >= config.dwellMs else { return }
+      guard elapsedMs >= feedbackConfig.goodZoneChimeDelayMs else { return }
       dwellFiredForCurrentEpisode = true
       goodZoneConfirmedAt = time
       nextHeartbeatAt = time.advanced(by: .milliseconds(feedbackConfig.heartbeatIntervalMs))

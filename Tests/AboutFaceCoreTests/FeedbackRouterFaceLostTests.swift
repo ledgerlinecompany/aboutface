@@ -98,19 +98,28 @@ struct FeedbackRouterFaceLostTests {
 
     await ingestRepeated(router, faceLostOutput(), at: t0, count: 5)
     await router.ingest(faceLostOutput(), at: t0.plus(ms: 500))
-    #expect(await audio.calls == [.play(.faceLost)])
+    #expect(await audio.playedEvents() == [.faceLost])
 
     // Reacquire: 5 consecutive good-zone frames confirm the recovery.
+    // Atomic arrival means the SAME 5th frame that reconfirms
+    // `confirmedState` away from `.problem(.faceLost)` both fires
+    // `.faceReacquired` (in `onConfirmedStateChanged`, called first) AND,
+    // because the newly confirmed state is `.goodZone` with
+    // `goodZoneChimeDelayMs` 0, fires `.enteredGoodZone` too — in the SAME
+    // `ingest` call's `tickAnnouncements`, no longer a separate, later
+    // 800ms-dwell call the way it was pre-atomic-arrival. Event-focused:
+    // filters out the interleaved confirmation-window beacon `.update`
+    // calls (frames 1-4 of this batch haven't reconfirmed yet, so they're
+    // still raw `.ok` beacon frames — see `MockAudioRenderer
+    // .playedEvents()`'s doc comment) — this test's intent is the
+    // RECOVERY event ordering, not the continuous channel.
     await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 600), count: 5)
 
-    #expect(await audio.calls == [.play(.faceLost), .play(.faceReacquired)])
+    #expect(await audio.playedEvents() == [.faceLost, .faceReacquired, .enteredGoodZone])
 
-    // Holding the recovered state must not refire `faceReacquired` (checked
-    // before the now-good-zone state's own 800ms entry dwell would add an
-    // unrelated `enteredGoodZone`, to keep this assertion isolated to
-    // recovery-firing behavior).
+    // Holding the recovered state must not refire anything.
     await router.ingest(goodZoneOutput(), at: t0.plus(ms: 700))
-    #expect(await audio.calls == [.play(.faceLost), .play(.faceReacquired)])
+    #expect(await audio.playedEvents() == [.faceLost, .faceReacquired, .enteredGoodZone])
   }
 
   @Test("a face-lost episode that never reaches the earcon does not announce a recovery")
@@ -122,10 +131,19 @@ struct FeedbackRouterFaceLostTests {
     let t0 = clock.now
 
     // Confirmed face-lost, but reacquired well before Setup's 500ms earcon
-    // rung.
+    // rung — `faceLostRung` never reaches 1, so `onConfirmedStateChanged`'s
+    // `hadEscalated` gate on `.faceReacquired` stays closed. The 5-frame
+    // reacquisition batch below DOES reach `.goodZone` though, and atomic
+    // arrival fires THAT episode's own `enteredGoodZone` on the confirming
+    // frame (`goodZoneChimeDelayMs` 0) — a real, correct chime for a real
+    // placement, not the recovery event under test here. Event-focused:
+    // asserts `.faceReacquired` specifically never appears, rather than
+    // total silence (no longer true, or even desirable, post-atomic-arrival
+    // — contrast `reacquisitionFiresFaceReacquiredOnce` above, the
+    // escalated case where reacquisition DOES announce).
     await ingestRepeated(router, faceLostOutput(), at: t0, count: 5)
     await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 200), count: 5)
 
-    #expect(await audio.calls.isEmpty)
+    #expect(await audio.playedEvents() == [.enteredGoodZone])
   }
 }

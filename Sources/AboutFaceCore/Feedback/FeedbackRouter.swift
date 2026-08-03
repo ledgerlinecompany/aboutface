@@ -171,8 +171,6 @@ public actor FeedbackRouter {
   /// N-frame/dwell pipeline below are independent of each other and both
   /// run every call.
   public func ingest(_ output: EngineOutput, at time: ContinuousClock.Instant) async {
-    await updateContinuousSonification(output, at: time)
-
     let discrete = Self.discreteState(for: output)
 
     if discrete == pendingState {
@@ -190,6 +188,12 @@ public actor FeedbackRouter {
     }
 
     await tickAnnouncements(output: output, at: time)
+
+    // Continuous channel runs LAST so a state transition's announcement and
+    // its sonification consequence land on the same ingest — the atomic
+    // arrival: enteredGoodZone fires above, and the beacon's cut (nil)
+    // goes out here in the same call, not one frame later.
+    await updateContinuousSonification(output, at: time)
   }
 
   var nFrameThreshold: Int {
@@ -264,16 +268,25 @@ public actor FeedbackRouter {
     // finding). Resolving-then-sending also cuts the beacon the instant
     // the dead zone is entered, rather than after the dwell-gated
     // good-zone announcement.
+    // Atomic arrival (field finding: the cut preceding the chime by the
+    // confirmation latency was disorienting): the beacon keeps playing —
+    // `inDeadZone: false` forced — until the good-zone episode has FIRED
+    // its entry earcon (`dwellFiredForCurrentEpisode`), so the cut and the
+    // chime land together. Side benefit: raw-frame zone transits during
+    // overshoots no longer blink the tone off. During the confirmation
+    // window the error is ~0, so the user hears the pure center tone with
+    // the click crescendo at peak — the arrival finishing, not ambiguity.
     let resolved: SonificationTarget?
     if output.analysis.signalState == .ok, let framing = output.framing {
-      if framing.inDeadZone {
+      let arrivalAnnounced = confirmedState == .goodZone && dwellFiredForCurrentEpisode
+      if arrivalAnnounced {
         resolved = gazeTrimTarget(output: output, framing: framing)
       } else {
         resolved = SonificationTarget(
           errorX: framing.error.x,
           errorY: framing.error.y,
           distanceError: framing.distanceError,
-          inDeadZone: framing.inDeadZone
+          inDeadZone: false
         )
       }
     } else {
