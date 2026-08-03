@@ -109,6 +109,26 @@ struct Live: AsyncParsableCommand {
   /// ever touched from more than one place at once — nothing here needs
   /// Swift 6 strict-concurrency workarounds because there is only one
   /// concurrency domain involved.
+  ///
+  /// ## The watchdog is load-bearing, not belt-and-braces
+  ///
+  /// The deadline check lives INSIDE the `for try await` loop, so it is only
+  /// ever evaluated when a frame arrives. A camera that opens successfully
+  /// but then delivers NOTHING therefore hangs this command forever, with no
+  /// output and no error — which is exactly what happened while verifying
+  /// Monitor's 640×480 format (a camera left wedged by two clients
+  /// contending for it, a state macOS recovers from only after the
+  /// contending processes are gone). "Hangs silently and indefinitely" is
+  /// the worst possible failure mode for the §13 Phase 4 acceptance
+  /// instrument, whose whole job is being run unattended for 30 minutes and
+  /// believed afterward.
+  ///
+  /// `stop()`ing the source is what finishes `source.frames`, which is what
+  /// lets the `for try await` below exit — so the watchdog stops the source
+  /// rather than trying to cancel a loop that is not suspended at a
+  /// cancellation point. The grace period past `deadline` exists so the
+  /// watchdog can never pre-empt a healthy run that is merely a few frames
+  /// from its own clean exit.
   private func runLoop(
     engine: AnalysisEngine,
     source: CameraCaptureSource
@@ -124,6 +144,13 @@ struct Live: AsyncParsableCommand {
     // — the format is not expected to change mid-session, so there's
     // nothing more to learn from later frames.
     var actualDimensions: PixelDimensions?
+
+    let watchdog = Task {
+      try await Task.sleep(
+        until: deadline.advanced(by: .seconds(Self.watchdogGraceSeconds)), clock: .continuous)
+      await source.stop()
+    }
+    defer { watchdog.cancel() }
 
     do {
       for try await output in engine.stream(from: source) {
@@ -157,6 +184,14 @@ struct Live: AsyncParsableCommand {
   /// math below, floored away from exact 0 to avoid a division by zero if
   /// the loop above exits on its very first iteration (e.g. an immediate
   /// backend error).
+  /// How long past `--seconds` the watchdog in `runLoop(engine:source:)`
+  /// waits before force-stopping the source. Generous on purpose: this is a
+  /// stuck-camera backstop, not a frame-rate assertion, and pre-empting a
+  /// healthy-but-slow run would turn a good measurement into a confusing
+  /// one. Not a `Config` field (§0/§11) because it is a property of this
+  /// diagnostic harness, not of the shipping feedback behavior.
+  private static let watchdogGraceSeconds = 5.0
+
   private static func seconds(_ duration: Duration) -> Double {
     let components = duration.components
     let fractional = Double(components.seconds) + Double(components.attoseconds) / 1e18
