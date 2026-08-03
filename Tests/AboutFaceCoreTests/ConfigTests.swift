@@ -114,6 +114,61 @@ struct ConfigTests {
     #expect(decoded == Config.defaults)
   }
 
+  /// §12.1/§12.2 camera block: same additive-field pattern as
+  /// `feedbackAndSpeechRoundTrip` above.
+  @Test("Camera sub-config round-trips on Config")
+  func cameraRoundTrip() throws {
+    var config = Config.defaults
+    config.camera.selectedCameraID = "FaceTime HD Camera (Built-in)"
+    config.camera.busyDebounceMs = 3500
+    config.camera.busyPollIntervalSeconds = 2.5
+    config.camera.forceBusyPolling = true
+
+    let data = try JSONEncoder().encode(config)
+    let decoded = try JSONDecoder().decode(Config.self, from: data)
+    #expect(decoded == config)
+    #expect(decoded.camera.selectedCameraID == "FaceTime HD Camera (Built-in)")
+    #expect(decoded.camera.busyDebounceMs == 3500)
+    #expect(decoded.camera.forceBusyPolling == true)
+  }
+
+  /// A `selectedCameraID` of `nil` (system default, §12.1) must also
+  /// round-trip cleanly — this is the default/most common case.
+  @Test("A nil selectedCameraID round-trips as nil")
+  func nilSelectedCameraIDRoundTrips() throws {
+    let config = Config.defaults
+    #expect(config.camera.selectedCameraID == nil)
+
+    let data = try JSONEncoder().encode(config)
+    let decoded = try JSONDecoder().decode(Config.self, from: data)
+    #expect(decoded.camera.selectedCameraID == nil)
+  }
+
+  /// An older config file with no `camera` key at all must still decode
+  /// leniently (§11) — this is the exact scenario every Phase-3-and-earlier
+  /// stored config.json is in the moment this PR ships.
+  @Test("A config with no camera key decodes leniently, filling Camera defaults")
+  func missingCameraKeyDecodesLeniently() throws {
+    let defaultsData = try JSONEncoder().encode(Config.defaults)
+    var defaultsObject = try #require(
+      try JSONSerialization.jsonObject(with: defaultsData) as? [String: Any])
+    defaultsObject.removeValue(forKey: "camera")
+
+    let data = try JSONSerialization.data(withJSONObject: defaultsObject)
+    let decoded = try ConfigStore.decodeLeniently(data)
+
+    #expect(decoded.camera == Config.Camera())
+  }
+
+  @Test("Default camera block: no selected ID, 2000ms debounce, 1Hz poll, KVO not forced off")
+  func defaultCamera() {
+    let defaults = Config.defaults.camera
+    #expect(defaults.selectedCameraID == nil)
+    #expect(defaults.busyDebounceMs == 2000)
+    #expect(defaults.busyPollIntervalSeconds == 1.0)
+    #expect(defaults.forceBusyPolling == false)
+  }
+
   // MARK: - §4 default values
 
   @Test("Default version is 1")

@@ -77,6 +77,12 @@ public struct Config: Codable, Sendable, Equatable {
   /// §8 global hotkey bindings. Defined in Config/Config+Hotkeys.swift.
   public var hotkeys: Hotkeys
 
+  /// §12.1/§12.2 camera selection and in-use gating tunables. Added
+  /// 2026-08-02 (Phase 4, PR A: camera management foundations); default
+  /// value on `init` keeps this additive, matching the precedent
+  /// `Audio`/`FeedbackConfig`/`SpeechConfig` set for Phase 3's fields.
+  public var camera: Camera
+
   public struct TargetFraming: Codable, Sendable, Equatable {
     /// Eye midpoint, fraction of frame height from top (§4: "upper third,
     /// modest headroom").
@@ -291,6 +297,11 @@ public struct Config: Codable, Sendable, Equatable {
     }
   }
 
+  // `Camera` (§12.1/§12.2) is defined in `Config+Camera.swift`, not inline
+  // here — same file-length-driven split as `Config+Audio.swift` et al (see
+  // that file's doc comment): it is still `Config.Camera`, declared via
+  // `extension Config { ... }`, exactly as if it lived inline.
+
   public init(
     version: Int,
     targetFraming: TargetFraming,
@@ -305,7 +316,8 @@ public struct Config: Codable, Sendable, Equatable {
     audio: Audio = .defaults,
     feedback: FeedbackConfig = .defaults,
     speech: SpeechConfig = .defaults,
-    hotkeys: Hotkeys = .defaults
+    hotkeys: Hotkeys = .defaults,
+    camera: Camera = Camera()
   ) {
     self.version = version
     self.targetFraming = targetFraming
@@ -321,6 +333,7 @@ public struct Config: Codable, Sendable, Equatable {
     self.feedback = feedback
     self.speech = speech
     self.hotkeys = hotkeys
+    self.camera = camera
   }
 
   /// The spec's §4 starting-point defaults. `Config.defaults` MUST remain
@@ -363,6 +376,7 @@ public struct Config: Codable, Sendable, Equatable {
     audio: .defaults,
     feedback: .defaults,
     speech: .defaults,
-    hotkeys: .defaults
+    hotkeys: .defaults,
+    camera: Camera()
   )
 }
