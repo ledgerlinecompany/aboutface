@@ -91,6 +91,17 @@ extension DebugPanelView {
         range: 0.05...1, step: 0.01, format: Format.percent)
 
       ConfigSliderRow(
+        title: "Heartbeat volume",
+        value: model.binding(\.audio.heartbeat.gain),
+        range: 0...1, step: 0.01, format: Format.percent
+      )
+      .accessibilityHint(
+        "How loud the liveness heartbeat is. The heartbeat is the quiet periodic tick, every "
+          + "few seconds, confirming the app is alive and still sees you while you're "
+          + "well-framed (§6.1) — setting this to zero removes the only cue distinguishing "
+          + "holding good zone from a crashed app.")
+
+      ConfigSliderRow(
         title: "Heartbeat interval",
         value: model.intBinding(\.feedback.heartbeatIntervalMs),
         range: 1000...30000, step: 500, format: Format.milliseconds)

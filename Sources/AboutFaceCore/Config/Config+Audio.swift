@@ -108,9 +108,9 @@ extension Config {
         closePulseSharpness: 3.5
       ),
       heartbeat: AudioHeartbeat(
-        gain: 0.05,
+        gain: 0.20,
         freqHz: 880,
-        durationMs: 40
+        durationMs: 80
       ),
       earcons: .defaults,
       gazeTrim: AudioGazeTrim(
@@ -342,6 +342,27 @@ extension Config {
     /// Deliberately quiet (§13 Phase 3 requirement 5: "heartbeat gain") —
     /// present enough to confirm liveness, unobtrusive enough not to
     /// compete with the silence it's punctuating.
+    ///
+    /// **Corrected by app field finding, 2026-08-03: the original
+    /// `0.05`/40ms default was inaudible to the maintainer in a live
+    /// session — he "could not hear the liveness heartbeat at all."** §6.1
+    /// is explicit that "the heartbeat is not optional": it is the sole
+    /// mechanism that makes "holding good zone" distinguishable from "the
+    /// app crashed," so its audibility is a correctness requirement, not a
+    /// comfort preference the way a positional-tone gain might be. At
+    /// `0.05`/40ms — roughly a seventh the amplitude of the face-lost
+    /// earcon (`0.25`) and the arrival chime (`0.35`), and a 40ms blip —
+    /// "deliberately quiet" had been carried past the point where the cue
+    /// still did its job: `0.05` was not a quieter version of the right
+    /// cue, it was effectively no cue at all. The maintainer auditioned
+    /// four candidates by ear and chose `gain: 0.20`, `durationMs: 80` — the
+    /// governing constraint was staying reliably audible every 7s across a
+    /// two-hour call without becoming irritating, so the target is the
+    /// quietest RELIABLY AUDIBLE setting, not the most comfortable one
+    /// heard in isolation. `durationMs` moved 40 → 80 alongside `gain`
+    /// because a louder-but-still-40ms blip is easier to miss than a
+    /// longer one; both numbers are this same correction, not independent
+    /// tuning passes.
     public var gain: Double
     public var freqHz: Double
     public var durationMs: Double
