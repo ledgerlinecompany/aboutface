@@ -95,7 +95,7 @@ public actor FeedbackRouter {
   // fully independent of the gaze-off one immediately above — its own
   // N-frame streak, its own dwell clock, its own once-per-episode latch.
   // Tracks `!FramingState.headLevel` instead of `!gazeOnCamera`. See
-  // `tickGoodZoneRoll(output:at:)` in `FeedbackRouter+Announcements.swift`.
+  // `tickGoodZoneRoll(output:at:)` in `FeedbackRouter+GoodZoneAdvisories.swift`.
   var headTiltPendingStreak = 0
   var headTiltConfirmedStart: ContinuousClock.Instant?
   var headTiltAnnouncedForEpisode = false
