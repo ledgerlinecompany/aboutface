@@ -11,13 +11,13 @@ import Carbon.HIToolbox
 /// already-validated `Config.Hotkeys` into real `RegisterEventHotKey`
 /// registrations and forwards fired actions to `PipelineModel`.
 ///
-/// `monitorToggle` IS registered — §8's table lists it as a real global
-/// binding — but its handler is a documented no-op below: the Monitor mode
-/// controller itself is a separate PR's scope (Phase 4 PR C). Registering
-/// it now (rather than skipping it) means users who rebind it in settings
-/// later don't need an app update for the binding itself to take effect,
-/// and it reserves the key combo globally so no other app can claim it out
-/// from under About Face in the meantime.
+/// `monitorToggle` toggles Monitor mode (§5.2) on/off via
+/// `PipelineModel.toggleMonitor()` — see `dispatch(_:)`'s `.monitorToggle`
+/// case below. Announced with `AccessibilityNotification.Announcement`
+/// (same mechanism `.captureTarget`'s failure path already uses) because a
+/// GLOBAL hotkey's whole point is working with no window focused, which
+/// means a mode change it causes would otherwise be completely silent and
+/// unverifiable for a blind user.
 ///
 /// ## Concurrency
 ///
@@ -170,8 +170,9 @@ final class HotkeyCenter {
   /// Forwards a fired action to `PipelineModel`. Wiring per the task brief:
   /// `query`/`repeatLast` are new (§5.3/§8); `setupToggle`/`captureTarget`/
   /// `silence` reuse existing `PipelineModel` entry points (the same ones
-  /// the Setup window's own buttons already call); `monitorToggle` is a
-  /// documented no-op (see the type-level doc comment).
+  /// the Setup window's own buttons already call); `monitorToggle` calls
+  /// `PipelineModel.toggleMonitor()` and announces the result (see the
+  /// type-level doc comment).
   private func dispatch(_ action: Config.HotkeyAction) {
     guard let model else { return }
     switch action {
@@ -180,7 +181,25 @@ final class HotkeyCenter {
     case .setupToggle:
       openSetupWindowAction?()
     case .monitorToggle:
-      break
+      // `toggleMonitor()` is async (it may start/stop the capture
+      // session); `dispatch(_:)` itself stays synchronous like every other
+      // case, so the async work and its announcement are wrapped in one
+      // `Task`. `[weak model]` avoids extending the model's lifetime past
+      // this task for what is normally a near-instant await.
+      Task { @MainActor [weak model] in
+        guard let model else { return }
+        let isOn = await model.toggleMonitor()
+        // A failed `start()` (no camera selected, permission denied, ...)
+        // leaves `captureErrorMessage` set and `isOn == false` — surface
+        // that specific reason rather than a generic "Monitor off.", same
+        // "say what actually happened" posture `.captureTarget`'s failure
+        // announcement below already takes.
+        if let error = model.captureErrorMessage {
+          AccessibilityNotification.Announcement(error).post()
+        } else {
+          AccessibilityNotification.Announcement(isOn ? "Monitor on." : "Monitor off.").post()
+        }
+      }
     case .captureTarget:
       let captured = model.captureCurrentPositionAsTarget()
       if !captured {

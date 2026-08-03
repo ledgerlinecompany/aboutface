@@ -105,13 +105,22 @@ public struct Config: Codable, Sendable, Equatable {
     public var neutralPitchDegrees: Double
     public var neutralRollDegrees: Double
 
+    /// §16.4's "app configured" marker — set `true` only by
+    /// `PipelineModel.captureCurrentPositionAsTarget()` (App/), deliberately
+    /// NOT inferred by comparing the fields above against `Config.defaults
+    /// .targetFraming`. See `Config.isConfigured` (`Config+Configured.swift`)
+    /// for the full rationale and what this flag gates. Default `false`: a
+    /// fresh install has captured nothing.
+    public var captured: Bool
+
     public init(
       eyeMidpointY: Double,
       eyeMidpointX: Double,
       interocularWidth: Double,
       neutralYawDegrees: Double = 0,
       neutralPitchDegrees: Double = 0,
-      neutralRollDegrees: Double = 0
+      neutralRollDegrees: Double = 0,
+      captured: Bool = false
     ) {
       self.eyeMidpointY = eyeMidpointY
       self.eyeMidpointX = eyeMidpointX
@@ -119,6 +128,7 @@ public struct Config: Codable, Sendable, Equatable {
       self.neutralYawDegrees = neutralYawDegrees
       self.neutralPitchDegrees = neutralPitchDegrees
       self.neutralRollDegrees = neutralRollDegrees
+      self.captured = captured
     }
   }
 
