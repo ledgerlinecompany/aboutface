@@ -641,6 +641,25 @@ Every behavioral detail §16.4 listed as open is now decided and shipped:
   toward a choice that isn't always right.
 - **Not dismissible** — it is one short utterance, not a persistent alert
   with state to dismiss.
+- **Delayed by `Config.Camera.reminderDelayMs` (default 1500) between the
+  settled rising edge and the phrase being spoken.** Field finding
+  (maintainer, 2026-08-04, after live-testing the reminder): *"Might be worth
+  a 1-2 second delay just because you're usually hearing stuff right when the
+  camera starts being used."* A call starting is itself an audio-busy moment
+  — join tones, the app's own chime, people saying hello — and a reminder
+  landing in the middle of that is easy to miss or to talk over.
+
+  The delay makes re-validation **mandatory, not optional**: every gate is
+  re-read at the deadline, not only at the edge. The likely sequence is that
+  the user hears the call start, thinks "right, Monitor," and presses ⌘⌃⇧M
+  *during* the delay — at which point "Monitor is off." has become false. The
+  reminder exists to prompt exactly that action, so racing the user's
+  response to it is the expected path, not an exotic one, and announcing
+  something untrue is worse than announcing nothing. A pending reminder is
+  therefore dropped if, at the deadline, About Face has started capturing,
+  the user has silenced feedback, the feature has been disabled, or the
+  camera is no longer busy. A dropped reminder is consumed — same rule as
+  below, now applied at two evaluation points rather than one.
 - **Fires once per rising edge** (false→true of the debounced busy signal),
   reusing `Config.Camera.busyDebounceMs` — no second debounce for the same
   underlying signal. It re-arms only after the signal falls back to false;

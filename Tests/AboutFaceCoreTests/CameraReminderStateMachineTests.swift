@@ -4,244 +4,193 @@ import Testing
 
 /// `CameraReminderStateMachine` (§12.2/§16.4): exhaustive coverage of the
 /// rising-edge-only firing rule, each of the three settle-time gates
-/// (capturing, silenced, enabled), and the "a gate that blocks an edge
-/// consumes it — no retroactive fire" decision documented on the machine
-/// itself. Same fully-controlled-fake-clock shape as
+/// (capturing, silenced, enabled), the field-finding
+/// `Config.Camera.reminderDelayMs` delay between a settled edge and speech,
+/// the SECOND gate re-validation at that delay's deadline, and the "a gate
+/// that blocks an evaluation consumes it — no retroactive fire" decision
+/// documented on the machine itself, now applying at both evaluation
+/// points. Same fully-controlled-fake-clock shape as
 /// `CameraGatingStateMachineTests` (no real sleeps; this type doesn't import
 /// `AVFoundation`/`CoreMediaIO` either, so nothing here needs a live camera).
+///
+/// Split across two suites purely to stay under SwiftLint's
+/// `type_body_length` (this file's own equivalent of `Config+Audio.swift`'s
+/// precedent for `file_length`): `CameraReminderStateMachineTests` covers
+/// the debounce/arm/delay mechanics; `CameraReminderDeadlineGateTests`
+/// (below) covers the deadline's second gate evaluation and the
+/// no-retroactive-fire rule specifically. Shared fixtures (`debounceMs`,
+/// `delayMs`, and the `settleEdge`/`arm` helpers) live at file scope so
+/// both suites use the exact same numbers.
 struct CameraReminderStateMachineTests {
-  private let debounceMs = 500
-  private var debounceSeconds: Double { Double(debounceMs) / 1000 }
+  // MARK: - Rising edge settles into `.pending`, not `.speakNow`
 
-  // MARK: - Basic rising-edge firing
-
-  @Test("Rising edge fires once, after the debounce window elapses (not before)")
-  func risingEdge_firesOnceAfterDebounce() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
+  @Test("Rising edge settles into .pending, not .speakNow — deadline is settle-time + the delay")
+  func risingEdge_settlesIntoPending() {
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
 
     let tooSoon = machine.update(
       busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: 0)
-    #expect(tooSoon == false)
-
-    let stillTooSoon = machine.update(
-      busy: true, isCapturing: false, isSilenced: false, isEnabled: true,
-      now: debounceSeconds - 0.01)
-    #expect(stillTooSoon == false)
+    #expect(tooSoon == .nothing)
 
     let settled = machine.update(
-      busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: debounceSeconds)
-    #expect(settled == true)
+      busy: true, isCapturing: false, isSilenced: false, isEnabled: true,
+      now: reminderDebounceSeconds)
+    #expect(settled == .pending(deadline: reminderDebounceSeconds + reminderDelaySeconds))
   }
 
-  @Test("Holding busy true does not refire")
-  func holdingTrue_doesNotRefire() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    let first = settle(&machine, busy: true)
-    #expect(first == true)
+  @Test("Nothing is spoken before the delay elapses; it is spoken exactly at/after the boundary")
+  func delay_notSpokenBeforeBoundary_spokenAtBoundary() {
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
+    let deadline = arm(&machine)
+
+    let tooSoon = machine.update(
+      busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: deadline - 0.01)
+    #expect(tooSoon == .pending(deadline: deadline))
+
+    let onTime = machine.update(
+      busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: deadline)
+    #expect(onTime == .speakNow)
+  }
+
+  @Test("Holding busy true after speaking does not refire")
+  func holdingTrueAfterSpeaking_doesNotRefire() {
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
+    let deadline = arm(&machine)
+    let spoken = machine.update(
+      busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: deadline)
+    #expect(spoken == .speakNow)
 
     for tick in stride(from: 1.0, through: 10.0, by: 1.0) {
       let repeated = machine.update(
         busy: true, isCapturing: false, isSilenced: false, isEnabled: true,
-        now: debounceSeconds + tick)
-      #expect(repeated == false)
+        now: deadline + tick)
+      #expect(repeated == .nothing)
     }
   }
 
-  @Test("Falling then rising re-arms: a second episode fires again")
+  @Test("Falling then rising re-arms: a second episode fires again, delay included both times")
   func fallingThenRising_reArms() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    var now = 0.0
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
 
-    #expect(settle(&machine, busy: true, startingAt: now) == true)
-    now += debounceSeconds + 1
+    let firstDeadline = arm(&machine, startingAt: 0)
+    #expect(
+      machine.update(
+        busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: firstDeadline)
+        == .speakNow)
 
-    #expect(settle(&machine, busy: false, startingAt: now) == false)
-    now += debounceSeconds + 1
+    var now = firstDeadline + 1
+    _ = machine.update(
+      busy: false, isCapturing: false, isSilenced: false, isEnabled: true, now: now)
+    let fallOutcome = machine.update(
+      busy: false, isCapturing: false, isSilenced: false, isEnabled: true,
+      now: now + reminderDebounceSeconds)
+    #expect(fallOutcome == .nothing)
+    now += reminderDebounceSeconds + 1
 
-    #expect(settle(&machine, busy: true, startingAt: now) == true)
+    let secondDeadline = arm(&machine, startingAt: now)
+    #expect(
+      machine.update(
+        busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: secondDeadline)
+        == .speakNow)
   }
 
-  @Test("Falling edge itself never fires, regardless of the gates")
-  func fallingEdge_neverFires() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    _ = settle(&machine, busy: true)
-    let falling = settle(&machine, busy: false, startingAt: debounceSeconds + 1)
-    #expect(falling == false)
+  @Test("Falling edge, once armed but before the deadline, never produces .speakNow")
+  func fallingEdgeBeforeDeadline_neverFires() {
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
+    // The armed deadline is reminderDebounceSeconds + reminderDelaySeconds;
+    // the falling edge below lands well before it.
+    _ = arm(&machine)
+
+    _ = machine.update(
+      busy: false, isCapturing: false, isSilenced: false, isEnabled: true,
+      now: reminderDebounceSeconds + 0.1)
+    let fallSettled = machine.update(
+      busy: false, isCapturing: false, isSilenced: false, isEnabled: true,
+      now: reminderDebounceSeconds + 0.1 + reminderDebounceSeconds)
+    #expect(fallSettled == .nothing)
   }
 
-  // MARK: - The three settle-time gates
-
-  @Test("Busy while capturing never fires — the hard constraint from §12.2's asymmetry")
-  func busyWhileCapturing_neverFires() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    let events = settle(&machine, busy: true, isCapturing: true)
-    #expect(events == false)
-  }
-
-  @Test("Silence suppresses the reminder")
-  func silenced_suppresses() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    let events = settle(&machine, busy: true, isSilenced: true)
-    #expect(events == false)
-  }
-
-  @Test("Disabled (Config.Camera.monitorReminderEnabled == false) suppresses the reminder")
-  func disabled_suppresses() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    let events = settle(&machine, busy: true, isEnabled: false)
-    #expect(events == false)
-  }
-
-  // MARK: - No retroactive fire (documented judgment call)
+  // MARK: - The three edge-settle-time gates (never even arms)
 
   @Test(
-    """
-    Becoming un-silenced mid-episode does NOT retroactively fire a reminder \
-    suppressed at settle time
-    """
-  )
-  func unsilencingMidEpisode_doesNotRetroactivelyFire() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    // Edge settles while silenced: suppressed, and consumed.
-    let suppressed = settle(&machine, busy: true, isSilenced: true)
-    #expect(suppressed == false)
-
-    // Un-silence, busy stays true the whole time (no new edge) — later
-    // observations must stay silent too, however many ticks pass.
-    for tick in stride(from: 1.0, through: 10.0, by: 1.0) {
-      let afterUnsilencing = machine.update(
-        busy: true, isCapturing: false, isSilenced: false, isEnabled: true,
-        now: debounceSeconds + tick)
-      #expect(afterUnsilencing == false)
-    }
+    "Busy while capturing at edge-settle never arms — the hard constraint from §12.2's asymmetry")
+  func busyWhileCapturingAtEdge_neverArms() {
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
+    let outcome = settleEdge(&machine, busy: true, isCapturing: true)
+    #expect(outcome == .nothing)
   }
 
-  @Test(
-    """
-    Capturing stopping mid-episode does NOT retroactively fire a reminder \
-    suppressed at settle time — the same rule as the silence case, applied \
-    to the constraint that is actually load-bearing in practice
-    """
-  )
-  func capturingStoppingMidEpisode_doesNotRetroactivelyFire() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    // Realistic shape: About Face starts capturing while idle, which is
-    // itself what makes the raw busy signal read true (§12.2's asymmetry).
-    let suppressed = settle(&machine, busy: true, isCapturing: true)
-    #expect(suppressed == false)
-
-    // Capturing stops; busy stays true throughout (e.g. a real conferencing
-    // app is also on the call) — no NEW edge occurred, so nothing fires.
-    for tick in stride(from: 1.0, through: 10.0, by: 1.0) {
-      let afterStopping = machine.update(
-        busy: true, isCapturing: false, isSilenced: false, isEnabled: true,
-        now: debounceSeconds + tick)
-      #expect(afterStopping == false)
-    }
+  @Test("Silence at edge-settle never arms")
+  func silencedAtEdge_neverArms() {
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
+    let outcome = settleEdge(&machine, busy: true, isSilenced: true)
+    #expect(outcome == .nothing)
   }
 
-  @Test("Enabling mid-episode does NOT retroactively fire a reminder suppressed at settle time")
-  func enablingMidEpisode_doesNotRetroactivelyFire() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    let suppressed = settle(&machine, busy: true, isEnabled: false)
-    #expect(suppressed == false)
-
-    let afterEnabling = machine.update(
-      busy: true, isCapturing: false, isSilenced: false, isEnabled: true,
-      now: debounceSeconds + 5)
-    #expect(afterEnabling == false)
-  }
-
-  @Test("A suppressed episode still re-arms normally once busy falls and rises again")
-  func suppressedEpisode_stillReArmsOnNextRisingEdge() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
-    var now = 0.0
-
-    #expect(settle(&machine, busy: true, isCapturing: true, startingAt: now) == false)
-    now += debounceSeconds + 1
-
-    #expect(settle(&machine, busy: false, isCapturing: false, startingAt: now) == false)
-    now += debounceSeconds + 1
-
-    // Fresh edge, gates now favorable: fires.
-    #expect(settle(&machine, busy: true, isCapturing: false, startingAt: now) == true)
+  @Test("Disabled (Config.Camera.monitorReminderEnabled == false) at edge-settle never arms")
+  func disabledAtEdge_neverArms() {
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
+    let outcome = settleEdge(&machine, busy: true, isEnabled: false)
+    #expect(outcome == .nothing)
   }
 
   // MARK: - Debounce behavior (mirrors CameraGatingStateMachineTests)
 
-  @Test("Flapping busy signal before the debounce window elapses never fires")
-  func flappingBeforeDebounce_neverFires() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
+  @Test("Flapping busy signal before the debounce window elapses never arms, never fires")
+  func flappingBeforeDebounce_neverArmsOrFires() {
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
 
-    var fired = false
     var now = 0.0
     for _ in 0..<20 {
-      fired =
-        fired
-        || machine.update(
-          busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: now)
-      now += debounceSeconds / 4
-      fired =
-        fired
-        || machine.update(
-          busy: false, isCapturing: false, isSilenced: false, isEnabled: true, now: now)
-      now += debounceSeconds / 4
+      let a = machine.update(
+        busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: now)
+      #expect(a == .nothing)
+      now += reminderDebounceSeconds / 4
+      let b = machine.update(
+        busy: false, isCapturing: false, isSilenced: false, isEnabled: true, now: now)
+      #expect(b == .nothing)
+      now += reminderDebounceSeconds / 4
     }
-    #expect(fired == false)
   }
 
   @Test("Settling back to the original value before debounce elapses cancels the pending edge")
   func settlingBackToOriginal_cancelsPendingEdge() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
 
-    var fired = false
-    fired =
-      fired
-      || machine.update(
-        busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: 0)
-    fired =
-      fired
-      || machine.update(
+    #expect(
+      machine.update(busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: 0)
+        == .nothing)
+    #expect(
+      machine.update(
         busy: false, isCapturing: false, isSilenced: false, isEnabled: true,
-        now: debounceSeconds / 2)
-    fired =
-      fired
-      || machine.update(
+        now: reminderDebounceSeconds / 2) == .nothing)
+    #expect(
+      machine.update(
         busy: false, isCapturing: false, isSilenced: false, isEnabled: true,
-        now: debounceSeconds * 10)
-    #expect(fired == false)
+        now: reminderDebounceSeconds * 10) == .nothing)
   }
 
-  @Test("Exact debounce boundary (now - pendingSince == debounceSeconds) fires")
-  func exactBoundaryFires() {
-    var machine = CameraReminderStateMachine(debounceMs: debounceMs)
+  @Test(
+    "Exact debounce boundary (now - pendingSince == reminderDebounceSeconds) arms, with the correct deadline"
+  )
+  func exactDebounceBoundaryArms() {
+    var machine = CameraReminderStateMachine(
+      debounceMs: reminderDebounceMs, delayMs: reminderDelayMs)
     _ = machine.update(
       busy: true, isCapturing: false, isSilenced: false, isEnabled: true, now: 100)
     let settled = machine.update(
       busy: true, isCapturing: false, isSilenced: false, isEnabled: true,
-      now: 100 + debounceSeconds)
-    #expect(settled == true)
-  }
-
-  // MARK: - Helpers
-
-  /// Feeds `busy` starting at `startingAt`, then again after the debounce
-  /// window has fully elapsed, returning whatever the second call yields —
-  /// the settled result of a signal that transitions once and then holds.
-  @discardableResult
-  private func settle(
-    _ machine: inout CameraReminderStateMachine,
-    busy: Bool,
-    isCapturing: Bool = false,
-    isSilenced: Bool = false,
-    isEnabled: Bool = true,
-    startingAt: Double = 0
-  ) -> Bool {
-    _ = machine.update(
-      busy: busy, isCapturing: isCapturing, isSilenced: isSilenced, isEnabled: isEnabled,
-      now: startingAt)
-    return machine.update(
-      busy: busy, isCapturing: isCapturing, isSilenced: isSilenced, isEnabled: isEnabled,
-      now: startingAt + debounceSeconds)
+      now: 100 + reminderDebounceSeconds)
+    #expect(settled == .pending(deadline: 100 + reminderDebounceSeconds + reminderDelaySeconds))
   }
 }
