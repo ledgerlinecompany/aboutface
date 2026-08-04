@@ -46,6 +46,16 @@ extension Config {
     /// `false`.
     public var forceBusyPolling: Bool
 
+    /// §12.2/§16.4 rising-edge camera-in-use reminder ("Camera in use.
+    /// Monitor is off.", `Lexicon.Reminder.cameraInUseMonitorOff`):
+    /// master on/off switch for `CameraReminderStateMachine`'s `isEnabled`
+    /// gate (§0/§11: every tunable lives in `Config`, never a hardcoded
+    /// `true`). Default `true` — the PR brief's decided default. Flipping
+    /// this off mid-episode does not retroactively announce a suppressed
+    /// edge; see `CameraReminderStateMachine`'s doc comment for why that is
+    /// the same rule applied to every one of its gates, not a special case.
+    public var monitorReminderEnabled: Bool
+
     /// §5.1/§5.2 per-mode capture + analysis settings: one
     /// `CameraModeCaptureSettings` value per `FeedbackMode` case, following
     /// the SAME per-mode-fields shape `FeedbackConfig.setup`/`.monitor`
@@ -75,6 +85,7 @@ extension Config {
       busyDebounceMs: Int = 2000,
       busyPollIntervalSeconds: Double = 1.0,
       forceBusyPolling: Bool = false,
+      monitorReminderEnabled: Bool = true,
       setup: CameraModeCaptureSettings = CameraModeCaptureSettings(
         width: 1280, height: 720, frameRate: 30, analysisHz: nil
       ),
@@ -86,6 +97,7 @@ extension Config {
       self.busyDebounceMs = busyDebounceMs
       self.busyPollIntervalSeconds = busyPollIntervalSeconds
       self.forceBusyPolling = forceBusyPolling
+      self.monitorReminderEnabled = monitorReminderEnabled
       self.setup = setup
       self.monitor = monitor
     }

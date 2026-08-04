@@ -146,6 +146,37 @@ public enum Lexicon {
     public static let allClear = Phrase.fixed("All good.")
   }
 
+  // MARK: - Reminder register (§12.2/§16.4 camera-in-use rising-edge reminder)
+
+  /// A third register, deliberately distinct from `Instruction` and
+  /// `State`: this phrase is neither a Setup-mode correction ("Left.") nor
+  /// a Query-mode state answer ("You are left.") — it is a standing
+  /// reminder fired by `CameraReminderStateMachine` (§12.2/§16.4) on the
+  /// rising edge of another app's camera use, while About Face itself is
+  /// idle. It shares nothing with the other two registers' vocabulary and
+  /// is spoken from a different call site entirely (the App-side
+  /// `MonitorReminderController`, not `FeedbackRouter`), so it gets its own
+  /// clearly-named group rather than being folded into either existing one.
+  public enum Reminder {
+    /// The maintainer's exact, decided wording (2026-08-03/04) — chosen
+    /// over an instruction like "Turn on Monitor" on purpose: this is a
+    /// reminder, not a correction. The user may legitimately not want
+    /// Monitor on for a given call (§12.2's own finding that camera sharing
+    /// makes "someone else is using the camera" an ambiguous signal about
+    /// intent, not just about detection), so the phrase states the fact
+    /// ("Camera in use") plus the app's own current state ("Monitor is
+    /// off") and stops — it never nags toward a choice that isn't always
+    /// right. Fires once per false→true transition of the busy signal,
+    /// only while About Face is not itself capturing (§12.2's asymmetry:
+    /// the underlying CoreMediaIO property can't tell "someone else" from
+    /// "us"), and only when the user has not manually silenced feedback
+    /// (§7.5) — see `CameraReminderStateMachine`'s doc comment for the full
+    /// decision logic and `MonitorReminderController`'s for how it reaches
+    /// speech despite firing exactly when `PipelineModel.speechRenderer`
+    /// does not exist.
+    public static let cameraInUseMonitorOff = Phrase.fixed("Camera in use. Monitor is off.")
+  }
+
   /// Joins already-fixed `Phrase` values, in the order given, into ONE
   /// spoken utterance — §5.3 Query mode's "a single terse spoken summary"
   /// assembled from up to four independently aggregated fields (framing,

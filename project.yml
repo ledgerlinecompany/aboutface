@@ -48,10 +48,16 @@ targets:
         INFOPLIST_KEY_NSHumanReadableCopyright: © 2026 Ledger Line Company LLC
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.1.0
-        # LSUIElement (menu-bar-only, §5.2) is deliberately NOT set yet:
-        # Monitor mode arrives in Phase 4, and a Dock icon makes Phase 2/3
-        # development and accessibility testing easier. Set
-        # INFOPLIST_KEY_LSUIElement: true when Monitor mode lands.
+        # LSUIElement (menu-bar-only, no Dock icon, no Cmd-Tab entry) is
+        # deliberately NOT set — and is not to be set later either. This
+        # REVERSES §5.2's original prescription, by maintainer decision
+        # (2026-08-04): removing the Dock icon also removes About Face from
+        # Cmd-Tab, and the Setup window (§9) is a real window a blind user
+        # needs a reliable, discoverable route back to. The MenuBarExtra
+        # ships as an ADDITIONAL surface, not a replacement for it. Read
+        # §5.2 before reconsidering. (This note previously said to set the
+        # key "when Monitor mode lands" — Monitor mode has landed, and the
+        # decision went the other way.)
 
 schemes:
   AboutFaceApp:

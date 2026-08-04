@@ -6,11 +6,15 @@ import SwiftUI
 /// `PipelineModel` instance so starting the camera in one and adjusting a
 /// slider in another both affect the same running `AnalysisEngine`.
 ///
-/// `LSUIElement` (menu-bar-only, §5.2) is deliberately NOT set — that is an
-/// explicit maintainer packaging decision, not this PR's to make (task
-/// brief). The `MenuBarExtra` below is an ADDITIONAL surface alongside the
-/// Dock icon, which still makes VoiceOver testing and normal window
-/// management easier during development.
+/// `LSUIElement` (menu-bar-only) is deliberately NOT set, and is not to be
+/// set later — a decided packaging choice (maintainer, 2026-08-04) that
+/// REVERSES §5.2's original prescription rather than merely deferring it.
+/// Removing the Dock icon also removes About Face from Cmd-Tab, and the
+/// Setup window (§9) is a real window a blind user needs a reliable,
+/// discoverable route back to; that access was judged worth more than a
+/// menu-bar-only presence for this audience. The `MenuBarExtra` below is an
+/// ADDITIONAL surface alongside the Dock icon, never a replacement for it.
+/// See §5.2 before reconsidering.
 @main
 struct AboutFaceApp: App {
   @State private var model = PipelineModel()
@@ -20,11 +24,19 @@ struct AboutFaceApp: App {
   // `hotkeyBootstrap` doc comment for why that is the right place rather
   // than here.
   @State private var hotkeyCenter = HotkeyCenter()
+  // §12.2/§16.4 camera-in-use reminder: one instance for the app's
+  // lifetime, same "@State on AboutFaceApp" pattern as `hotkeyCenter` —
+  // see `MonitorReminderController`'s doc comment for why it must outlive
+  // any single pipeline run.
+  @State private var monitorReminderController = MonitorReminderController()
 
   var body: some Scene {
     WindowGroup("About Face — Setup", id: "setup") {
-      SetupWindowView(model: model, hotkeyCenter: hotkeyCenter)
-        .frame(minWidth: 480, minHeight: 420)
+      SetupWindowView(
+        model: model, hotkeyCenter: hotkeyCenter,
+        monitorReminderController: monitorReminderController
+      )
+      .frame(minWidth: 480, minHeight: 420)
     }
     .defaultSize(width: 560, height: 680)
 
