@@ -56,6 +56,22 @@ extension Config {
     /// the same rule applied to every one of its gates, not a special case.
     public var monitorReminderEnabled: Bool
 
+    /// §12.2 field finding (2026-08-04): delay, milliseconds, between the
+    /// reminder's rising edge settling and the phrase actually being
+    /// spoken. The maintainer's verbatim feedback after live-testing the
+    /// reminder: "Might be worth a 1-2 second delay just because you're
+    /// usually hearing stuff right when the camera starts being used" — a
+    /// call starting is itself an audio-busy moment (join tones, the app's
+    /// own chime, people saying hello), and a reminder landing in the
+    /// middle of that is easy to miss or talk over. Default `1500` sits in
+    /// the middle of his 1-2s range; tunable by ear later (§0/§11: starting
+    /// point, not a fixed constant). `CameraReminderStateMachine` re-reads
+    /// `isCapturing`/`isSilenced`/`isEnabled`/the busy signal itself at the
+    /// END of this delay, not just at the edge — see that type's doc
+    /// comment for why a delay this long makes stale-gate re-validation
+    /// mandatory rather than optional.
+    public var reminderDelayMs: Int
+
     /// §5.1/§5.2 per-mode capture + analysis settings: one
     /// `CameraModeCaptureSettings` value per `FeedbackMode` case, following
     /// the SAME per-mode-fields shape `FeedbackConfig.setup`/`.monitor`
@@ -86,6 +102,7 @@ extension Config {
       busyPollIntervalSeconds: Double = 1.0,
       forceBusyPolling: Bool = false,
       monitorReminderEnabled: Bool = true,
+      reminderDelayMs: Int = 1500,
       setup: CameraModeCaptureSettings = CameraModeCaptureSettings(
         width: 1280, height: 720, frameRate: 30, analysisHz: nil
       ),
@@ -98,6 +115,7 @@ extension Config {
       self.busyPollIntervalSeconds = busyPollIntervalSeconds
       self.forceBusyPolling = forceBusyPolling
       self.monitorReminderEnabled = monitorReminderEnabled
+      self.reminderDelayMs = reminderDelayMs
       self.setup = setup
       self.monitor = monitor
     }

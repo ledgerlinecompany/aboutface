@@ -6,7 +6,29 @@ import AboutFaceCore
 /// `AboutFaceCore` for WHY it decides what it decides), and speaks the
 /// result. Deliberately thin (CLAUDE.md: "keep `App/` thin") — every rule
 /// about WHEN to fire lives in the Core machine; this type only wires a
-/// live CoreMediaIO signal to it and turns `true` into a spoken utterance.
+/// live CoreMediaIO signal to it and turns `.speakNow` into a spoken
+/// utterance.
+///
+/// ## Ticking a pending fire (§12.2 field-finding delay)
+///
+/// `CameraReminderStateMachine.update` can now return `.pending(deadline:)`
+/// instead of resolving immediately — the maintainer's field finding added
+/// `Config.Camera.reminderDelayMs` between a settled rising edge and
+/// speech, and the machine re-validates its gates fresh at that deadline
+/// rather than trusting the edge-time read (see the Core type's doc
+/// comment for why). The CoreMediaIO listener this controller observes
+/// only fires `onChange`, so if the busy signal is not what changes during
+/// the delay (the common case — the call just keeps running), nothing
+/// would ever call `update` again at the deadline unless this controller
+/// arranges it. `evaluate(busy:)` does that: on `.pending(deadline:)` it
+/// schedules exactly one `pendingFireTask`, slept for the remaining time
+/// to `deadline`, that calls `evaluate(busy:)` again — which itself either
+/// reschedules (still pending, e.g. re-armed after a fall+rise), resolves
+/// to speech, or drops silently. `pendingFireTask` exists only between an
+/// arm and its resolution, per CLAUDE.md's ban on an always-on poller: no
+/// timer runs while nothing is pending, and at most one is ever scheduled
+/// at a time (a fresh `.pending` outcome cancels and replaces it, never
+/// stacks another one alongside it).
 ///
 /// ## The speech lifecycle problem (PR brief)
 ///
@@ -23,15 +45,17 @@ import AboutFaceCore
 /// a real bug (garbled, overlapping audio) — but it cannot happen here, and
 /// not by luck: `reminderSpeech.speak(_:)` is only ever called from
 /// `evaluate(busy:)` below when `CameraReminderStateMachine.update` returns
-/// `true`, which per that type's own contract only happens when
-/// `isCapturing == false`. `isCapturing` is read from
-/// `PipelineModel.isRunning` at that exact instant (see `evaluate(busy:)`),
-/// and `PipelineModel.isRunning == false` is precisely the condition under
-/// which `PipelineModel.speechRenderer` is `nil` and has nothing queued.
-/// The two renderers' active windows are disjoint BY CONSTRUCTION — the
-/// same gate that decides whether to speak at all also guarantees the
-/// pipeline's own renderer is silent when it does — not by a lock or a
-/// shared mutable flag either renderer could race on.
+/// `.speakNow`, which per that type's own contract only happens when
+/// `isCapturing == false` — checked fresh at that exact instant, whether
+/// this is the original edge-settle call or a later deadline tick (§12.2
+/// field-finding delay; see "Ticking a pending fire" above). `isCapturing`
+/// is read from `PipelineModel.isRunning` at that exact instant (see
+/// `evaluate(busy:)`), and `PipelineModel.isRunning == false` is precisely
+/// the condition under which `PipelineModel.speechRenderer` is `nil` and
+/// has nothing queued. The two renderers' active windows are disjoint BY
+/// CONSTRUCTION — the same gate that decides whether to speak at all also
+/// guarantees the pipeline's own renderer is silent when it does — not by
+/// a lock or a shared mutable flag either renderer could race on.
 ///
 /// ## Wiring (see `SetupWindowView`'s `monitorReminderBootstrap`)
 ///
@@ -44,7 +68,7 @@ import AboutFaceCore
 /// means a new CoreMediaIO device to resolve), and `.onChange(of:
 /// model.config)` calls `configChanged(old:new:)` (currently only acts on
 /// `old.speech != new.speech` — see that method's doc comment for why
-/// `Config.Camera`'s debounce/poll fields are read once rather than
+/// `Config.Camera`'s debounce/delay/poll fields are read once rather than
 /// live-reconfigured).
 @MainActor
 final class MonitorReminderController {
@@ -55,6 +79,15 @@ final class MonitorReminderController {
   private var busyMonitor: CameraInUseMonitor?
   private var observeTask: Task<Void, Never>?
   private var settleTask: Task<Void, Never>?
+
+  /// Ticks a `.pending(deadline:)` outcome forward to its resolution — see
+  /// this type's doc comment ("Ticking a pending fire"). Distinct from
+  /// `settleTask`: that one advances the BUSY-SIGNAL debounce; this one
+  /// advances the SPEECH delay that starts only after that debounce has
+  /// already settled on a rising edge. Both can be in flight briefly at
+  /// once (a fresh busy change arriving while an older fire is still
+  /// pending), and each is canceled/replaced independently.
+  private var pendingFireTask: Task<Void, Never>?
 
   /// Origin for `monotonicSeconds()` below — `CameraReminderStateMachine`
   /// wants caller-supplied monotonic seconds (same contract
@@ -85,11 +118,12 @@ final class MonitorReminderController {
   /// `pushConfigToFeedbackChain` only reaches the PIPELINE's speech
   /// renderer, never this controller's own.
   ///
-  /// `Config.Camera`'s debounce/poll/`monitorReminderEnabled` fields are
-  /// deliberately NOT reconfigured here. `monitorReminderEnabled` needs no
-  /// wiring at all — `evaluate(busy:)` below reads it fresh from `model`
-  /// on every settle, so a toggle takes effect on the very next edge with
-  /// zero plumbing. `busyDebounceMs`/`busyPollIntervalSeconds`/
+  /// `Config.Camera`'s debounce/delay/poll/`monitorReminderEnabled` fields
+  /// are deliberately NOT reconfigured here. `monitorReminderEnabled` needs
+  /// no wiring at all — `evaluate(busy:)` below reads it fresh from `model`
+  /// on every settle (and again at every deadline tick), so a toggle takes
+  /// effect on the very next evaluation with zero plumbing.
+  /// `busyDebounceMs`/`reminderDelayMs`/`busyPollIntervalSeconds`/
   /// `forceBusyPolling` ARE baked into `machine`/the CMIO provider at
   /// construction time and stay there for this controller's session; no
   /// debug-panel control exists yet to edit them live (unlike
@@ -137,7 +171,10 @@ final class MonitorReminderController {
         forcePolling: model.config.camera.forceBusyPolling
       )
       model.monitorReminderIssue = nil
-      machine = CameraReminderStateMachine(debounceMs: model.config.camera.busyDebounceMs)
+      machine = CameraReminderStateMachine(
+        debounceMs: model.config.camera.busyDebounceMs,
+        delayMs: model.config.camera.reminderDelayMs
+      )
       startObserving(CameraInUseMonitor(provider: provider))
     } catch {
       machine = nil
@@ -162,6 +199,8 @@ final class MonitorReminderController {
     observeTask = nil
     settleTask?.cancel()
     settleTask = nil
+    pendingFireTask?.cancel()
+    pendingFireTask = nil
     if let busyMonitor {
       Task { await busyMonitor.stop() }
     }
@@ -193,21 +232,54 @@ final class MonitorReminderController {
   }
 
   /// The one call site that reads `isCapturing`/`isSilenced`/`isEnabled` —
-  /// deliberately fresh from `model` on every call rather than cached, since
-  /// `CameraReminderStateMachine` only consults them at the instant a
-  /// transition settles (see that type's doc comment for why "read live
-  /// at settle time" is the rule, not a simplification).
+  /// deliberately fresh from `model` on every call rather than cached,
+  /// since `CameraReminderStateMachine` consults them at TWO separate
+  /// instants (edge-settle, and again at the delay's deadline — see that
+  /// type's doc comment) and both reads must be live, not a value carried
+  /// over from an earlier call.
   private func evaluate(busy: Bool) {
     guard let model else { return }
-    let shouldRemind = machine?.update(
-      busy: busy,
-      isCapturing: model.isRunning,
-      isSilenced: model.isSilenced,
-      isEnabled: model.config.camera.monitorReminderEnabled,
-      now: monotonicSeconds()
-    )
-    guard shouldRemind == true else { return }
-    Task { await reminderSpeech.speak(Lexicon.Reminder.cameraInUseMonitorOff) }
+    guard
+      let outcome = machine?.update(
+        busy: busy,
+        isCapturing: model.isRunning,
+        isSilenced: model.isSilenced,
+        isEnabled: model.config.camera.monitorReminderEnabled,
+        now: monotonicSeconds()
+      )
+    else { return }
+
+    switch outcome {
+    case .nothing:
+      pendingFireTask?.cancel()
+      pendingFireTask = nil
+    case .pending(let deadline):
+      schedulePendingFireTick(deadline: deadline, busy: busy)
+    case .speakNow:
+      pendingFireTask?.cancel()
+      pendingFireTask = nil
+      Task { await reminderSpeech.speak(Lexicon.Reminder.cameraInUseMonitorOff) }
+    }
+  }
+
+  /// Schedules the ONE re-invocation `.pending(deadline:)` needs — see this
+  /// type's doc comment ("Ticking a pending fire"). Cancels any
+  /// already-scheduled tick first: a fresh `.pending` outcome always
+  /// supersedes an older one (same deadline reconfirmed, or a new deadline
+  /// from a fresh rising edge after a fall+rise), never stacks a second
+  /// timer alongside it. `busy` is the value that produced this outcome,
+  /// carried forward into the tick's own `evaluate(busy:)` call since the
+  /// CoreMediaIO listener may not fire again before `deadline` (only
+  /// `onChange`, per this type's doc comment).
+  private func schedulePendingFireTick(deadline: Double, busy: Bool) {
+    pendingFireTask?.cancel()
+    let remainingSeconds = max(0, deadline - monotonicSeconds())
+    let remainingMs = Int((remainingSeconds * 1000).rounded(.up))
+    pendingFireTask = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(remainingMs))
+      guard !Task.isCancelled else { return }
+      self?.evaluate(busy: busy)
+    }
   }
 
   private func monotonicSeconds() -> Double {
