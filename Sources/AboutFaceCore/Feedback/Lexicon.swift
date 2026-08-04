@@ -28,7 +28,10 @@
 /// Both registers describe the same closed set of conditions on purpose —
 /// every `Instruction` case has a `State` counterpart — so Phase 4/5's Query
 /// implementation only has to choose the register, never invent new
-/// vocabulary.
+/// vocabulary. Two more registers are defined further down, each with its
+/// own doc comment explaining why it did not fit here: `Reminder` (§12.2/
+/// §16.4's camera-in-use notice) and `Confirmation` (§8's hotkey/button
+/// action acknowledgments).
 ///
 /// ## Auditory contract (tuning round 5 design discussion)
 ///
@@ -175,6 +178,70 @@ public enum Lexicon {
     /// speech despite firing exactly when `PipelineModel.speechRenderer`
     /// does not exist.
     public static let cameraInUseMonitorOff = Phrase.fixed("Camera in use. Monitor is off.")
+  }
+
+  // MARK: - Confirmation register (§8 hotkey/button confirmations)
+
+  /// A fourth register, deliberately distinct from `Instruction`, `State`,
+  /// AND `Reminder`: this is a direct, one-shot acknowledgment that an
+  /// explicit user action — a global hotkey press or a Setup-window button
+  /// click — succeeded or failed. The distinction that earns it a separate
+  /// group, matching how `Reminder` justified its own: `Reminder` fires
+  /// unprompted, from the app's own inference about the world (someone else
+  /// started using the camera); `Confirmation` fires only in direct
+  /// response to something the user just did, synchronously with that
+  /// action, and never otherwise.
+  ///
+  /// That distinction is also why every `Confirmation` phrase is spoken
+  /// through `PipelineModel.speechRenderer` — the single app-lifetime
+  /// `SpeechRenderer` it, `HotkeyCenter`, and `MonitorReminderController`
+  /// all now share (see that property's doc comment) — but DELIBERATELY
+  /// bypasses `FeedbackRouter` entirely, which is what its own §7.5 manual
+  /// silence gate (`FeedbackRouter.setSilenced`) lives on. Manual silence is
+  /// meant to suppress AUTOMATIC feedback the user did not just ask for;
+  /// a confirmation is the opposite of that by construction, and a
+  /// silenced confirmation would be indistinguishable from a hotkey that
+  /// silently failed to register at all — precisely the "is this thing on?"
+  /// bug this whole register exists to fix (maintainer, 2026-08-04: global
+  /// hotkeys fired correctly while backgrounded but were inaudible because
+  /// the old VoiceOver-announcement lane is suppressed for a non-frontmost
+  /// app). This matters most for `silenced`/`unsilenced` themselves: if
+  /// silencing were silent, a press of that one key would give no way to
+  /// tell whether it just silenced or unsilenced feedback.
+  public enum Confirmation {
+    /// §8 ⌘⌃⇧M, `HotkeyCenter.dispatch(_:)`'s `.monitorToggle` case.
+    public static let monitorOn = Phrase.fixed("Monitor on.")
+    public static let monitorOff = Phrase.fixed("Monitor off.")
+
+    /// `PipelineModel.toggleMonitor()` failed to start Monitor mode (no
+    /// camera selected, permission denied, a capture error, ...).
+    /// Deliberately a FIXED phrase rather than the underlying
+    /// `PipelineModel.captureErrorMessage` text: that string is built at
+    /// runtime from an arbitrary `Error`'s description (interpolated device
+    /// names, `NSError` domains, ...), and speaking it verbatim would be
+    /// exactly the dynamic phrase generation §6.3/CLAUDE.md forbid. The
+    /// full detail stays available where it already was —
+    /// `SetupWindowView`'s VoiceOver-readable "Capture error" section —
+    /// this phrase only confirms THAT the hotkey's attempt failed, which is
+    /// all a terse confirmation owes.
+    public static let monitorFailedToStart = Phrase.fixed("Monitor failed to start.")
+
+    /// §7.5 manual silence (⌘⌃⇧/), `HotkeyCenter.dispatch(_:)`'s `.silence`
+    /// case. See this enum's doc comment for why these two specifically
+    /// motivate bypassing `FeedbackRouter`'s silence gate.
+    public static let silenced = Phrase.fixed("Silenced.")
+    public static let unsilenced = Phrase.fixed("Unsilenced.")
+
+    /// §4 "capture current position as target" — ⌘⌃⇧T and the Setup
+    /// window's own button both funnel through
+    /// `PipelineModel.captureCurrentPositionAsTarget()`, which speaks this
+    /// on success (see that method's doc comment).
+    public static let targetCaptured = Phrase.fixed("Target captured.")
+
+    /// The failure counterpart, spoken by both call sites above when
+    /// `captureCurrentPositionAsTarget()` returns `false` (no face
+    /// currently detected to capture a position from).
+    public static let noFaceToCapture = Phrase.fixed("No face. Nothing captured.")
   }
 
   /// Joins already-fixed `Phrase` values, in the order given, into ONE

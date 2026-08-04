@@ -136,6 +136,13 @@ public final class PipelineModel {
   /// not yet configured. Surfaced next to `captureErrorMessage`.
   public internal(set) var monitorReminderIssue: String?
 
+  /// §8: per-action `RegisterEventHotKey` failures, written by
+  /// `HotkeyCenter.updateRegistrations(_:)` (see that method's doc comment
+  /// for why a failure must never be silently discarded). `nil` when every
+  /// binding registered cleanly; same "surface it" posture as
+  /// `monitorReminderIssue` above.
+  public internal(set) var hotkeyRegistrationIssue: String?
+
   // MARK: - Mode (§5, §13 Phase 4) — see `PipelineModel+Mode.swift`
 
   /// Setup vs. Monitor (§5.1/§5.2). Defaults to `.setup` — the app opens a
@@ -172,8 +179,22 @@ public final class PipelineModel {
   public internal(set) var audioUnavailableMessage: String?
 
   var audioRenderer: AudioRenderer?
-  var speechRenderer: SpeechRenderer?
   var feedbackRouter: FeedbackRouter?
+
+  /// The single app-lifetime `SpeechRenderer` (§6.3), constructed once here
+  /// in `init()`, never torn down while the app runs — shared by
+  /// `startFeedbackChain()` (hands it to each fresh `FeedbackRouter`),
+  /// `HotkeyCenter.dispatch(_:)` (speaks `Lexicon.Confirmation` phrases
+  /// through it directly, deliberately bypassing `FeedbackRouter` — see
+  /// that enum's doc comment), and `MonitorReminderController` (its
+  /// `Lexicon.Reminder` phrase). One shared renderer makes overlapping
+  /// speech impossible BY CONSTRUCTION, where the pre-fix design (two
+  /// separate renderers) only avoided it by an argument about disjoint time
+  /// windows a third speaker would have broken — see
+  /// `MonitorReminderController`'s doc comment for the fuller history.
+  /// `stopFeedbackChain()` deliberately does NOT discard this property
+  /// (only `stopSpeaking()`) — the reminder/hotkeys need it while idle.
+  public let speechRenderer: SpeechRenderer
 
   // MARK: - Throttled state (see type-level doc comment)
 
@@ -245,14 +266,26 @@ public final class PipelineModel {
   public init() {
     permissionState = CameraPermissionState(AVCaptureDevice.authorizationStatus(for: .video))
 
+    // Loaded into a LOCAL first, not straight into `self.config` — Swift's
+    // two-phase class init forbids reading `self.config` until EVERY stored
+    // property has a value, and `speechRenderer` below needs this same
+    // loaded value before that point. A local sidesteps the restriction.
+    let loadedConfig: Config
+    let loadIssue: ConfigStore.LoadIssue?
     if let url = try? ConfigStore.defaultURL() {
       let result = ConfigStore.load(from: url)
-      config = result.config
-      configLoadIssue = result.issue
+      loadedConfig = result.config
+      loadIssue = result.issue
     } else {
-      config = .defaults
-      configLoadIssue = nil
+      loadedConfig = .defaults
+      loadIssue = nil
     }
+    config = loadedConfig
+    configLoadIssue = loadIssue
+    // See `speechRenderer`'s doc comment above: constructed once, here, for
+    // the app's whole lifetime, seeded from the same `loadedConfig` just
+    // assigned to `config`.
+    speechRenderer = SpeechRenderer(config: loadedConfig.speech)
 
     // Auto-default ONLY — deliberately assigns `selectedCameraID` directly
     // rather than going through `selectCamera(_:)` below, and MUST keep
@@ -280,85 +313,9 @@ public final class PipelineModel {
   // `PipelineModel+Mode.swift`/`+Target.swift`/`+Config.swift` (see this
   // file's own type-level doc comment).
 
-  // MARK: - Session lifecycle
-
-  public func start() async {
-    guard !isRunning else { return }
-    guard permissionState == .authorized else {
-      captureErrorMessage = "Camera access is not authorized."
-      return
-    }
-    guard let deviceID = selectedCameraID else {
-      captureErrorMessage = "No camera selected."
-      return
-    }
-
-    captureErrorMessage = nil
-    // §5's per-mode capture format (Config-keyed, §0/§11 — see
-    // `CameraModeCaptureSettings`'s doc comment for why this replaced the
-    // former `setupWidth`/`setupHeight`/`setupFrameRate` statics). `start()`
-    // always begins in whatever `mode` currently is (`.setup` by default);
-    // `setMode(_:)` in `PipelineModel+Mode.swift` is what changes `mode`
-    // and restarts capture on an already-running pipeline.
-    let modeSettings = config.camera.settings(for: mode)
-    let source = CameraCaptureSource(
-      deviceUniqueID: deviceID,
-      width: modeSettings.width,
-      height: modeSettings.height,
-      frameRate: modeSettings.frameRate
-    )
-    let newEngine = AnalysisEngine(backend: VisionBackend(), config: config)
-
-    do {
-      try await source.start()
-    } catch {
-      captureErrorMessage = "Could not start camera: \(error)"
-      return
-    }
-
-    captureSource = source
-    engine = newEngine
-    captureFormat = SignalFormatter.CaptureFormatDescriptor(
-      width: modeSettings.width, height: modeSettings.height, frameRate: modeSettings.frameRate)
-    // Unknown until the first frame actually arrives — see
-    // `actualCaptureDimensions`'s doc comment. A fresh session (this is
-    // one) must not keep showing a previous session's confirmed dimensions.
-    actualCaptureDimensions = nil
-    mirrorState = source.mirrorState
-    isRunning = true
-    signalStateLine = "Starting…"
-
-    // Audio starts with the pipeline (task brief §5.1): same lifecycle as
-    // the camera/engine above, degrading to a visible notice rather than
-    // failing `start()` if no audio device is available — see
-    // `PipelineModel+Audio.swift`.
-    await startFeedbackChain()
-
-    beginConsuming(engine: newEngine, source: source, targetAnalysisHz: modeSettings.analysisHz)
-  }
-
-  public func stop() async {
-    captureGeneration += 1
-    consumeTask?.cancel()
-    consumeTask = nil
-    await captureSource?.stop()
-    captureSource = nil
-    engine = nil
-    // Audio stops with the pipeline (task brief §5.1: "stop → stops
-    // cleanly") — see `PipelineModel+Audio.swift`.
-    await stopFeedbackChain()
-    isRunning = false
-    signalStateLine = "Stopped"
-    latestOutput = nil
-    visualOutput = nil
-    accessibilitySnapshot = .empty
-  }
-
-  // `beginConsuming(engine:source:targetAnalysisHz:)` — the shared
-  // consume-loop spawn used by both `start()` above and `setMode(_:)`'s
-  // capture restart — lives in `PipelineModel+Mode.swift`, not here, purely
-  // to stay under SwiftLint's file-length limit; see that file for why
-  // `captureGeneration` (declared above) is threaded through it.
+  // `start()`/`stop()` — the capture/engine session lifecycle — live in
+  // `PipelineModel+Session.swift`, not here, for the same file-length
+  // reason as the splits noted above.
 
   // `ingest(_:)`/`words(for:)` — the per-frame throttle that drives
   // `visualOutput`/`accessibilitySnapshot`/`signalStateLine` — live in

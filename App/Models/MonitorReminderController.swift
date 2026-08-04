@@ -30,50 +30,57 @@ import AboutFaceCore
 /// at a time (a fresh `.pending` outcome cancels and replaces it, never
 /// stacks another one alongside it).
 ///
-/// ## The speech lifecycle problem (PR brief)
+/// ## The speech lifecycle problem (PR brief) — RESOLVED by consolidation
 ///
-/// `PipelineModel.speechRenderer` exists only between `startFeedbackChain()`
-/// and `stopFeedbackChain()` — i.e. only while the pipeline is RUNNING. This
-/// reminder is only ever allowed to fire while `PipelineModel.isRunning ==
-/// false` (`CameraReminderStateMachine`'s `isCapturing` gate), which is
-/// exactly the window `PipelineModel.speechRenderer` is `nil`. So this
-/// controller owns a SEPARATE `SpeechRenderer`, constructed once and kept
-/// for the controller's own lifetime — which is the app's lifetime, same
-/// pattern as `HotkeyCenter` (`AboutFaceApp`'s single `@State`).
+/// This controller USED TO own a separate, private `SpeechRenderer`,
+/// constructed once and kept for the controller's own lifetime, because the
+/// obvious alternative — `PipelineModel.speechRenderer` — used to exist only
+/// between `startFeedbackChain()` and `stopFeedbackChain()`, i.e. only while
+/// the pipeline was RUNNING, and this reminder only ever fires while
+/// `PipelineModel.isRunning == false` (`CameraReminderStateMachine`'s
+/// `isCapturing` gate) — exactly the window the old `speechRenderer` was
+/// `nil`. Two independently-owned `AVSpeechSynthesizer`s speaking at once
+/// would be a real bug (garbled, overlapping audio); it could not happen
+/// with just these two renderers, but only because their active windows
+/// were provably disjoint — an argument that does not scale to a third
+/// speaker. It stopped scaling the moment hotkey confirmations (§8) needed
+/// their own voice too: a global hotkey can fire at any instant, including
+/// mid-utterance from either of the other two, so "disjoint time windows"
+/// was no longer available as the safety argument.
 ///
-/// Two independently-owned `AVSpeechSynthesizer`s speaking at once would be
-/// a real bug (garbled, overlapping audio) — but it cannot happen here, and
-/// not by luck: `reminderSpeech.speak(_:)` is only ever called from
-/// `evaluate(busy:)` below when `CameraReminderStateMachine.update` returns
-/// `.speakNow`, which per that type's own contract only happens when
-/// `isCapturing == false` — checked fresh at that exact instant, whether
-/// this is the original edge-settle call or a later deadline tick (§12.2
-/// field-finding delay; see "Ticking a pending fire" above). `isCapturing`
-/// is read from `PipelineModel.isRunning` at that exact instant (see
-/// `evaluate(busy:)`), and `PipelineModel.isRunning == false` is precisely
-/// the condition under which `PipelineModel.speechRenderer` is `nil` and
-/// has nothing queued. The two renderers' active windows are disjoint BY
-/// CONSTRUCTION — the same gate that decides whether to speak at all also
-/// guarantees the pipeline's own renderer is silent when it does — not by
-/// a lock or a shared mutable flag either renderer could race on.
+/// The fix (this PR): `PipelineModel.speechRenderer` is now constructed
+/// once in `PipelineModel.init()` and lives for the app's whole lifetime,
+/// never torn down when the pipeline stops (see that property's doc
+/// comment). This controller no longer owns any `SpeechRenderer` of its
+/// own — `evaluate(busy:)` below speaks through `model?.speechRenderer`
+/// instead, the same shared instance `FeedbackRouter` and `HotkeyCenter`
+/// use. Overlap is now impossible by construction (one `AVSpeechSynthesizer`
+/// always preempts its own prior utterance — see `SpeechRenderer.speak(_:)`),
+/// not by an argument about which windows happen not to intersect.
 ///
 /// ## Wiring (see `SetupWindowView`'s `monitorReminderBootstrap`)
 ///
 /// `configure(model:)` is called once, from the Setup window's `.task` —
 /// the same "first view guaranteed to exist at launch" reasoning
 /// `HotkeyCenter`'s wiring doc comment already gives, since this reminder,
-/// like a global hotkey, must work with no window focused. Two further
-/// `SetupWindowView` hooks keep it live after that: `.onChange(of:
+/// like a global hotkey, must work with no window focused. One further
+/// `SetupWindowView` hook keeps it live after that: `.onChange(of:
 /// model.selectedCameraID)` calls `deviceChanged()` (a new/changed camera
-/// means a new CoreMediaIO device to resolve), and `.onChange(of:
-/// model.config)` calls `configChanged(old:new:)` (currently only acts on
-/// `old.speech != new.speech` — see that method's doc comment for why
-/// `Config.Camera`'s debounce/delay/poll fields are read once rather than
-/// live-reconfigured).
+/// means a new CoreMediaIO device to resolve). A `SpeechConfig` change no
+/// longer needs a hook here at all — now that this controller speaks
+/// through the shared `model.speechRenderer` (see `evaluate(busy:)` below),
+/// `PipelineModel+Audio.swift`'s `pushConfigToFeedbackChain` already
+/// reaches it on every `Config` change
+/// (see that method's doc comment), pipeline running or not. (Before
+/// consolidation, this controller's now-removed `configChanged(old:new:)`
+/// existed only to forward that same push to its OWN private renderer.)
+///
+/// `Config.Camera`'s debounce/delay/poll/`monitorReminderEnabled` fields
+/// remain read once, at `reconfigureForCurrentDevice()` construction time,
+/// and are not live-reconfigured — see that method's doc comment.
 @MainActor
 final class MonitorReminderController {
   private var model: PipelineModel?
-  private let reminderSpeech = SpeechRenderer()
 
   private var machine: CameraReminderStateMachine?
   private var busyMonitor: CameraInUseMonitor?
@@ -111,32 +118,6 @@ final class MonitorReminderController {
     reconfigureForCurrentDevice()
   }
 
-  /// `SetupWindowView`'s `.onChange(of: model.config)`. Only
-  /// `old.speech != new.speech` does anything here — §6.3's "changing any
-  /// slider visibly changes engine behavior" applied to `reminderSpeech`
-  /// specifically, since `PipelineModel+Audio.swift`'s
-  /// `pushConfigToFeedbackChain` only reaches the PIPELINE's speech
-  /// renderer, never this controller's own.
-  ///
-  /// `Config.Camera`'s debounce/delay/poll/`monitorReminderEnabled` fields
-  /// are deliberately NOT reconfigured here. `monitorReminderEnabled` needs
-  /// no wiring at all — `evaluate(busy:)` below reads it fresh from `model`
-  /// on every settle (and again at every deadline tick), so a toggle takes
-  /// effect on the very next evaluation with zero plumbing.
-  /// `busyDebounceMs`/`reminderDelayMs`/`busyPollIntervalSeconds`/
-  /// `forceBusyPolling` ARE baked into `machine`/the CMIO provider at
-  /// construction time and stay there for this controller's session; no
-  /// debug-panel control exists yet to edit them live (unlike
-  /// `Config.audio`, which `AudioRenderer.updateConfig` does support live —
-  /// see `PipelineModel+Audio.swift`'s doc comment), so reconfiguring the
-  /// CMIO listener on every unrelated keystroke elsewhere in `Config`
-  /// would be churn with no observable benefit today. Revisit if a live
-  /// control for those fields is ever added.
-  func configChanged(old: Config, new: Config) {
-    guard old.speech != new.speech else { return }
-    Task { await reminderSpeech.updateConfig(new.speech) }
-  }
-
   // MARK: - Device (re)resolution
 
   /// Tears down any live observation and, if a camera is selected, attempts
@@ -153,6 +134,23 @@ final class MonitorReminderController {
   /// `PipelineModel.monitorReminderIssue`, a visible, VoiceOver-readable
   /// property `SetupWindowView` surfaces alongside `captureErrorMessage` —
   /// never just a silently-absent reminder.
+  ///
+  /// `Config.Camera`'s `busyDebounceMs`/`reminderDelayMs`/
+  /// `busyPollIntervalSeconds`/`forceBusyPolling` are read HERE, once, and
+  /// baked into `machine`/the CMIO provider for this controller's session —
+  /// deliberately not live-reconfigured on every `Config` change (unlike
+  /// `Config.speech`, which now reaches the shared `speechRenderer`
+  /// unconditionally via `PipelineModel+Audio.swift`'s
+  /// `pushConfigToFeedbackChain` — see the type-level doc comment's
+  /// "Wiring" section). `monitorReminderEnabled` needs no such wiring at
+  /// all: `evaluate(busy:)` below reads it fresh from `model` on every
+  /// settle (and again at every deadline tick), so a toggle takes effect on
+  /// the very next evaluation with zero plumbing. The other four fields
+  /// have no debug-panel control yet (unlike `Config.audio`, which
+  /// `AudioRenderer.updateConfig` does support live), so reconfiguring the
+  /// CMIO listener on every unrelated keystroke elsewhere in `Config` would
+  /// be churn with no observable benefit today. Revisit if a live control
+  /// for those fields is ever added.
   private func reconfigureForCurrentDevice() {
     guard let model else { return }
     tearDownObservation()
@@ -258,7 +256,12 @@ final class MonitorReminderController {
     case .speakNow:
       pendingFireTask?.cancel()
       pendingFireTask = nil
-      Task { await reminderSpeech.speak(Lexicon.Reminder.cameraInUseMonitorOff) }
+      // Speaks through the shared, app-lifetime `model.speechRenderer` (see
+      // `PipelineModel.speechRenderer`'s doc comment) rather than a private
+      // renderer of this controller's own — see the type-level doc
+      // comment's "speech lifecycle problem" section for why that used to
+      // be necessary and why consolidation removed the need.
+      Task { await model.speechRenderer.speak(Lexicon.Reminder.cameraInUseMonitorOff) }
     }
   }
 
