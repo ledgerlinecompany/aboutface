@@ -27,6 +27,53 @@ struct CameraProbeCompileOnlyTests {
     _ = provider as any CameraBusyProvider
   }
 
+  // `CMIOCameraBusyProvider`, `CMIOPropertyReader`, and
+  // `CMIOAllDevicesBusyReader` all talk to real CoreMediaIO hardware
+  // objects, which (like `AVCaptureDeviceProvider`/`AVCaptureDeviceBusyProvider`
+  // above) CI cannot rely on doing anything useful with -- so these never
+  // invoke `currentValue()`/`currentReading()`/`startObserving()`/
+  // `currentRunningStates()` on a SUCCESSFULLY constructed instance,
+  // matching this file's existing convention for hardware-backed types.
+  // `CMIOCameraBusyProvider.init` is different: it now resolves
+  // `deviceUniqueID` and throws `.deviceNotFound` if nothing matches (see
+  // that type's doc comment for why), which makes the not-found path a
+  // genuine, deterministic behavior -- true on any machine, real camera
+  // hardware or none, because "nonexistent-device-for-testing" is not a
+  // real CMIO device UID -- so it IS tested for real below, not just
+  // compiled. `CMIODeviceLookupTests` covers the pure matching logic this
+  // check is built on.
+
+  @Test("CMIOCameraBusyProvider conforms to CameraBusyProvider (metatype check, no construction)")
+  func cmioBusyProviderConformsToProtocol() {
+    // Proves the conformance compiles without needing a live/resolvable
+    // device -- `init` now requires one (see below), so a metatype check
+    // is the only construction-free way to assert this.
+    let conformingType: any CameraBusyProvider.Type = CMIOCameraBusyProvider.self
+    _ = conformingType
+  }
+
+  @Test("CMIOCameraBusyProvider.init throws .deviceNotFound for an unresolvable uniqueID")
+  func cmioBusyProviderThrowsForUnresolvableDevice() {
+    #expect(throws: CMIOCameraBusyProviderError.deviceNotFound("nonexistent-device-for-testing")) {
+      try CMIOCameraBusyProvider(deviceUniqueID: "nonexistent-device-for-testing")
+    }
+  }
+
+  @Test("The forcePolling initializer parameter does not bypass device resolution")
+  func cmioBusyProviderForcePollingStillThrowsForUnresolvableDevice() {
+    #expect(throws: CMIOCameraBusyProviderError.deviceNotFound("nonexistent-device-for-testing")) {
+      try CMIOCameraBusyProvider(
+        deviceUniqueID: "nonexistent-device-for-testing", pollIntervalSeconds: 2.0,
+        forcePolling: true)
+    }
+  }
+
+  @Test("CMIOAllDevicesBusyReader.currentRunningStates has the documented signature")
+  func allDevicesBusyReaderSignatureCompiles() {
+    let fn: () -> [CMIODeviceRunningState] = CMIOAllDevicesBusyReader.currentRunningStates
+    _ = fn
+  }
+
   @Test("CameraInUseMonitor's convenience device-ID init constructs without touching hardware")
   func monitorConvenienceInitConstructs() async {
     let monitor = CameraInUseMonitor(deviceUniqueID: "nonexistent-device-for-testing")

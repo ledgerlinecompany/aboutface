@@ -55,51 +55,11 @@ public actor CameraFormatProbe {
     case timedOutWaitingForFrame
   }
 
-  public struct Result: Sendable, Equatable {
-    public let deviceUniqueID: String
-    public let deviceLocalizedName: String
-
-    public let requestedWidth: Int
-    public let requestedHeight: Int
-    public let requestedFrameRate: Double
-
-    /// Whether the device reports SOME format matching the request exactly
-    /// (width, height, and a frame-rate range containing the requested
-    /// rate). Informational only — the matched format is never applied to
-    /// the device directly; `sessionPresetMatched`/`session.sessionPreset`
-    /// is what actually governs the granted resolution on macOS (see this
-    /// type's doc comment).
-    public let exactFormatMatchFound: Bool
-
-    /// Whether the requested (width, height) had a known
-    /// `CameraSessionPreset` mapping that was applied to
-    /// `AVCaptureSession.sessionPreset`. `false` means this probe fell back
-    /// to the session's own default preset (`.high`) instead of refusing to
-    /// run — check `deviceGrantedWidth`/`Height` for what that actually
-    /// produced.
-    public let sessionPresetMatched: Bool
-
-    /// `AVCaptureDevice.activeFormat`'s dimensions, read AFTER the session
-    /// started and the first frame arrived — post-start truth, not a
-    /// pre-start claim (see this type's doc comment for why that ordering
-    /// matters on macOS).
-    public let deviceGrantedWidth: Int
-    public let deviceGrantedHeight: Int
-    /// `AVCaptureDevice.activeVideoMinFrameDuration` converted to fps, read
-    /// at the same post-start-and-post-first-frame point as
-    /// `deviceGrantedWidth`/`Height`.
-    public let deviceGrantedFrameRate: Double
-
-    public let deliveredFrameWidth: Int
-    public let deliveredFrameHeight: Int
-    /// Four-character-code pixel format string (e.g. "BGRA", "420v"), read
-    /// from the actually-delivered `CVPixelBuffer`.
-    public let deliveredPixelFormat: String
-
-    /// Read BEFORE this probe opened its own session — reflects only other
-    /// processes' use of the device, per §12.2/§12.6.
-    public let isInUseByAnotherApplication: Bool
-  }
+  // `Result` is declared in `CameraFormatProbeSupport.swift` via
+  // `extension CameraFormatProbe { public struct Result ... }`, not inline
+  // here — split purely to stay under SwiftLint's `file_length` limit, same
+  // precedent as `ProbeSessionBox`/`ProbeDeviceBox`/etc. living in that
+  // file. Exactly as if it lived inline in this file.
 
   /// - Parameters:
   ///   - deviceUniqueID: `AVCaptureDevice.uniqueID` to probe. `nil` uses
@@ -119,8 +79,12 @@ public actor CameraFormatProbe {
   ) async throws -> Result {
     let device = try resolveDevice(uniqueID: deviceUniqueID)
     // Read BEFORE we touch the session ourselves, per the type-level doc
-    // comment.
+    // comment. All three readings below are taken at this same instant, so
+    // they describe the same moment even though they come from different
+    // APIs.
     let busyBeforeOpen = device.isInUseByAnotherApplication
+    let cmioBeforeOpen = CMIOPropertyReader.runningSomewhere(forUniqueID: device.uniqueID)
+    let cmioAllDeviceReadingsBeforeOpen = CMIOAllDevicesBusyReader.currentRunningStates()
 
     let exactMatch = try hasExactFormatMatch(
       device: device, width: width, height: height, frameRate: frameRate)
@@ -181,7 +145,10 @@ public actor CameraFormatProbe {
       deliveredFrameWidth: outcome.deliveredWidth,
       deliveredFrameHeight: outcome.deliveredHeight,
       deliveredPixelFormat: outcome.deliveredPixelFormat,
-      isInUseByAnotherApplication: busyBeforeOpen
+      isInUseByAnotherApplication: busyBeforeOpen,
+      cmioRunningSomewhereBeforeOpen: cmioBeforeOpen,
+      cmioRunningSomewhereAfterOpen: outcome.cmioRunningSomewhereAfterOpen,
+      cmioAllDeviceReadings: cmioAllDeviceReadingsBeforeOpen
     )
   }
 
@@ -248,6 +215,11 @@ public actor CameraFormatProbe {
     let deviceGrantedWidth: Int
     let deviceGrantedHeight: Int
     let deviceGrantedFrameRate: Double
+    /// Read at the same post-start-and-post-frame, pre-stop point as
+    /// `deviceGrantedWidth`/etc. — see `Result.cmioRunningSomewhereAfterOpen`'s
+    /// doc comment for why that timing matters (our own session must still
+    /// be open for this to show the self-detection effect).
+    let cmioRunningSomewhereAfterOpen: CMIORunningSomewhereReading
   }
 
   /// Bundles `captureOneFrame`'s inputs — purely to keep that function's
@@ -317,6 +289,11 @@ public actor CameraFormatProbe {
         let dims = CMVideoFormatDescriptionGetDimensions(
           deviceBox.device.activeFormat.formatDescription)
         let grantedFrameRate = Self.actualFrameRate(device: deviceBox.device)
+        // Read while our own session is STILL running -- see
+        // `Result.cmioRunningSomewhereAfterOpen`'s doc comment. Must happen
+        // before `stopRunning()` below, not after.
+        let cmioAfterOpen = CMIOPropertyReader.runningSomewhere(
+          forUniqueID: deviceBox.device.uniqueID)
         if sessionBox.session.isRunning {
           sessionBox.session.stopRunning()
         }
@@ -327,7 +304,8 @@ public actor CameraFormatProbe {
             deliveredPixelFormat: frame.pixelFormat,
             deviceGrantedWidth: Int(dims.width),
             deviceGrantedHeight: Int(dims.height),
-            deviceGrantedFrameRate: grantedFrameRate
+            deviceGrantedFrameRate: grantedFrameRate,
+            cmioRunningSomewhereAfterOpen: cmioAfterOpen
           ))
       }
     }
