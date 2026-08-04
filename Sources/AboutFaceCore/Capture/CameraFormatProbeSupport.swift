@@ -2,13 +2,88 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 
-/// `ProbeSessionBox`, `ProbeDeviceBox`, `ProbeFrameDelegate`, and
-/// `PixelFormatCode` — split out of `CameraFormatProbe.swift` into this
-/// file purely to stay under SwiftLint's `file_length` limit. These are
-/// exactly as if they lived inline in that file; see
-/// `CameraFormatProbe`'s own doc comments for the concurrency rationale.
-/// `internal` (not `private`), since `CameraFormatProbe.swift` constructs
-/// them from a different file.
+/// `CameraFormatProbe.Result`, `ProbeSessionBox`, `ProbeDeviceBox`,
+/// `ProbeFrameDelegate`, and `PixelFormatCode` — split out of
+/// `CameraFormatProbe.swift` into this file purely to stay under
+/// SwiftLint's `file_length` limit. These are exactly as if they lived
+/// inline in that file; see `CameraFormatProbe`'s own doc comments for the
+/// concurrency rationale. `internal` (not `private`), since
+/// `CameraFormatProbe.swift` constructs them from a different file.
+
+extension CameraFormatProbe {
+  public struct Result: Sendable, Equatable {
+    public let deviceUniqueID: String
+    public let deviceLocalizedName: String
+
+    public let requestedWidth: Int
+    public let requestedHeight: Int
+    public let requestedFrameRate: Double
+
+    /// Whether the device reports SOME format matching the request exactly
+    /// (width, height, and a frame-rate range containing the requested
+    /// rate). Informational only — the matched format is never applied to
+    /// the device directly; `sessionPresetMatched`/`session.sessionPreset`
+    /// is what actually governs the granted resolution on macOS (see
+    /// `CameraFormatProbe`'s type-level doc comment).
+    public let exactFormatMatchFound: Bool
+
+    /// Whether the requested (width, height) had a known
+    /// `CameraSessionPreset` mapping that was applied to
+    /// `AVCaptureSession.sessionPreset`. `false` means this probe fell back
+    /// to the session's own default preset (`.high`) instead of refusing to
+    /// run — check `deviceGrantedWidth`/`Height` for what that actually
+    /// produced.
+    public let sessionPresetMatched: Bool
+
+    /// `AVCaptureDevice.activeFormat`'s dimensions, read AFTER the session
+    /// started and the first frame arrived — post-start truth, not a
+    /// pre-start claim (see `CameraFormatProbe`'s type-level doc comment
+    /// for why that ordering matters on macOS).
+    public let deviceGrantedWidth: Int
+    public let deviceGrantedHeight: Int
+    /// `AVCaptureDevice.activeVideoMinFrameDuration` converted to fps, read
+    /// at the same post-start-and-post-first-frame point as
+    /// `deviceGrantedWidth`/`Height`.
+    public let deviceGrantedFrameRate: Double
+
+    public let deliveredFrameWidth: Int
+    public let deliveredFrameHeight: Int
+    /// Four-character-code pixel format string (e.g. "BGRA", "420v"), read
+    /// from the actually-delivered `CVPixelBuffer`.
+    public let deliveredPixelFormat: String
+
+    /// Read BEFORE this probe opened its own session — reflects only other
+    /// processes' use of the device, per §12.2/§12.6.
+    public let isInUseByAnotherApplication: Bool
+
+    /// §12.2's replacement signal (`kCMIODevicePropertyDeviceIsRunningSomewhere`)
+    /// for the SAME device, read at the SAME "before this probe opened its
+    /// own session" point as `isInUseByAnotherApplication` above — so the
+    /// two can be compared side by side against the same instant. Per
+    /// §12.2's finding, expect these to disagree if another app is
+    /// genuinely streaming: `isInUseByAnotherApplication` reads `false`
+    /// regardless, while this reads `.running`.
+    public let cmioRunningSomewhereBeforeOpen: CMIORunningSomewhereReading
+
+    /// The same CMIO reading, read again AFTER this probe's own session
+    /// started and a frame was delivered (same post-start-and-post-frame
+    /// point `deviceGrantedWidth`/etc. are read at) — while our own session
+    /// is still open. Per §12.2's "any process, including us" asymmetry,
+    /// this is expected to read `.running` even if no other app is using
+    /// the camera, simply because THIS probe is now streaming. Reporting
+    /// both readings, unambiguously labeled, makes that self-detection
+    /// effect visible instead of confusing (see `ProbeCameraCommand`).
+    public let cmioRunningSomewhereAfterOpen: CMIORunningSomewhereReading
+
+    /// One `CMIORunningSomewhereReading` per CMIO-enumerable device
+    /// (§12.3's cross-device query), read at the same "before this probe
+    /// opened its own session" point as `cmioRunningSomewhereBeforeOpen` —
+    /// the point at which a cross-device comparison is actually meaningful,
+    /// since none of the readings are contaminated by this probe's own
+    /// capture yet.
+    public let cmioAllDeviceReadings: [CMIODeviceRunningState]
+  }
+}
 
 /// See `CameraCaptureSource`'s `CameraSessionBox` for the `@unchecked
 /// Sendable` rationale — identical pattern, applied to this probe's own

@@ -26,10 +26,16 @@ struct ProbeCamera: AsyncParsableCommand {
       format read directly off the first delivered frame -- these can disagree under concurrent \
       access, which is exactly what this tool exists to surface. Also prints \
       isInUseByAnotherApplication, read BEFORE this tool opens its own session, so it reflects \
-      only other processes.
+      only other processes -- and, alongside it, CoreMediaIO's \
+      kCMIODevicePropertyDeviceIsRunningSomewhere for the same device at the same moment, plus \
+      that same CMIO reading again AFTER this tool's own session is open (it reads "running" at \
+      that point purely because THIS process is now streaming -- see §12.2), plus a per-device \
+      breakdown of that CMIO reading across every camera CoreMediaIO can see, read before this \
+      tool opens anything.
 
       Run this while another app (Zoom, FaceTime, ...) already has the same camera open, to \
-      empirically check whether the requested format is honored under concurrent access (§12.6).
+      empirically check whether the requested format is honored under concurrent access (§12.6), \
+      and to compare isInUseByAnotherApplication against the CoreMediaIO reading (§12.2).
       """
   )
 
@@ -86,6 +92,7 @@ struct ProbeCamera: AsyncParsableCommand {
       "delivered frame: \(result.deliveredFrameWidth)x\(result.deliveredFrameHeight), "
         + "pixel format \(result.deliveredPixelFormat)")
     print("in use by another application: \(result.isInUseByAnotherApplication ? "yes" : "no")")
+    printCMIOReadings(result)
 
     let dimensionsDisagree =
       result.deviceGrantedWidth != result.deliveredFrameWidth
@@ -107,8 +114,51 @@ struct ProbeCamera: AsyncParsableCommand {
     }
   }
 
+  /// §12.2/§12.6's CoreMediaIO reporting: the selected device's reading
+  /// before and after this tool's own session opened (to make the "any
+  /// process, including us" self-detection effect visible instead of
+  /// confusing -- see this command's `discussion`), plus the per-device
+  /// breakdown §12.3's mismatch-warning heuristic will eventually need.
+  /// Split out of `printResult` purely to stay under SwiftLint's
+  /// `function_body_length` limit.
+  private static func printCMIOReadings(_ result: CameraFormatProbe.Result) {
+    print(
+      "CoreMediaIO running-somewhere, this device, read BEFORE this tool opened its own session: "
+        + describe(result.cmioRunningSomewhereBeforeOpen))
+    print(
+      "CoreMediaIO running-somewhere, this device, read AFTER this tool opened its own session: "
+        + describe(result.cmioRunningSomewhereAfterOpen)
+        + " (expected to read running here even with no other app using the camera -- "
+        + "this tool's own session is what is now running; see §12.2)")
+    print(
+      "CoreMediaIO running-somewhere, per device, read BEFORE this tool opened its own session:")
+    if result.cmioAllDeviceReadings.isEmpty {
+      print("  (no CoreMediaIO devices enumerated)")
+    }
+    for reading in result.cmioAllDeviceReadings {
+      print("  \(reading.uniqueID): \(describe(reading.reading))")
+    }
+  }
+
   private static func formatted(_ value: Double) -> String {
     String(format: "%.2f", value)
+  }
+
+  /// Renders `CMIORunningSomewhereReading` factually, one word/phrase per
+  /// case -- `.deviceNotFound` and `.propertyReadFailed` print distinctly
+  /// from `.idle` on purpose (§12.2's brief: do not let "couldn't read
+  /// this" look like "camera idle").
+  private static func describe(_ reading: CMIORunningSomewhereReading) -> String {
+    switch reading {
+    case .running:
+      return "running"
+    case .idle:
+      return "idle"
+    case .deviceNotFound:
+      return "device not found (no CoreMediaIO device UID matched)"
+    case .propertyReadFailed(let status):
+      return "property read failed (OSStatus \(status))"
+    }
   }
 
   private static func describe(_ error: Error) -> String {

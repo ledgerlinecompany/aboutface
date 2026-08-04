@@ -39,8 +39,18 @@ public enum CameraBusyObservationPath: Sendable, Equatable {
   /// succeeded" is the strongest claim obtainable without a second app
   /// physically grabbing the camera in a live session.
   case kvo
-  /// KVO was unavailable (or `forcePolling` overrode it — see
-  /// `AVCaptureDeviceBusyProvider.init`) — falling back to timed reads.
+  /// `CMIOObjectAddPropertyListenerBlock` registration on
+  /// `kCMIODevicePropertyDeviceIsRunningSomewhere` succeeded. A distinct
+  /// case from `.kvo` rather than reusing it — CoreMediaIO's block-listener
+  /// mechanism is a genuinely different registration API from Cocoa KVO,
+  /// and §12.2 explicitly asks which path a conformance actually took.
+  /// `CMIOCameraBusyProvider`'s doc comment explains what "registration
+  /// succeeded" does and doesn't verify here.
+  case cmioListener
+  /// Neither `.kvo` nor `.cmioListener` was established (KVO unavailable;
+  /// CMIO listener registration failed; or `forcePolling` overrode either —
+  /// see `AVCaptureDeviceBusyProvider.init`/`CMIOCameraBusyProvider.init`) —
+  /// falling back to timed reads.
   case polling
 }
 
