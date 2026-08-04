@@ -14,6 +14,7 @@ import SwiftUI
 struct SetupWindowView: View {
   @Bindable var model: PipelineModel
   let hotkeyCenter: HotkeyCenter
+  let monitorReminderController: MonitorReminderController
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
@@ -54,6 +55,16 @@ struct SetupWindowView: View {
             .foregroundStyle(.red)
         }
       }
+
+      // §12.2/§16.4: `MonitorReminderController` couldn't resolve the
+      // selected camera to a CoreMediaIO device — never a silent no-op,
+      // see `PipelineModel.monitorReminderIssue`'s doc comment.
+      if let message = model.monitorReminderIssue {
+        Section("Camera-in-use reminder") {
+          Text(message)
+            .foregroundStyle(.red)
+        }
+      }
     }
     .formStyle(.grouped)
     .navigationTitle("About Face — Setup")
@@ -63,6 +74,13 @@ struct SetupWindowView: View {
     .task { hotkeyBootstrap() }
     .onChange(of: model.config.hotkeys) { _, newValue in
       hotkeyCenter.updateRegistrations(newValue)
+    }
+    .task { monitorReminderBootstrap() }
+    .onChange(of: model.selectedCameraID) { _, _ in
+      monitorReminderController.deviceChanged()
+    }
+    .onChange(of: model.config) { oldValue, newValue in
+      monitorReminderController.configChanged(old: oldValue, new: newValue)
     }
   }
 
@@ -77,6 +95,14 @@ struct SetupWindowView: View {
   /// first scene, so SwiftUI presents it automatically at launch).
   private func hotkeyBootstrap() {
     hotkeyCenter.configure(model: model, openSetupWindow: { openWindow(id: "setup") })
+  }
+
+  /// §12.2/§16.4: wires `monitorReminderController` to `model`, once, at
+  /// Setup-window launch — same "first view guaranteed to exist at launch"
+  /// reasoning as `hotkeyBootstrap()` above, since this reminder must work
+  /// with no window focused.
+  private func monitorReminderBootstrap() {
+    monitorReminderController.configure(model: model)
   }
 
   // MARK: - Camera permission

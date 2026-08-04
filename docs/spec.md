@@ -264,7 +264,15 @@ Pre-call. User is actively moving and wants convergence in under ten seconds.
 
 During the call. MUST never speak over the user or anyone else.
 
-- Background, no window. Menu bar item only (`LSUIElement`).
+- Background, no persistent window while running. **Decided (maintainer,
+  2026-08-04), against this section's original `LSUIElement` prescription:**
+  the app keeps its Dock icon. `LSUIElement` (menu-bar-only, no Dock icon, no
+  Cmd-Tab entry) was the original plan, but removing the Dock icon also
+  removes About Face from Cmd-Tab, and the Setup window (§9) is a real window
+  a blind user needs a reliable, discoverable route back to — losing Cmd-Tab
+  access to it in exchange for a menu-bar-only presence was judged the wrong
+  trade for this audience. The `MenuBarExtra` (§16.4) ships as an
+  ADDITIONAL surface alongside the Dock icon, not a replacement for it.
 - Analysis at **5 Hz**. Capture format 640×480 @ 15fps — requested **explicitly**,
   not negotiated. This matters for CPU and thermals over a two-hour call, and
   because format negotiation between concurrent clients needs empirical
@@ -601,10 +609,10 @@ does, so it **cannot** detect *deactivation* — "the call ended." A gating
 implementation built on this property needs a separate signal for noticing
 the call ended; that does not fall out of this property for free.
 
-**Proposed direction (maintainer, not yet settled):** the maintainer has
-proposed reframing this feature away from auto-activation entirely —
-verbatim: *"the switch from no to yes might instead be some kind of
-spoken/earcon trigger to remember to turn on monitoring."* This fits the
+**Direction taken (maintainer, decided and shipped 2026-08-03/04):** the
+maintainer proposed reframing this feature away from auto-activation
+entirely — verbatim: *"the switch from no to yes might instead be some kind
+of spoken/earcon trigger to remember to turn on monitoring."* This fits the
 property's actual shape better than the original design did, for a specific
 reason worth recording: the deactivation asymmetry above only matters for
 *auto-activation*, which needs to know when the call ends. A **reminder**
@@ -619,34 +627,59 @@ trigger nobody can predict is worse than none): "when another app starts
 using your camera, About Face reminds you" is a rule a user can hold in
 their head, and the app never makes noise on its own.
 
-This is a proposed direction, not a settled requirement — "might," in the
-maintainer's words — and the behavioral details are genuinely open, listed
-here rather than answered:
+Every behavioral detail §16.4 listed as open is now decided and shipped:
 
-- Spoken vs. earcon.
-- Exact wording, which would have to enter `Lexicon.swift`'s closed
-  vocabulary (§6.3) once decided.
-- Whether the reminder is dismissible.
-- Whether it repeats or fires once per rising edge.
-- How it interacts with §7.5 manual silence.
+- **Spoken**, not earcon — the app's own TTS (§6.3), exactly one fixed
+  phrase.
+- **Exact wording: "Camera in use. Monitor is off."** — added to
+  `Lexicon.swift`'s closed vocabulary (§6.3) in its own `Reminder` register,
+  distinct from `Instruction` and `State` (it is neither a Setup correction
+  nor a Query answer). Chosen deliberately over an instruction like "Turn on
+  Monitor": this is a reminder, not a correction, and the user may
+  legitimately not want Monitor on for a given call — the phrase states the
+  fact and the app's own current state, and stops, rather than nagging
+  toward a choice that isn't always right.
+- **Not dismissible** — it is one short utterance, not a persistent alert
+  with state to dismiss.
+- **Fires once per rising edge** (false→true of the debounced busy signal),
+  reusing `Config.Camera.busyDebounceMs` — no second debounce for the same
+  underlying signal. It re-arms only after the signal falls back to false;
+  it does not repeat while the camera stays busy.
+- **Respects §7.5 manual silence** — if the user has silenced the app, the
+  reminder stays silent, no exceptions. A related judgment call, decided and
+  documented at the implementation (`CameraReminderStateMachine`'s doc
+  comment in `AboutFaceCore`): a gate that blocks a rising edge — silenced,
+  or capturing, or the feature disabled in `Config` — consumes that edge.
+  Un-silencing (or stopping Monitor, or re-enabling the feature) after the
+  fact does **not** retroactively speak a reminder for an edge that already
+  passed; only a fresh false→true transition can fire again. The alternative
+  — re-checking continuously and firing as soon as conditions turn
+  favorable, however long after the actual edge — was rejected as
+  disconnected from the event that justifies the announcement.
 
-One constraint is not open, because it follows directly from the property's
-semantics rather than being a design choice: the reminder must be armed only
-while About Face is **not** capturing, or it will fire on itself the moment
-Monitor or Setup opens the camera.
+The one constraint that was never open, because it follows directly from
+the property's semantics rather than being a design choice, still holds and
+is enforced by the shipped implementation: the reminder is armed only while
+About Face is **not** capturing (`PipelineModel.isRunning == false`), or it
+would fire on itself the moment Monitor or Setup opens the camera.
 
-**Status: not shipped.** Neither camera-gated auto-activation nor the
-reminder direction above is wired into the app; both await a maintainer
-decision — see §16.4. Monitor mode remains reachable by the ⌘⌃⇧M hotkey (§8)
-and the menu bar item; both work exactly as before, unaffected either way.
-The pure decision machine (`CameraGatingStateMachine`), the platform-probe
-layer (`CameraInUseMonitor`/`CameraBusyProvider`/`AVCaptureDeviceBusyProvider`),
-and their tests remain in the codebase, and the platform-probe layer is
-reusable regardless of which direction is chosen. `CameraGatingStateMachine`
-specifically is shaped for auto-activation's three-way off/setup/monitor
-decision table; a reminder's decision logic — arm while idle, fire once on
-the rising edge — is a different and likely simpler question that is not
-decided here. Do not re-wire any of this into a live activation or reminder
+**Status: shipped.** The reminder is live: `CameraReminderStateMachine`
+(`AboutFaceCore`, pure, exhaustively unit-tested, no `AVFoundation`/
+`CoreMediaIO` import) implements the decision logic above; the App-side
+`MonitorReminderController` drives it from `CMIOCameraBusyProvider` and
+speaks its decisions through a `SpeechRenderer` it owns for the app's own
+lifetime (independent of `PipelineModel`'s pipeline-lifetime renderer — see
+that controller's doc comment for why, and for how the two renderers are
+kept from ever speaking over each other). Camera-gated **auto-activation**
+remains un-shipped, exactly as before — only the reminder direction was
+built. The pure decision machine (`CameraGatingStateMachine`), the
+platform-probe layer (`CameraInUseMonitor`/`CameraBusyProvider`/
+`AVCaptureDeviceBusyProvider`), and their tests remain in the codebase for
+auto-activation specifically, unwired, per §16.4. `CameraGatingStateMachine`
+is shaped for auto-activation's three-way off/setup/monitor decision table;
+`CameraReminderStateMachine` is the separate, simpler machine the reminder
+actually needed, per the prediction this section made before either was
+built. Do not re-wire `CameraGatingStateMachine` into a live activation
 path without first reading this finding.
 
 ### 12.3 Mismatch warning
@@ -887,7 +920,7 @@ Flag these rather than deciding unilaterally:
    activation trigger nobody can predict is worse than no trigger, "even if
    it's built correctly."
 
-   **Narrowed 2026-08-03:** the maintainer has proposed a direction — not
+   **Narrowed 2026-08-03:** the maintainer proposed a direction — not
    auto-activation, but a spoken/earcon reminder to turn Monitor on by hand
    when another app starts using the camera; see §12.2's "Proposed
    direction." The trigger is now identified. What is open is what the app
@@ -896,3 +929,13 @@ Flag these rather than deciding unilaterally:
    dismissible, whether it repeats or fires once per rising edge, and how it
    interacts with §7.5 manual silence. Do not re-wire §12.2's machinery into
    a live activation or reminder path until those are decided.
+
+   **Decided and shipped 2026-08-03/04:** spoken, one fixed phrase —
+   "Camera in use. Monitor is off." (`Lexicon.Reminder.cameraInUseMonitorOff`)
+   — not dismissible, fires once per rising edge and re-arms only after the
+   busy signal falls back to false, and respects §7.5 manual silence with no
+   exceptions. See §12.2's "Direction taken" passage for the full decision
+   record, including the no-retroactive-fire rule for gates (silence,
+   capturing, or `Config.Camera.monitorReminderEnabled`) that block an edge.
+   Camera-gated auto-activation itself remains un-shipped — only this
+   reminder direction was built.

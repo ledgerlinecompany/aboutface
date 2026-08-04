@@ -129,6 +129,13 @@ public final class PipelineModel {
   public internal(set) var isRunning = false
   public internal(set) var captureErrorMessage: String?
 
+  /// §12.2/§16.4 reminder: set by `MonitorReminderController` when
+  /// `CMIOCameraBusyProvider.init` can't resolve `selectedCameraID` — see
+  /// that controller's doc comment for why this must surface visibly
+  /// rather than silently leaving the reminder unarmed. `nil` when fine or
+  /// not yet configured. Surfaced next to `captureErrorMessage`.
+  public internal(set) var monitorReminderIssue: String?
+
   // MARK: - Mode (§5, §13 Phase 4) — see `PipelineModel+Mode.swift`
 
   /// Setup vs. Monitor (§5.1/§5.2). Defaults to `.setup` — the app opens a
@@ -170,9 +177,12 @@ public final class PipelineModel {
 
   // MARK: - Throttled state (see type-level doc comment)
 
-  public private(set) var visualOutput: EngineOutput?
-  public private(set) var accessibilitySnapshot: AccessibilitySnapshot = .empty
-  public private(set) var signalStateLine: String = "Not started"
+  // `internal(set)`, not `private(set)`: `PipelineModel+Ingest.swift`'s
+  // `ingest(_:)` writes all three on the throttled cadence described there
+  // — same cross-file-visibility note as `config`'s doc comment above.
+  public internal(set) var visualOutput: EngineOutput?
+  public internal(set) var accessibilitySnapshot: AccessibilitySnapshot = .empty
+  public internal(set) var signalStateLine: String = "Not started"
 
   // MARK: - Static-per-session context fed to `SignalFormatter`
 
@@ -223,10 +233,14 @@ public final class PipelineModel {
   /// is pressed. Read by `PipelineModel+Target.swift`.
   var latestOutput: EngineOutput?
 
-  private var lastVisualUpdate: ContinuousClock.Instant = .now
-  private var lastAccessibilityUpdate: ContinuousClock.Instant = .now
-  private let visualInterval = Duration.milliseconds(100)  // ~10 Hz
-  private let accessibilityInterval = Duration.milliseconds(500)  // ~2 Hz
+  // Not `private`: `ingest(_:)`/`words(for:)` moved to
+  // `PipelineModel+Ingest.swift` to stay under SwiftLint's file-length
+  // limit (same cross-file-visibility note as `config`'s doc comment
+  // above — Swift's `private` scopes to the declaring *file*).
+  var lastVisualUpdate: ContinuousClock.Instant = .now
+  var lastAccessibilityUpdate: ContinuousClock.Instant = .now
+  let visualInterval = Duration.milliseconds(100)  // ~10 Hz
+  let accessibilityInterval = Duration.milliseconds(500)  // ~2 Hz
 
   public init() {
     permissionState = CameraPermissionState(AVCaptureDevice.authorizationStatus(for: .video))
@@ -346,52 +360,7 @@ public final class PipelineModel {
   // to stay under SwiftLint's file-length limit; see that file for why
   // `captureGeneration` (declared above) is threaded through it.
 
-  // Not `private`: Swift's `private` scopes to the declaring *file*, not
-  // the whole type (see `config`'s doc comment above for the same note) —
-  // `beginConsuming(engine:source:targetAnalysisHz:)` in
-  // `PipelineModel+Mode.swift` calls this from its consume loop, same as
-  // `start()` above does.
-  func ingest(_ output: EngineOutput) {
-    latestOutput = output
-
-    // Latches on the FIRST real frame of the session and never overwrites
-    // after that — `actualCaptureDimensions`'s doc comment has the full
-    // rationale. Deliberately unthrottled (unlike `visualOutput`/
-    // `accessibilitySnapshot` below): the point is to catch the confirmed
-    // format as early as possible, not on whatever frame happens to land on
-    // a throttle boundary, and after the first non-nil write this is a
-    // cheap no-op on every subsequent frame.
-    if actualCaptureDimensions == nil, let dimensions = output.capturedPixelDimensions {
-      actualCaptureDimensions = dimensions
-    }
-
-    let now = ContinuousClock.now
-    if now - lastVisualUpdate >= visualInterval {
-      lastVisualUpdate = now
-      visualOutput = output
-      signalStateLine = Self.words(for: output.analysis.signalState)
-    }
-    if now - lastAccessibilityUpdate >= accessibilityInterval {
-      lastAccessibilityUpdate = now
-      accessibilitySnapshot = AccessibilitySnapshot(
-        rows: SignalFormatter.snapshot(
-          output: output,
-          backendName: backendDisplayName,
-          captureFormat: captureFormat,
-          actualCaptureDimensions: actualCaptureDimensions,
-          mirrorState: mirrorState,
-          display: config.display
-        )
-      )
-    }
-  }
-
-  private static func words(for state: SignalState) -> String {
-    switch state {
-    case .ok: return "OK"
-    case .lowConfidence: return "Low confidence"
-    case .noFace: return "No face"
-    case .noSignal: return "No signal"
-    }
-  }
+  // `ingest(_:)`/`words(for:)` — the per-frame throttle that drives
+  // `visualOutput`/`accessibilitySnapshot`/`signalStateLine` — live in
+  // `PipelineModel+Ingest.swift`, not here, for the same file-length reason.
 }

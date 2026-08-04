@@ -64,6 +64,11 @@ struct LexiconTests {
     }
   }
 
+  @Test("the §12.2/§16.4 reminder phrase is the maintainer's exact decided wording")
+  func reminderPhraseMatchesDecidedWording() {
+    #expect(Lexicon.Reminder.cameraInUseMonitorOff.text == "Camera in use. Monitor is off.")
+  }
+
   @Test("the spec's illustrative instruction phrases match verbatim")
   func illustrativePhrasesMatchSpecVerbatim() {
     // §6.3's own examples, verbatim: "Left." "Right." "Closer." "Back."
