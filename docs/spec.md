@@ -972,6 +972,52 @@ actually says even while the router is being forced, so a forced value can
 only ever appear as behavior, never as a fabricated reading. Removable once
 §13's Phase 4.5 presentation pass reaches this surface.
 
+**Measured 2026-08-05: Center Stage breaks face detection under movement,
+and that is worse than the problem this section was written to solve.**
+`aboutface-cli live` on a Continuity Camera, 1280×720, 30s per condition,
+same movement, Center Stage the only variable:
+
+| | Center Stage off | Center Stage on |
+|---|---|---|
+| frames `ok` | 97.6% | **75.4%** |
+| frames `noFace` | 2.4% | **24.6%** |
+| face-lost episodes | 9 | **31** |
+| longest episode | **169 ms** | **2,528 ms** |
+| total time with no face | 0.8 s | **8.5 s** |
+
+Sitting still with Center Stage on measured 100% `ok`, and `lowConfidence`
+was zero in every run — so this is not image quality and not Center Stage
+as such. Vision loses the face **while the crop is being re-aimed**. Ordinary
+movement stays under §7.3's 500 ms rung-1 threshold in every episode; Center
+Stage clears it constantly, and also clears Monitor's 1500 ms. The user hears
+face-lost and face-reacquired earcons cycling while sitting in front of a
+camera that is tracking them correctly.
+
+**Fix: rung 1 is suppressed while Center Stage is active** (maintainer's
+decision, over a longer fitted delay — a threshold tuned to one 30s sample
+would still nag on a worse day). The rung still ADVANCES, silently, because
+rungs 2 and 3 are reachable only through it and stranding §7.3's 30s STOP
+would be far worse than the nagging. Rung 2's spoken "No face." at 5s is
+untouched: no measured re-aim came close, so a five-second absence still
+means what it always meant. `FeedbackRouter.faceLostEpisodeWasAudible` tracks
+whether an episode ever made a sound, separately from which rung it reached,
+so recovery does not fire `.faceReacquired` for an absence the user was never
+told about — that would regenerate the second half of the same cycling. An
+episode that reached rung 3 always recovers audibly regardless.
+
+The Setup window's Center Stage notice states the tradeoff; it is not spoken
+(maintainer's call — learned once, re-readable, rather than lengthening an
+utterance heard on every toggle).
+
+**Instrument note.** This was invisible until `live` counted EVERY frame's
+`signalState` rather than sampling once per second, and reported face-lost
+episode count and duration. Two earlier measurement sessions were also
+invalidated by rig state — a Continuity Camera slept and silently reset
+Center Stage, and a locked phone changed what was being captured — so `live`
+now supports `--warmup` (analyze but exclude, for settling) and prints the
+device's Center Stage state at the end, making every run label its own
+condition instead of depending on someone remembering how a toggle was set.
+
 **Still unverified by ear.** Two judgment calls await the maintainer's own
 listening: the arrival chime is suppressed under Center Stage (it marks the
 end of a correction the user did not make — but its absence may read as the

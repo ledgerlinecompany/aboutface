@@ -122,6 +122,29 @@ public actor FeedbackRouter {
   // exactly where each rung's timer and side effect live.
   var faceLostRung = 0
 
+  /// Whether the CURRENT face-lost episode has actually made a sound yet —
+  /// tracked separately from `faceLostRung` because §12.5 made the two come
+  /// apart. Under Center Stage the rung-1 earcon is suppressed while the rung
+  /// itself still advances (rungs 2 and 3 must stay reachable — the 30s STOP
+  /// is safety-critical and cannot be stranded), so "escalated" and "was
+  /// audible" are no longer the same claim.
+  ///
+  /// Measured 2026-08-05: with Center Stage active and the user moving
+  /// normally, 24.6% of frames returned no face at all, across 31 episodes in
+  /// 30 seconds, the longest 2.5s — against 2.4% / 9 episodes / 169ms with
+  /// Center Stage off and the same movement. Center Stage re-aims its crop
+  /// and Vision loses the face while it pans. Every one of those episodes
+  /// cleared rung 1's 500ms Setup threshold, so the user heard face-lost and
+  /// face-reacquired earcons cycling continuously while sitting right there
+  /// in front of a camera that was tracking them perfectly well.
+  ///
+  /// `handleFaceLostReacquisition` reads this (not `faceLostRung >= 1`) to
+  /// decide whether recovery owes the user a `.faceReacquired` earcon: an
+  /// episode nobody was ever told about needs no closure, and firing "you're
+  /// back" for an absence never announced is how the second half of that
+  /// cycling gets generated.
+  var faceLostEpisodeWasAudible = false
+
   /// §7.3's rung-3 "STOP": becomes `true` the instant `faceLostRung`
   /// reaches 3 and stays `true` until the face is reacquired. Cleared by
   /// `handleFaceLostReacquisition` (`FeedbackRouter+FaceLost.swift`, called
