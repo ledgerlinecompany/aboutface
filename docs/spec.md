@@ -911,6 +911,42 @@ output, not yet addressed: the Continuity Camera **ignored a 15 fps request and
 delivered 30**, where the built-in camera honored 15 exactly — §5.2's Monitor
 format is silently capturing at double rate on that device.
 
+**Status (2026-08-05): core suppression behavior shipped, headless — app-side
+wiring still outstanding.** Built entirely on `isCenterStageActive`, the one
+signal the measurement above establishes as trustworthy; nothing in this
+change consults `systemEnabled`. `FeedbackRouter.setCenterStageActive(_:at:)`
+(`FeedbackRouter+CenterStage.swift`) is the rising/falling-edge latch a caller
+drives from a live reading — it speaks "Center Stage is on. Framing is
+automatic." / the falling-edge counterpart once per genuine transition,
+routed through the router's own `fire(...)` so it inherits §7.5 manual
+silence and §7.3's rung-3 `userLikelyAway` STOP for free: Center Stage is
+never announced to an empty desk. Downstream, three suppression points read
+the resulting `centerStageActive` flag: the continuous positional beacon
+(`FeedbackRouter+Continuous.swift`) falls back to the existing gaze-trim
+target rather than guiding the user toward a crop the OS is simultaneously
+re-aiming; the spoken framing instruction is dropped
+(`announcementPayload(for:output:centerStageActive:)`,
+`FeedbackRouter+AnnouncementPayload.swift`); and good-zone entry drops its
+chime and "Centered." while still running the bookkeeping that keeps §6.1's
+liveness heartbeat alive for the rest of the episode. §7.3 face-lost recovery
+falls back to "Back, centered." rather than announcing nothing when Center
+Stage has suppressed the framing phrase recovery would otherwise speak on
+reacquisition. `QueryComposer.summarize(burst:problemsOnly:centerStageActive:)`
+replaces the framing field with the same phrase, including under
+`problemsOnly` — omitting it there would read as a "framing is fine" claim
+this app cannot back up while Center Stage owns the crop. Config-keyed via
+`Config.Camera.centerStageAwarenessEnabled`, default `true`, gating the STATE
+itself rather than just the notice, so none of the three suppression sites
+needs its own copy of the check.
+
+**Not yet built: anything that reads a live signal.** No app-side poller
+calls `setCenterStageActive` yet — no `CenterStageMonitor`/
+`CenterStageController` analogous to §12.3's `CameraMismatchMonitor`/
+`CameraMismatchController`, and no Setup-window surface. Everything above is
+exercised only by `FeedbackRouterCenterStageTests`/`QueryComposerTests`
+driving the router directly; until that wiring lands, `centerStageActive`
+never leaves `false` in the running app.
+
 ### 12.6 Concurrent access test
 
 Write an explicit test/tool that opens the selected device **while another app
