@@ -90,10 +90,10 @@ struct FeedbackRouterCenterStageTests {
     #expect(target.yawDeviationDegrees == 10)
     #expect(target.pitchDeviationDegrees == 0)
 
-    // Confirms this trim target is not merely riding along on an
-    // unsuppressed arrival — the entry chime/phrase are suppressed under
-    // Center Stage, so the only speech is the rising-edge notice itself.
-    #expect(await audio.playedEvents().isEmpty)
+    // The spoken half of arrival stays suppressed under Center Stage
+    // ("Centered." is a framing verdict), so the only speech is the
+    // rising-edge notice itself. The arrival chime is not asserted here —
+    // it is independently Config-keyed and irrelevant to whether trim flows.
     #expect(await speech.calls == [.speak(Lexicon.State.centerStageOn)])
   }
 
@@ -143,20 +143,95 @@ struct FeedbackRouterCenterStageTests {
     await router.setCenterStageActive(true, at: t0)
     await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 1), count: 5)
 
-    // Arrival itself is silent under Center Stage — no chime, no
-    // "Centered." — which is exactly the condition under which the
-    // heartbeat's own scheduling (`nextHeartbeatAt`) is easiest to skip by
-    // accident (see `tickGoodZone`'s doc comment,
-    // `FeedbackRouter+Announcements.swift`).
-    #expect(await audio.playedEvents().isEmpty)
+    // Arrival speaks nothing under Center Stage — "Centered." is a framing
+    // verdict, suppressed unconditionally. The arrival CHIME is separately
+    // Config-keyed (`centerStageArrivalChimeEnabled`, default on), so this
+    // test asserts on the heartbeat specifically rather than on total
+    // silence: the bookkeeping this exists to protect
+    // (`nextHeartbeatAt`) is easiest to skip by accident precisely when
+    // arrival takes an unusual path (see `tickGoodZone`'s doc comment).
     #expect(await speech.calls == [.speak(Lexicon.State.centerStageOn)])
+    #expect(!(await audio.playedEvents().contains(.livenessHeartbeat)))
 
     // Holding the episode across the 7s heartbeat cadence must still
     // produce the liveness tick — the regression this test exists to catch.
     await router.ingest(goodZoneOutput(), at: t0.plus(ms: 6999))
-    #expect(await audio.playedEvents().isEmpty)
+    #expect(!(await audio.playedEvents().contains(.livenessHeartbeat)))
     await router.ingest(goodZoneOutput(), at: t0.plus(ms: 7001))
-    #expect(await audio.playedEvents() == [.livenessHeartbeat])
+    #expect(await audio.playedEvents().contains(.livenessHeartbeat))
+  }
+
+  // MARK: - The arrival chime toggle (§12.5, maintainer 2026-08-05)
+
+  /// Default ON: the arrival chime sounds under Center Stage. The maintainer
+  /// never got to judge the suppressed version by ear, because the face-lost
+  /// ladder was cycling over the top of it; his call once that was fixed was
+  /// "worth trying turned on, perhaps behind a toggle."
+  @Test("by default the arrival chime DOES sound under Center Stage")
+  func arrivalChimeSoundsUnderCenterStageByDefault() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .setup)
+    let t0 = ContinuousClock().now
+
+    await router.setCenterStageActive(true, at: t0)
+    await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 1), count: 5)
+
+    #expect(await audio.playedEvents() == [.enteredGoodZone])
+  }
+
+  /// The toggle actually suppresses it — the position the feature shipped
+  /// with before the maintainer asked for the choice.
+  @Test("centerStageArrivalChimeEnabled == false suppresses the chime under Center Stage")
+  func arrivalChimeSuppressedWhenToggledOff() async {
+    var config = Config.defaults
+    config.feedback.centerStageArrivalChimeEnabled = false
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, config: config, mode: .setup)
+    let t0 = ContinuousClock().now
+
+    await router.setCenterStageActive(true, at: t0)
+    await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 1), count: 5)
+
+    #expect(await audio.playedEvents().isEmpty)
+  }
+
+  /// The toggle governs the EARCON only. "Centered." is a framing verdict,
+  /// which §12.5 forbids while the OS owns the crop — so it stays suppressed
+  /// at BOTH toggle positions, and no setting can bring it back.
+  @Test("Centered. stays suppressed under Center Stage at either toggle position")
+  func spokenCenteredStaysSuppressedRegardlessOfChimeToggle() async {
+    for chimeEnabled in [true, false] {
+      var config = Config.defaults
+      config.feedback.centerStageArrivalChimeEnabled = chimeEnabled
+      let audio = MockAudioRenderer()
+      let speech = MockSpeechRenderer()
+      let router = FeedbackRouter(audio: audio, speech: speech, config: config, mode: .setup)
+      let t0 = ContinuousClock().now
+
+      await router.setCenterStageActive(true, at: t0)
+      await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 1), count: 5)
+
+      #expect(await speech.calls == [.speak(Lexicon.State.centerStageOn)])
+    }
+  }
+
+  /// With Center Stage OFF the toggle is inert — it must not become a
+  /// backdoor mute for ordinary arrivals.
+  @Test("the chime toggle has no effect when Center Stage is not active")
+  func chimeToggleIsInertWithoutCenterStage() async {
+    var config = Config.defaults
+    config.feedback.centerStageArrivalChimeEnabled = false
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, config: config, mode: .setup)
+    let t0 = ContinuousClock().now
+
+    await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 1), count: 5)
+
+    #expect(await audio.playedEvents() == [.enteredGoodZone])
+    #expect(await speech.calls == [.speak(Lexicon.Instruction.centered)])
   }
 
   // MARK: - §7.3 recovery interaction

@@ -41,6 +41,21 @@ extension DebugPanelView {
         )
         .foregroundStyle(.orange)
       }
+
+      // Unlike the override above, this is NOT a debug-only control — it is a
+      // real `Config` value (`FeedbackConfig.centerStageArrivalChimeEnabled`)
+      // that persists and ships. It lives in this section because it is only
+      // meaningful alongside the override, which is what makes it possible to
+      // A/B by ear without Center-Stage-capable hardware to hand. §12.5.
+      Toggle(
+        "Arrival chime under Center Stage",
+        isOn: model.boolBinding(\.feedback.centerStageArrivalChimeEnabled)
+      )
+      .accessibilityHint(
+        "When on, the good-zone arrival chime still sounds while Center Stage is framing you. "
+          + "The spoken Centered. is always suppressed under Center Stage regardless, because it "
+          + "is a framing claim the app cannot make while the system owns the crop."
+      )
     }
   }
 }
