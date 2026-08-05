@@ -113,7 +113,23 @@ extension FeedbackRouter {
     let resolved: SonificationTarget?
     if output.analysis.signalState == .ok, let framing = output.framing {
       let arrivalAnnounced = confirmedState == .goodZone && dwellFiredForCurrentEpisode
-      if arrivalAnnounced {
+      // §12.5: under Center Stage, the positional beacon disables — "a
+      // beacon guiding toward a target the camera is simultaneously
+      // re-aiming makes the user chase a moving goal" (PR brief). Resolved
+      // HERE, inside the resolve-then-send shape, deliberately not as an
+      // early `return`: an early return would leave whatever target was
+      // last sent droning forever on the SAME edge frame this fires on —
+      // exactly the bug `updateContinuousSonification`'s own doc comment
+      // above already describes fixing once (PR #54) for the analogous
+      // rung-3 case. Folding the check into `arrivalAnnounced`'s branch
+      // reuses the EXACT same fallback the good-zone-arrival case already
+      // has: `gazeTrimTarget(output:framing:)`, which returns `nil` (and
+      // therefore the `lastContinuousSendWasNil` tail below sends the cut)
+      // unless the confirmed state is ALSO `.goodZone` and the trim flag is
+      // on. Gaze trim survives on purpose — Center Stage re-aims the crop,
+      // it does not turn the user's head, so the fine-centering pose cue
+      // stays live even while the coarse positional beacon is suppressed.
+      if arrivalAnnounced || centerStageActive {
         resolved = gazeTrimTarget(output: output, framing: framing)
       } else {
         resolved = SonificationTarget(

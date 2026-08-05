@@ -115,16 +115,38 @@ extension FeedbackRouter {
   /// runs); `output` is that same frame's `EngineOutput`, needed only for
   /// the `.problem` branch below.
   ///
-  /// Deliberately reuses `announcementPayload(for:output:)` — the SAME
-  /// function `tickGenericDwell` calls for an ordinary dwell-fired
-  /// announcement — rather than a parallel "what does this problem sound
-  /// like" switch: the spec's "or the problem, if there is one" is
-  /// describing the SAME instruction vocabulary a live episode of that
-  /// problem would already speak, not a distinct recovery-specific phrase
-  /// per condition, and keeping one function as the source of truth means
-  /// the two can never drift apart (e.g. `Instruction.left`/`.right`'s sign
-  /// convention changing in one place and not the other).
-  static func faceLostRecoveryPhrase(for next: DiscreteState, output: EngineOutput)
+  /// Deliberately reuses `announcementPayload(for:output:centerStageActive:)`
+  /// — the SAME function `tickGenericDwell` calls for an ordinary
+  /// dwell-fired announcement — rather than a parallel "what does this
+  /// problem sound like" switch: the spec's "or the problem, if there is
+  /// one" is describing the SAME instruction vocabulary a live episode of
+  /// that problem would already speak, not a distinct recovery-specific
+  /// phrase per condition, and keeping one function as the source of truth
+  /// means the two can never drift apart (e.g. `Instruction.left`/`.right`'s
+  /// sign convention changing in one place and not the other).
+  ///
+  /// **§12.5's recovery interaction.** With Center Stage active,
+  /// `announcementPayload` returns `nil` for `.framingError` — that is the
+  /// whole point of suppressing spoken framing. But recovering from
+  /// face-lost STRAIGHT INTO a framing error, with that phrase suppressed,
+  /// would announce nothing at all: the user hears "No face." (rung 2, if
+  /// it fired) and then silence, with no signal that they are visible again
+  /// — a §6.1 silence ambiguity this change would otherwise newly create
+  /// (was the face never reacquired? did the app crash? no way to tell).
+  /// So: when `centerStageActive` AND the resolved problem is
+  /// `.framingError` specifically, this falls back to
+  /// `Lexicon.Instruction.recovered` ("Back, centered.") instead of going
+  /// quiet — the same phrase a clean recovery into `.goodZone` already
+  /// speaks, which is honest here too: Center Stage's whole premise is that
+  /// framing is being handled automatically, so "you're back and it's
+  /// centered" is not a false claim even though the raw framing reading is
+  /// technically still out of the dead zone. Every OTHER condition
+  /// (`.noSignal`, `.lowConfidence`) keeps its ordinary phrase unchanged —
+  /// Center Stage does not fix darkness or a dead feed, so there is no
+  /// analogous silence to patch for those.
+  static func faceLostRecoveryPhrase(
+    for next: DiscreteState, output: EngineOutput, centerStageActive: Bool
+  )
     -> Lexicon.Phrase?
   {
     // swiftlint:enable opening_brace
@@ -132,7 +154,13 @@ extension FeedbackRouter {
     case .goodZone:
       return Lexicon.Instruction.recovered
     case .problem(let condition):
-      return announcementPayload(for: condition, output: output).1
+      let phrase = announcementPayload(
+        for: condition, output: output, centerStageActive: centerStageActive
+      ).1
+      if phrase == nil, centerStageActive, condition == .framingError {
+        return Lexicon.Instruction.recovered
+      }
+      return phrase
     case .indeterminate:
       // Defensive fallback only (see `FeedbackRouter.discreteState(for:)`'s
       // own doc comment on when `.indeterminate` is even reachable — a
@@ -209,7 +237,8 @@ extension FeedbackRouter {
       // unconditional clear above: "both sides" of the toggle govern
       // speech only, never the state machine or the exit from silence.
       if wasAway, feedbackConfig.faceLostRecoverySpeechEnabled {
-        recoveryPhrase = Self.faceLostRecoveryPhrase(for: next, output: output)
+        recoveryPhrase = Self.faceLostRecoveryPhrase(
+          for: next, output: output, centerStageActive: centerStageActive)
       }
       // §5.2's Monitor earcon-only default does NOT gate `recoveryPhrase`
       // here — same carve-out §7.3 already gives rung 2's "No face.": both

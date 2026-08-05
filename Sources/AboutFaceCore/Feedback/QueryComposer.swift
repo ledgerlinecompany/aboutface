@@ -85,10 +85,43 @@ public enum QueryComposer {
     }
   }
 
+  // swift-format requires the brace on its own line after a wrapped
+  // function signature; swiftlint's opening_brace rule disagrees. Format
+  // wins (see FeedbackRouter.swift's `milliseconds(from:to:)` for the same
+  // disagreement noted elsewhere in this codebase).
+  // swiftlint:disable opening_brace
   /// Summarizes `burst` per this type's doc comment. Returns `nil` only when
   /// `burst` is empty — nothing has been analyzed yet to summarize (see
   /// `FeedbackRouter.performQuery(at:)`'s handling of that case).
-  public static func summarize(burst: [EngineOutput], problemsOnly: Bool) -> Summary? {
+  ///
+  /// §12.5 `centerStageActive`: when `true`, the FRAMING field becomes
+  /// `Lexicon.State.centerStageOn` instead of the ordinary
+  /// `framingField(framings:problemsOnly:)` result — deliberately
+  /// INCLUDING when `problemsOnly` is also `true`. Every other
+  /// `problemsOnly` field is free to go silent when it's fine (that's the
+  /// whole point of the variant), but framing is never merely "fine" here —
+  /// it is being reported by a DIFFERENT system, and omitting the field
+  /// entirely would read as "framing is fine," which is not the same claim
+  /// and not one this app can back up while Center Stage owns the crop.
+  /// Lighting/gaze/other-people are untouched — same PR-brief reasoning as
+  /// `FeedbackRouter+Announcements.swift`'s `announcementPayload`: Center
+  /// Stage re-aims the crop, it does not fix light, gaze, or headcount.
+  /// This intentionally does NOT apply to the `.noSignal`/`.noFace`
+  /// early-collapse above: with no face at all, "No face detected." is the
+  /// honest answer regardless of Center Stage, so that branch returns
+  /// before this parameter is ever consulted.
+  ///
+  /// Defaults to `false` so every pre-existing call site (`QueryComposerTests
+  /// .swift`'s ~20 hand-built bursts, none of which exercise Center Stage
+  /// at all) keeps compiling unchanged — this is an additive parameter for
+  /// a genuinely new axis of behavior, not a revision of what the existing
+  /// tests already pin down.
+  public static func summarize(
+    burst: [EngineOutput], problemsOnly: Bool, centerStageActive: Bool = false
+  )
+    -> Summary?
+  {
+    // swiftlint:enable opening_brace
     guard !burst.isEmpty else { return nil }
 
     let overallState = majoritySignalState(burst.map(\.analysis.signalState))
@@ -111,8 +144,12 @@ public enum QueryComposer {
     }
 
     let framings = burst.compactMap(\.framing)
+    let framingPhrases =
+      centerStageActive
+      ? [Lexicon.State.centerStageOn]
+      : framingField(framings: framings, problemsOnly: problemsOnly)
     let summary = Summary(
-      framing: framingField(framings: framings, problemsOnly: problemsOnly),
+      framing: framingPhrases,
       lighting: lightingField(
         isLowConfidence: overallState == .lowConfidence, problemsOnly: problemsOnly),
       gaze: gazeField(framings: framings, problemsOnly: problemsOnly),
