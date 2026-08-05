@@ -42,9 +42,13 @@ import AboutFaceCore
 /// high-frequency timer" restraint the same way `CameraMismatchController`
 /// does.
 ///
-/// `Config.Camera.busyDebounceMs`/`busyPollIntervalSeconds` are read once, at
-/// `reconfigure()` time, same "not live-reconfigured" posture the other two
-/// controllers document for their own analogous fields.
+/// `Config.Camera.centerStageDebounceMs`/`centerStagePollIntervalSeconds` are
+/// read once, at `reconfigure()` time, same "not live-reconfigured" posture
+/// the other two controllers document for their own analogous fields. These
+/// are §12.5's OWN knobs, not the `busy*` pair the first wiring reused — see
+/// `centerStagePollIntervalSeconds`'s doc comment for the field finding that
+/// forced the split (at 1 Hz + 2000 ms, the arrival chime beat the Center
+/// Stage signal, celebrating a correction the OS had just made for the user).
 /// `Config.Camera.centerStageAwarenessEnabled` needs no such wiring — this
 /// controller reads it fresh from `model` on every poll tick via
 /// `CenterStageStateMachine.update(signal:isEnabled:now:)`.
@@ -93,7 +97,7 @@ final class CenterStageController {
 
   /// Called immediately when `DebugPanelView`'s tri-state override changes,
   /// so a forced value takes effect right away rather than waiting up to
-  /// `busyPollIntervalSeconds` for the next poll tick to happen to notice —
+  /// `centerStagePollIntervalSeconds` for the next poll tick to notice —
   /// see this type's doc comment ("The debug-panel override wins"). Uses the
   /// machine's already-settled `routerActive` rather than re-reading
   /// hardware: the override changed, not the underlying signal, so there is
@@ -114,10 +118,10 @@ final class CenterStageController {
       return
     }
 
-    machine = CenterStageStateMachine(debounceMs: model.config.camera.busyDebounceMs)
+    machine = CenterStageStateMachine(debounceMs: model.config.camera.centerStageDebounceMs)
     let monitor = CenterStageMonitor()
     self.monitor = monitor
-    let intervalSeconds = model.config.camera.busyPollIntervalSeconds
+    let intervalSeconds = model.config.camera.centerStagePollIntervalSeconds
     observeTask = Task { [weak self] in
       await monitor.start(uniqueID: deviceID, intervalSeconds: intervalSeconds)
       for await reading in monitor.readings {
@@ -174,7 +178,7 @@ final class CenterStageController {
     case .active:
       return "Center Stage is on. Framing is automatic."
     case .notActive:
-      return "Center Stage is off."
+      return "Center Stage is off. Manual framing required."
     case .unknown:
       return "Center Stage status could not be determined for the selected camera."
     }
