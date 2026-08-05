@@ -1,0 +1,123 @@
+/// `AcceptanceEvaluator.evaluate(_:)`'s output. Deliberately NOT a bare
+/// pass/fail boolean (PR brief: "an automated verdict that says PASS while
+/// hiding a stray event would be exactly the silent-plausible-value failure
+/// this codebase has shipped three times") — every field here is either the
+/// full observed timeline or an explanation a human reads and judges, never
+/// a computed verdict this type asserts on the caller's behalf.
+public struct AcceptanceReport: Sendable, Equatable {
+  /// §7.3's ladder, in canonical order — the four markers a correct
+  /// escalate-then-stop-then-recover episode produces. Always exactly four
+  /// entries, one per `Rung` case, in this fixed order, whether or not each
+  /// one was actually found.
+  public enum Rung: String, Sendable, CaseIterable {
+    /// §7.3 rung 1: `AudioEvent.faceLost`, after the mode's earcon delay.
+    case earcon
+    /// §7.3 rung 2: spoken `Lexicon.Instruction.noFace`, ~5s in.
+    case spokenNoFace
+    /// §7.3 rung 3: `userLikelyAway` becomes `true`, ~30s in. Fires no
+    /// sound — see `AcceptanceEvent.Kind.userLikelyAway`'s doc comment.
+    case stop
+    /// `AudioEvent.faceReacquired` on return. Has no fixed schedule (it
+    /// fires whenever the user actually comes back), so unlike the other
+    /// three rungs this one is never timing-checked against a `Config`
+    /// delay — only presence, order, and "exactly once."
+    case recovery
+  }
+
+  /// One rung's result. `matched` is `true` only when the expected event
+  /// was found, in the correct chronological position relative to the
+  /// rungs before it, AND (for the three timed rungs) within
+  /// `AcceptanceTolerances.rungTimingToleranceMs` of its `Config`-derived
+  /// expected time. A rung that fired but badly off-schedule, or fired out
+  /// of order, is reported as `matched: false` with `observedElapsedMs`
+  /// still populated and `note` explaining exactly what was wrong — never
+  /// silently folded into either "matched" or "missing" without an
+  /// explanation a human can read.
+  public struct RungResult: Sendable, Equatable {
+    public let rung: Rung
+    public let matched: Bool
+    /// `nil` only when the rung was never found at all (in the correct
+    /// chronological slot — see `AcceptanceEvaluator`'s doc comment on why
+    /// an out-of-order occurrence does not count as "found" for THIS rung).
+    public let observedElapsedMs: Int?
+    /// `nil` for `.recovery` (no fixed schedule) and for the three timed
+    /// rungs when the evaluator had no reference point to compute an
+    /// expected time from at all (e.g. `.spokenNoFace`/`.stop` when
+    /// `.earcon` itself was never found and no explicit episode start was
+    /// given — see `AcceptanceEvaluator.Input.episodeStartMs`).
+    public let expectedElapsedMs: Int?
+    public let toleranceMs: Int?
+    /// Always non-empty: what happened, in plain language, for the human
+    /// reading this at a terminal — "found at 1520ms, expected 1500ms ±
+    /// 250ms: OK", "missing", "found at 1800ms but out of order (occurred
+    /// before rung `spokenNoFace`'s 5010ms) — not accepted", etc.
+    public let note: String
+
+    public init(
+      rung: Rung, matched: Bool, observedElapsedMs: Int?, expectedElapsedMs: Int?,
+      toleranceMs: Int?, note: String
+    ) {
+      self.rung = rung
+      self.matched = matched
+      self.observedElapsedMs = observedElapsedMs
+      self.expectedElapsedMs = expectedElapsedMs
+      self.toleranceMs = toleranceMs
+      self.note = note
+    }
+  }
+
+  /// Always exactly four entries, in `Rung.allCases` order.
+  public let rungs: [RungResult]
+
+  /// EVERY recorded event not consumed as one of the four rungs above —
+  /// the "and nothing else" clause, and the part of §13 Phase 4's
+  /// acceptance criterion a human cannot check by ear across half an hour
+  /// (PR brief). Deliberately unfiltered: an event that is obviously benign
+  /// (e.g. the `userLikelyAway(false)` transition that clears rung 3 on
+  /// recovery, or a heartbeat that fired long before the episode began)
+  /// still appears here rather than being silently reclassified as
+  /// "expected" — see `AcceptanceEvaluator`'s doc comment for why hiding
+  /// even an explainable event was judged worse than a human having to
+  /// dismiss a few obviously-fine lines.
+  public let unexplainedEvents: [AcceptanceEvent]
+
+  /// The subset of `unexplainedEvents` that are audio/speech RENDERER
+  /// activity (not `userLikelyAway` samples, which are silent bookkeeping,
+  /// not sound) falling strictly between rung 3's observed time and
+  /// recovery's observed time. §7.3: "Once `faceLostRung` reaches 3 ...
+  /// nothing left to do on any later frame" — ANY entry in this list is
+  /// evidence the STOP was not actually silent, which is the single most
+  /// safety-critical claim this whole instrument exists to check. Empty
+  /// when rung 3 was never found (nothing to bound the window with) —
+  /// see `AcceptanceEvaluator.evaluate(_:)` for exactly how the window's
+  /// open end is handled when recovery was never found either.
+  public let strayRendererActivityDuringStop: [AcceptanceEvent]
+
+  /// The onset `AcceptanceEvaluator` used as its reference point for rungs
+  /// 2 and 3's expected timing, in elapsed ms. `nil` only when no reference
+  /// point could be established at all (rung 1 missing and no explicit
+  /// `episodeStartMs` given).
+  public let referenceEpisodeStartMs: Int?
+
+  /// `true` when `referenceEpisodeStartMs` was RECONSTRUCTED (rung 1's
+  /// observed time minus its configured delay) rather than directly
+  /// supplied by the caller. This instrument does not — cannot — directly
+  /// observe the moment the user actually left the desk; a reconstructed
+  /// start is an inference, not a measurement, and the report says so
+  /// explicitly rather than presenting it with the same confidence as a
+  /// caller-supplied one (PR brief: "honest about what it did not
+  /// observe").
+  public let referenceEpisodeStartIsInferred: Bool
+
+  public init(
+    rungs: [RungResult], unexplainedEvents: [AcceptanceEvent],
+    strayRendererActivityDuringStop: [AcceptanceEvent], referenceEpisodeStartMs: Int?,
+    referenceEpisodeStartIsInferred: Bool
+  ) {
+    self.rungs = rungs
+    self.unexplainedEvents = unexplainedEvents
+    self.strayRendererActivityDuringStop = strayRendererActivityDuringStop
+    self.referenceEpisodeStartMs = referenceEpisodeStartMs
+    self.referenceEpisodeStartIsInferred = referenceEpisodeStartIsInferred
+  }
+}
