@@ -69,6 +69,32 @@ struct LexiconTests {
     #expect(Lexicon.Reminder.cameraInUseMonitorOff.text == "Camera in use. Monitor is off.")
   }
 
+  @Test("the §8 hotkey/button Confirmation register is a real closed set, non-empty fixed text")
+  func confirmationRegisterIsClosed() {
+    // swiftlint:disable trailing_comma
+    let confirmations: [Lexicon.Phrase] = [
+      Lexicon.Confirmation.monitorOn,
+      Lexicon.Confirmation.monitorOff,
+      Lexicon.Confirmation.monitorFailedToStart,
+      Lexicon.Confirmation.silenced,
+      Lexicon.Confirmation.unsilenced,
+      Lexicon.Confirmation.targetCaptured,
+      Lexicon.Confirmation.noFaceToCapture,
+    ]
+    // swiftlint:enable trailing_comma
+    for phrase in confirmations {
+      #expect(!phrase.text.isEmpty)
+    }
+  }
+
+  @Test("Monitor on/off confirmation wording is exactly the maintainer's decided phrasing")
+  func monitorConfirmationWordingIsTerse() {
+    // Task brief, verbatim: "'Monitor on.' / 'Monitor off.' are already
+    // right — do not embellish."
+    #expect(Lexicon.Confirmation.monitorOn.text == "Monitor on.")
+    #expect(Lexicon.Confirmation.monitorOff.text == "Monitor off.")
+  }
+
   @Test("the spec's illustrative instruction phrases match verbatim")
   func illustrativePhrasesMatchSpecVerbatim() {
     // §6.3's own examples, verbatim: "Left." "Right." "Closer." "Back."

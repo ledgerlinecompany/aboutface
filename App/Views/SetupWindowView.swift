@@ -1,5 +1,4 @@
 import AboutFaceCore
-import Accessibility
 import SwiftUI
 
 /// The Setup window (spec §5.1, §9): "A real window means every signal
@@ -65,6 +64,16 @@ struct SetupWindowView: View {
             .foregroundStyle(.red)
         }
       }
+
+      // §8: one or more global hotkeys failed to register (most likely
+      // another app already owns the combo) — never a silent no-op, see
+      // `PipelineModel.hotkeyRegistrationIssue`'s doc comment.
+      if let message = model.hotkeyRegistrationIssue {
+        Section("Global hotkeys") {
+          Text(message)
+            .foregroundStyle(.red)
+        }
+      }
     }
     .formStyle(.grouped)
     .navigationTitle("About Face — Setup")
@@ -78,9 +87,6 @@ struct SetupWindowView: View {
     .task { monitorReminderBootstrap() }
     .onChange(of: model.selectedCameraID) { _, _ in
       monitorReminderController.deviceChanged()
-    }
-    .onChange(of: model.config) { oldValue, newValue in
-      monitorReminderController.configChanged(old: oldValue, new: newValue)
     }
   }
 
@@ -190,7 +196,12 @@ struct SetupWindowView: View {
     Button("Capture current position as target") {
       let captured = model.captureCurrentPositionAsTarget()
       if !captured {
-        AccessibilityNotification.Announcement("No face detected — nothing to capture").post()
+        // Same TTS lane as every other confirmation now (§6.3, not
+        // VoiceOver's `AccessibilityNotification`) and the same closed-
+        // vocabulary phrase the global ⌘⌃⇧T hotkey speaks on the identical
+        // failure — see `Lexicon.Confirmation.noFaceToCapture`'s doc
+        // comment and `HotkeyCenter.dispatch(_:)`'s `.captureTarget` case.
+        Task { await model.speechRenderer.speak(Lexicon.Confirmation.noFaceToCapture) }
       }
     }
     .disabled(!model.isRunning)

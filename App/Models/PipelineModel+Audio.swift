@@ -29,8 +29,11 @@ extension PipelineModel {
     audioUnavailableMessage = nil
 
     let audio = AudioRenderer(config: config.audio, mode: .realtime)
-    let speech = SpeechRenderer(config: config.speech)
-    let router = FeedbackRouter(audio: audio, speech: speech, config: config, mode: .setup)
+    // `speechRenderer` is the single app-lifetime instance constructed once
+    // in `PipelineModel.init()` — see its doc comment. `FeedbackRouter`
+    // never constructs its own `SpeechRendering`; it only ever borrows this
+    // one, same as `HotkeyCenter`/`MonitorReminderController` do.
+    let router = FeedbackRouter(audio: audio, speech: speechRenderer, config: config, mode: .setup)
 
     do {
       try await audio.start()
@@ -41,17 +44,22 @@ extension PipelineModel {
     }
 
     audioRenderer = audio
-    speechRenderer = speech
     feedbackRouter = router
     await pushSilencedState()
   }
 
   func stopFeedbackChain() async {
     await feedbackRouter?.setSilenced(true)
-    await speechRenderer?.stopSpeaking()
+    // Cuts whatever the PIPELINE was mid-saying (§7.5's "within one audio
+    // buffer" posture, applied to a stop rather than a silence toggle) —
+    // deliberately NOT `speechRenderer = nil` or any other teardown of the
+    // renderer itself: it is app-lifetime (see `PipelineModel.speechRenderer`'s
+    // doc comment) and the reminder/hotkey confirmations still need it while
+    // the pipeline is idle, which is the whole point of consolidating to one
+    // renderer in the first place.
+    await speechRenderer.stopSpeaking()
     await audioRenderer?.stop()
     feedbackRouter = nil
-    speechRenderer = nil
     audioRenderer = nil
     audioUnavailableMessage = nil
   }
@@ -128,6 +136,15 @@ extension PipelineModel {
   /// its doc comment), so it is gated on the `audio` sub-struct having
   /// actually changed, to avoid an audible restart on every drag of, say, a
   /// target-framing slider that has nothing to do with audio.
+  ///
+  /// `speechRenderer.updateConfig` runs UNCONDITIONALLY, regardless of
+  /// whether the pipeline is running — this is now the ONE place a
+  /// `Config.speech` change reaches the shared renderer (before
+  /// consolidation, `MonitorReminderController` had to separately push the
+  /// same config to its own private renderer from a `SetupWindowView`
+  /// `.onChange`; now there is only one renderer and only one push, and
+  /// `updateConfig(_:)` above already runs on every `Config` change whether
+  /// or not the pipeline is running).
   func pushConfigToFeedbackChain(old: Config, new: Config) {
     if let feedbackRouter {
       Task {
@@ -135,9 +152,7 @@ extension PipelineModel {
         await feedbackRouter.updateFeedbackConfig(new.feedback)
       }
     }
-    if let speechRenderer {
-      Task { await speechRenderer.updateConfig(new.speech) }
-    }
+    Task { await speechRenderer.updateConfig(new.speech) }
     if let audioRenderer, old.audio != new.audio {
       Task { await audioRenderer.updateConfig(new.audio) }
     }

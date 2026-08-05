@@ -140,6 +140,24 @@ extension Config {
     case captureTarget
     case repeatLast
     case silence
+
+    /// A human-readable name for this action, for surfaces that report
+    /// PER-ACTION status rather than just a raw `rawValue` — e.g.
+    /// `HotkeyCenter` (App/) naming which specific binding a failed
+    /// `RegisterEventHotKey` call belongs to (§8's "stop swallowing hotkey
+    /// registration failures" fix; see that type's doc comment). Lives here,
+    /// not in `App/`, so it is reachable from `AboutFaceCore`-only tests
+    /// without pulling in Carbon.
+    public var displayName: String {
+      switch self {
+      case .query: return "Query"
+      case .setupToggle: return "Setup toggle"
+      case .monitorToggle: return "Monitor toggle"
+      case .captureTarget: return "Capture target"
+      case .repeatLast: return "Repeat last"
+      case .silence: return "Silence"
+      }
+    }
   }
 }
 

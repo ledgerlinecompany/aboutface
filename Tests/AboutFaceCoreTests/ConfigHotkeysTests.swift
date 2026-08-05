@@ -117,4 +117,13 @@ struct ConfigHotkeysTests {
   func configDefaultsIncludesHotkeys() {
     #expect(Config.defaults.hotkeys == Config.Hotkeys.defaults)
   }
+
+  // MARK: - Display names (surfaced by `HotkeyCenter`'s registration-failure report)
+
+  @Test("every HotkeyAction has a non-empty display name, one per case")
+  func everyActionHasADisplayName() {
+    for action in Config.HotkeyAction.allCases {
+      #expect(!action.displayName.isEmpty)
+    }
+  }
 }

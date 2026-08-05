@@ -1,5 +1,4 @@
 import AboutFaceCore
-import Accessibility
 
 /// "Capture current position as target" (§4). Split out of
 /// `PipelineModel.swift` purely to keep each file a manageable size (see
@@ -35,8 +34,14 @@ extension PipelineModel {
   ///   target.interocularWidth` (§4), so the subject's current smoothed
   ///   interocular distance is `target.interocularWidth + distanceError`.
   ///
-  /// Returns `false` (and posts nothing) if there is no face currently
-  /// detected to capture a position from.
+  /// Returns `false` (and speaks nothing) if there is no face currently
+  /// detected to capture a position from — callers (`HotkeyCenter`'s
+  /// `.captureTarget` case, `SetupWindowView`'s button) speak
+  /// `Lexicon.Confirmation.noFaceToCapture` themselves on `false`, the same
+  /// split this method already had when it posted via
+  /// `AccessibilityNotification` (see this PR's report for why that lane
+  /// was replaced — VoiceOver suppresses announcements from a
+  /// non-frontmost app, silently defeating the global-hotkey case).
   @discardableResult
   public func captureCurrentPositionAsTarget() -> Bool {
     guard let framing = latestOutput?.framing else {
@@ -65,7 +70,17 @@ extension PipelineModel {
     updated.targetFraming.captured = true
     updateConfig(updated)
 
-    AccessibilityNotification.Announcement("Target captured").post()
+    // §6.3's own TTS lane, not VoiceOver's `AccessibilityNotification` —
+    // this call site is reachable from the GLOBAL ⌘⌃⇧T hotkey (App-side
+    // `.captureTarget` case) as well as the Setup window's button, and a
+    // global hotkey's whole point is working while About Face isn't
+    // frontmost, which is exactly when VoiceOver suppresses an app's own
+    // announcements. Speaks through the shared `speechRenderer` (see its
+    // doc comment) rather than through `FeedbackRouter`, so this
+    // confirmation is never swallowed by §7.5 manual silence either — see
+    // `Lexicon.Confirmation`'s doc comment for why that is the right
+    // default for a direct response to an explicit user action.
+    Task { await speechRenderer.speak(Lexicon.Confirmation.targetCaptured) }
     return true
   }
 }
