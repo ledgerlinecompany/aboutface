@@ -795,6 +795,43 @@ This cannot be reliably detected from device type. Match against known
 virtual-camera name patterns (maintain the list in one file) and surface a
 one-time acknowledgeable warning.
 
+**Status: shipped (2026-08-04).** The list lives in
+`Sources/AboutFaceCore/Capture/VirtualCameraPatterns.swift` and holds nothing
+else, so it stays trivial to find and extend; each entry carries a
+maintainer-facing note on what product it identifies and how confident that
+entry is. `VirtualCameraClassifier` is the pure matcher over it.
+
+**Matching is on word boundaries, not raw substrings.** The list necessarily
+contains short patterns (`Camo` is four characters, `mmhmm` five), and a bare
+substring test would fire on any device name that happened to contain those
+letters inside a longer token or a localized name. The governing principle is
+that **over-detection is worse than under-detection here**: a missed virtual
+camera is silence, while a false positive tells a user their genuine physical
+camera is fake — a confident, out-loud, wrong claim. Word boundaries can only
+ever shrink the matching set, which is the safe direction to be wrong in.
+
+The warning **names the matched product**, because it is only actionable if
+the user can tell in one beat whether it is right ("yes, I'm on OBS") or a
+false positive ("no, that's my actual webcam").
+
+Acknowledgement is keyed **per device** by `AVCaptureDevice.uniqueID` and
+persisted in `Config.Camera.acknowledgedVirtualCameraIDs`, so "one-time"
+means once ever rather than once per launch. Deliberately not a single global
+flag: acknowledging OBS must not suppress the warning for a different virtual
+camera selected later, which would turn one acknowledgement into a permanent
+blindfold against exactly this failure.
+
+Surfaced as a VoiceOver-readable, never-blocking notice in the Setup window
+alongside §12.3's. Not spoken — same posture as §12.3.
+
+**Known and permanent limitation:** a virtual camera whose name is not in the
+list produces no warning at all. New products ship, existing ones rename their
+device, users run something obscure or self-built. There is no more reliable
+signal available to close that gap — this section's own "cannot be reliably
+detected from device type" is why it is a name list in the first place.
+Padding the list with unverified guesses would trade under-detection for
+over-detection, which the principle above rules out.
+
 ### 12.5 Center Stage
 
 On Center Stage–capable cameras (Studio Display, Continuity Camera, newer Macs)

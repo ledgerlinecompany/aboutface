@@ -79,6 +79,17 @@ struct SetupWindowView: View {
         }
       }
 
+      // §12.4: the selected camera looks like a virtual camera, so every
+      // framing verdict may describe an image the far end never sees. Same
+      // informational, never-blocking posture as the mismatch notice above;
+      // acknowledging is per-device and persists across launches (see
+      // `Config.Camera.acknowledgedVirtualCameraIDs`).
+      if let message = model.virtualCameraWarning {
+        Section("Possible virtual camera") {
+          virtualCameraNoticeRow(message)
+        }
+      }
+
       // §8: one or more global hotkeys failed to register (most likely
       // another app already owns the combo) — never a silent no-op, see
       // `PipelineModel.hotkeyRegistrationIssue`'s doc comment.
@@ -100,9 +111,19 @@ struct SetupWindowView: View {
     }
     .task { monitorReminderBootstrap() }
     .task { cameraMismatchBootstrap() }
+    // §12.4 has no observation loop of its own — a device's NAME cannot
+    // change under us the way its running state can — so the warning is
+    // recomputed at launch and whenever either input to it moves: the
+    // selection, or the discovered device list (a virtual camera can appear
+    // or disappear while the window is open, e.g. OBS starting up).
+    .task { model.refreshVirtualCameraWarning() }
+    .onChange(of: model.cameraDiscovery.devices) { _, _ in
+      model.refreshVirtualCameraWarning()
+    }
     .onChange(of: model.selectedCameraID) { _, _ in
       monitorReminderController.deviceChanged()
       cameraMismatchController.deviceChanged()
+      model.refreshVirtualCameraWarning()
     }
   }
 
@@ -275,6 +296,25 @@ struct SetupWindowView: View {
   /// straight through to `CameraMismatchController.dismiss()`, which is the
   /// only thing that changes `model.cameraMismatchWarning`; this view does
   /// no state of its own (CLAUDE.md: keep `App/` thin).
+  /// §12.4's one-time acknowledgeable warning. "Acknowledge" rather than
+  /// "Dismiss" on purpose: unlike the mismatch notice next door, this one
+  /// does not come back on its own once accepted — it is a standing fact
+  /// about this device, recorded per-uniqueID in `Config` and persisted
+  /// across launches, so the button's label should promise exactly that
+  /// rather than implying a temporary silence.
+  private func virtualCameraNoticeRow(_ message: String) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(message)
+        .foregroundStyle(.orange)
+      Button("Acknowledge") {
+        model.acknowledgeVirtualCamera()
+      }
+      .accessibilityHint(
+        "Records that you know this camera is virtual. This notice will not appear again for "
+          + "this camera, on this or any future launch. Other cameras are unaffected.")
+    }
+  }
+
   private func cameraMismatchNoticeRow(_ message: String) -> some View {
     VStack(alignment: .leading, spacing: 6) {
       Text(message)

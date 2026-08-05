@@ -35,6 +35,61 @@ extension PipelineModel {
     var updated = config
     updated.camera.selectedCameraID = deviceID
     updateConfig(updated)
+    refreshVirtualCameraWarning()
+  }
+
+  // MARK: - Virtual-camera warning (§12.4)
+
+  /// Recomputes `virtualCameraWarning` from the currently selected device,
+  /// the §12.4 pattern list, and the per-device acknowledgements stored in
+  /// `Config`. Cheap and idempotent — call it whenever the selection or the
+  /// discovered device list changes; there is no observation loop for this
+  /// signal because a device's NAME cannot change under us the way its
+  /// running state can.
+  ///
+  /// §12.4 is the highest-stakes warning in §12 precisely because it is
+  /// undetectable by ear: if the selected camera is virtual, About Face
+  /// sounds exactly as confident and exactly as correct as always, while
+  /// every framing verdict may describe an image the far end never sees
+  /// (cropped, mirrored, or scene-composited). Nothing in the audio design
+  /// can surface that; only this check can.
+  public func refreshVirtualCameraWarning() {
+    guard config.camera.virtualCameraWarningEnabled else {
+      virtualCameraWarning = nil
+      return
+    }
+    guard
+      let deviceID = selectedCameraID,
+      !config.camera.acknowledgedVirtualCameraIDs.contains(deviceID),
+      let device = cameraDiscovery.devices.first(where: { $0.id == deviceID }),
+      let entry = VirtualCameraClassifier.match(displayName: device.displayName)
+    else {
+      virtualCameraWarning = nil
+      return
+    }
+    // Names the matched product on purpose: the warning is only actionable
+    // if the user can tell in one beat whether it is right ("yes, I'm on
+    // OBS") or a false positive ("no, that's my actual webcam"). The
+    // entry's `note` is maintainer-facing and deliberately not shown.
+    virtualCameraWarning =
+      "\"\(device.displayName)\" looks like a virtual camera (\(entry.pattern)). What the far "
+      + "end sees may be cropped, mirrored, or composited, so About Face's framing may not "
+      + "describe it."
+  }
+
+  /// §12.4's "one-time acknowledgeable": records this device's uniqueID in
+  /// `Config` so the warning stays gone across relaunches. Per-device, never
+  /// global — see `Config.Camera.acknowledgedVirtualCameraIDs`'s doc comment
+  /// for why acknowledging one virtual camera must not blind the app to the
+  /// next one.
+  public func acknowledgeVirtualCamera() {
+    guard let deviceID = selectedCameraID else { return }
+    var updated = config
+    if !updated.camera.acknowledgedVirtualCameraIDs.contains(deviceID) {
+      updated.camera.acknowledgedVirtualCameraIDs.append(deviceID)
+    }
+    updateConfig(updated)
+    refreshVirtualCameraWarning()
   }
 
   // MARK: - Camera permission (§9/§12)

@@ -147,6 +147,16 @@ public final class PipelineModel {
   /// automatic utterance; see `CameraMismatchController`'s doc comment).
   public internal(set) var cameraMismatchWarning: String?
 
+  /// §12.4: the selected camera's name matches a known virtual-camera
+  /// pattern and this device has not been acknowledged yet. `nil` when there
+  /// is nothing to say. Recomputed by `refreshVirtualCameraWarning()`
+  /// (`PipelineModel+Camera.swift`) on selection and device-list changes —
+  /// there is no observation loop for this signal, because a device's NAME
+  /// cannot change under us the way its running state can. Same
+  /// plain-`String?`, VoiceOver-readable, never-spoken shape as
+  /// `cameraMismatchWarning` above.
+  public internal(set) var virtualCameraWarning: String?
+
   /// §8: per-action `RegisterEventHotKey` failures, written by
   /// `HotkeyCenter.updateRegistrations(_:)` (see that method's doc comment
   /// for why a failure must never be silently discarded). `nil` when every

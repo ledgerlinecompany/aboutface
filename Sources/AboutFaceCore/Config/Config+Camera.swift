@@ -83,6 +83,30 @@ extension Config {
     /// comment ("Why `isEnabled` is a live gate, not part of the episode").
     public var cameraMismatchWarningEnabled: Bool
 
+    /// §12.4 virtual-camera warning: master on/off switch, same shape and
+    /// same §0/§11 reasoning as `cameraMismatchWarningEnabled` above.
+    /// Default `true`.
+    public var virtualCameraWarningEnabled: Bool
+
+    /// §12.4: "surface a one-time acknowledgeable warning." The set of
+    /// `AVCaptureDevice.uniqueID`s the user has already acknowledged as
+    /// known-virtual, persisted so the acknowledgement survives relaunch —
+    /// "one-time" means once ever, not once per launch.
+    ///
+    /// Keyed **per device**, deliberately, rather than a single global "I
+    /// know about virtual cameras" flag: acknowledging OBS must not silently
+    /// suppress the warning for a DIFFERENT virtual camera selected later.
+    /// That would turn a one-time acknowledgement into a permanent blindfold
+    /// against exactly the §12.4 failure it exists to surface — every
+    /// framing verdict silently describing an image nobody sees.
+    ///
+    /// An array rather than a `Set` purely for `Codable` shape: a JSON array
+    /// round-trips through `ConfigStore` and is readable/editable by hand in
+    /// an exported profile, which a `Set` also would be, but the array's
+    /// ordering-stable encoding keeps exported profiles diffable. Membership
+    /// tests are on a handful of IDs at UI speed, never a hot path.
+    public var acknowledgedVirtualCameraIDs: [String]
+
     /// §5.1/§5.2 per-mode capture + analysis settings: one
     /// `CameraModeCaptureSettings` value per `FeedbackMode` case, following
     /// the SAME per-mode-fields shape `FeedbackConfig.setup`/`.monitor`
@@ -115,6 +139,8 @@ extension Config {
       monitorReminderEnabled: Bool = true,
       reminderDelayMs: Int = 1500,
       cameraMismatchWarningEnabled: Bool = true,
+      virtualCameraWarningEnabled: Bool = true,
+      acknowledgedVirtualCameraIDs: [String] = [],
       setup: CameraModeCaptureSettings = CameraModeCaptureSettings(
         width: 1280, height: 720, frameRate: 30, analysisHz: nil
       ),
@@ -129,6 +155,8 @@ extension Config {
       self.monitorReminderEnabled = monitorReminderEnabled
       self.reminderDelayMs = reminderDelayMs
       self.cameraMismatchWarningEnabled = cameraMismatchWarningEnabled
+      self.virtualCameraWarningEnabled = virtualCameraWarningEnabled
+      self.acknowledgedVirtualCameraIDs = acknowledgedVirtualCameraIDs
       self.setup = setup
       self.monitor = monitor
     }
