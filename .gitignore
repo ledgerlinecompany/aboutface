@@ -22,3 +22,8 @@ AboutFace.xcodeproj/
 # Trial session logs (user data, machine-local)
 aboutface-trials.json
 aboutface-trials.*.json
+
+# Acceptance session logs (user data, machine-local -- see `aboutface-cli
+# acceptance --json`, default filename)
+acceptance-session-log.json
+acceptance-session-log.*.json

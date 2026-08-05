@@ -1110,6 +1110,27 @@ work on current macOS, so gating is not wired into a live activation path.
 Monitor mode ships via the ⌘⌃⇧M hotkey and menu bar item instead; the rest of
 this phase's scope is otherwise complete as listed.
 
+**Acceptance instrument (2026-08-05):** this criterion previously had no
+instrument — a 30-minute session is not something a human can verify by ear,
+and §7.3's rung-3 STOP fires no sound at all, so it cannot be recovered from
+listening after the fact. `aboutface-cli acceptance` now runs the real
+Monitor-mode pipeline (`FeedbackRouter(mode: .monitor)`, real
+`AudioRenderer`/`SpeechRenderer`, `Config.camera.monitor`'s capture format,
+the real `AnalysisRateDecimator`) for a configurable duration, recording
+every `AudioEvent`, every spoken phrase, and `FeedbackRouter
+.isUserLikelyAway()`'s transitions (polled — the only way to see rung 3).
+`AcceptanceEvaluator` (`Sources/AboutFaceCore/Acceptance/`) then judges the
+recorded session against §7.3's four-rung shape and reports what matched,
+what was missing, and everything else that fired — never a bare pass/fail.
+Run it with `aboutface-cli acceptance --minutes 30`; see `--help` for tuning
+options. It prints a plain-text report and appends a JSON record to
+`acceptance-session-log.json`.
+
+**This documents that the instrument exists, not that the acceptance has
+been performed.** No 30-minute session with a 10-minute absence has been run
+against it yet — that is the maintainer's to run, away from the keyboard,
+which is the whole point.
+
 ### Phase 4.5 — Design coherence pass
 
 Added 2026-08-02, from maintainer field experience: by this point the app's
