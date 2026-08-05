@@ -162,6 +162,21 @@ public actor FeedbackRouter {
   var lastAnnouncementAt: ContinuousClock.Instant?
   var lastAnnouncementAtByCondition: [FeedbackCondition: ContinuousClock.Instant] = [:]
 
+  // MARK: - §12.5 Center Stage awareness
+  //
+  // The single source of truth every suppression point (the continuous
+  // beacon in `FeedbackRouter+Continuous.swift`, spoken framing in
+  // `FeedbackRouter+Announcements.swift`'s `announcementPayload(for:output:
+  // centerStageActive:)`, and good-zone entry in `tickGoodZone`) reads.
+  // Never written directly outside `setCenterStageActive(_:at:)`
+  // (`FeedbackRouter+CenterStage.swift`) — that method IS the rising/
+  // falling-edge latch (comparing the new value against this stored one is
+  // what detects the edge), and it is also what forces this to `false`
+  // whenever `config.camera.centerStageAwarenessEnabled` is off, so nothing
+  // downstream needs its own copy of that config check. See that method's
+  // doc comment for the full rationale.
+  var centerStageActive = false
+
   // MARK: - §5.3 Query burst buffer + §8 repeat-last (FeedbackRouter+Query.swift)
   //
   // `recentOutputs` is a bounded ring of the most recently `ingest`ed

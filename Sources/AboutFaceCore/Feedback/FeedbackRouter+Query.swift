@@ -80,6 +80,14 @@ extension FeedbackRouter {
   /// attempted), so it is left as a quiet no-op rather than inventing a
   /// phrase for it.
   ///
+  /// Passes the router's CURRENT `centerStageActive` (§12.5) straight
+  /// through to `QueryComposer.summarize(burst:problemsOnly:
+  /// centerStageActive:)` — see that parameter's own doc comment for what
+  /// it changes in the framing field. Read at call time, not cached from
+  /// the burst: Center Stage's on/off state is not itself part of any
+  /// `EngineOutput` frame, so there is nothing to aggregate a majority vote
+  /// over the way `problemsOnly`'s other fields do.
+  ///
   /// Returns the composed `Lexicon.Phrase` actually spoken (or `nil` for
   /// every no-op case above, including `isSilenced`) purely so callers that
   /// want a text record of what Query said — `replay --query-at` (§5.3's
@@ -92,7 +100,8 @@ extension FeedbackRouter {
     guard !isSilenced else { return nil }
     guard
       let summary = QueryComposer.summarize(
-        burst: recentOutputs, problemsOnly: feedbackConfig.query.problemsOnly)
+        burst: recentOutputs, problemsOnly: feedbackConfig.query.problemsOnly,
+        centerStageActive: centerStageActive)
     else { return nil }
     let phrases = summary.orderedPhrases
     guard !phrases.isEmpty else { return nil }

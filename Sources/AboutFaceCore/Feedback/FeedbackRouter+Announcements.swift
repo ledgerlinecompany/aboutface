@@ -28,7 +28,8 @@ extension FeedbackRouter {
   /// `FeedbackRouter.ingest(_:at:)` was processing when `pendingStreak`
   /// crossed the N-frame threshold) — threaded through purely so the rung-3
   /// recovery branch below can resolve "the problem, if there is one"
-  /// (§7.3) via the SAME `announcementPayload(for:output:)` machinery
+  /// (§7.3) via the SAME `announcementPayload(for:output:centerStageActive:)`
+  /// (`FeedbackRouter+AnnouncementPayload.swift`) machinery
   /// `tickGenericDwell` already uses, rather than a parallel classifier
   /// that could drift out of sync with it.
   func onConfirmedStateChanged(
@@ -127,11 +128,28 @@ extension FeedbackRouter {
     if !dwellFiredForCurrentEpisode {
       let elapsedMs = Self.milliseconds(from: start, to: time)
       guard elapsedMs >= feedbackConfig.goodZoneChimeDelayMs else { return }
+      // §12.5: bookkeeping ALWAYS runs, even under Center Stage — only the
+      // arrival earcon/phrase below are conditional. This is the PR brief's
+      // point (c), called out explicitly because getting it wrong is easy
+      // and silent: `nextHeartbeatAt` is what schedules §6.1's liveness
+      // heartbeat ("not optional... what distinguishes 'good' from 'the app
+      // crashed'"), and `dwellFiredForCurrentEpisode`/`goodZoneConfirmedAt`
+      // are what every later frame in this episode (the heartbeat tick
+      // below, the gaze/roll advisories) reads to know arrival already
+      // happened. Skipping this block under Center Stage would silently
+      // kill the heartbeat for the rest of the episode — see
+      // `FeedbackRouterCenterStageTests.heartbeatStillFiresWhileCenterStageActive`.
       dwellFiredForCurrentEpisode = true
       goodZoneConfirmedAt = time
       nextHeartbeatAt = time.advanced(by: .milliseconds(feedbackConfig.heartbeatIntervalMs))
-      let phrase: Lexicon.Phrase? = mode == .setup ? Lexicon.Instruction.centered : nil
-      await fire(event: .enteredGoodZone, phrase: phrase, key: .goodZoneEntered, at: time)
+      // Drops only the arrival chime and "Centered." — the beacon that
+      // would otherwise cut on this same frame is already suppressed
+      // upstream by `updateContinuousSonification`'s own `centerStageActive`
+      // branch, so there is no cut/chime pairing to keep atomic here.
+      let event: AudioEvent? = centerStageActive ? nil : .enteredGoodZone
+      let phrase: Lexicon.Phrase? =
+        centerStageActive ? nil : (mode == .setup ? Lexicon.Instruction.centered : nil)
+      await fire(event: event, phrase: phrase, key: .goodZoneEntered, at: time)
       return
     }
 
@@ -151,8 +169,9 @@ extension FeedbackRouter {
   /// §7.1 generic dwell: any `FeedbackCondition` other than `.faceLost`
   /// fires (at most) once per confirmed episode, 800ms
   /// (`Config.dwellMs`) after `confirmedStateStart`, subject to §5.2's
-  /// per-mode rate limit. `announcementPayload(for:output:)` decides what
-  /// (if anything) that firing actually says.
+  /// per-mode rate limit. `announcementPayload(for:output:centerStageActive:)`
+  /// (`FeedbackRouter+AnnouncementPayload.swift`) decides what (if anything)
+  /// that firing actually says.
   private func tickGenericDwell(
     condition: FeedbackCondition,
     output: EngineOutput,
@@ -164,91 +183,10 @@ extension FeedbackRouter {
     guard elapsedMs >= config.dwellMs else { return }
     dwellFiredForCurrentEpisode = true
 
-    let (event, instruction) = Self.announcementPayload(for: condition, output: output)
+    let (event, instruction) = Self.announcementPayload(
+      for: condition, output: output, centerStageActive: centerStageActive)
     let phrase: Lexicon.Phrase? = mode == .setup ? instruction : nil
     await fire(event: event, phrase: phrase, key: .condition(condition), at: time)
-  }
-
-  /// The (`AudioEvent`, `Lexicon.Instruction`) pair for a dwell-fired
-  /// condition. `.framingError` has no `AudioEvent` — its feedback in
-  /// Monitor mode is entirely the continuous tone
-  /// (`updateContinuousSonification`, not gated by dwell at all), so in
-  /// Monitor mode a dwell-fired `.framingError` produces no renderer call
-  /// whatsoever (`fire` no-ops when both `event` and `phrase` are `nil`;
-  /// see below). `.partiallyOutOfFrame`/`.lightingCritical` are
-  /// unreachable this phase (their gates always return `false`) but are
-  /// still listed for switch exhaustiveness and to mark where Phase 4
-  /// fills in a real payload. `.gazeOff`/`.headTilt` are ALSO unreachable
-  /// here now (`FeedbackRouter.discreteState(for:)` excludes both from the
-  /// ladder walk that produces a `.problem(condition)` in the first place —
-  /// see their own doc comments); their real payloads live in
-  /// `tickGoodZoneGaze(output:at:)`/`tickGoodZoneRoll(output:at:)` above,
-  /// the good-zone-internal advisories that replaced them. Kept here only
-  /// for switch exhaustiveness.
-  ///
-  /// Not `private`: `FeedbackRouter+FaceLost.swift`'s
-  /// `faceLostRecoveryPhrase(for:output:)` calls this directly (§7.3
-  /// recovery: "the problem, if there is one" reuses this SAME payload
-  /// resolution rather than a parallel classifier) — `private` in an
-  /// extension is scoped to the extension body, not the whole type, so a
-  /// cross-file caller needs at least `internal`, the implicit default
-  /// here.
-  static func announcementPayload(
-    for condition: FeedbackCondition,
-    output: EngineOutput
-  ) -> (AudioEvent?, Lexicon.Phrase?) {
-    switch condition {
-    case .noSignal:
-      return (.noSignal, Lexicon.Instruction.noSignal)
-    case .faceLost:
-      // Handled entirely by `tickFaceLostLadder`; never reaches here.
-      return (nil, nil)
-    case .partiallyOutOfFrame, .lightingCritical:
-      return (nil, nil)
-    case .lowConfidence:
-      return (.lowConfidence, Lexicon.Instruction.tooDark)
-    case .framingError:
-      return (nil, framingInstruction(for: output))
-    case .gazeOff, .headTilt:
-      // Unreachable — see the method doc comment above.
-      return (nil, nil)
-    }
-  }
-
-  /// Picks the single largest-magnitude framing error (horizontal,
-  /// vertical, or distance) and returns its instruction phrase. §6.3:
-  /// terse to the point of rude, "not 'you are currently positioned
-  /// slightly to the left of frame center'" — one instruction per dwell
-  /// episode, not a fused sentence describing every axis at once.
-  ///
-  /// Sign conventions from `FramingState.error`'s own doc comment: `x`
-  /// positive = subject is RIGHT of target (correct by moving left);
-  /// `y` positive = subject is ABOVE target (correct by moving down);
-  /// `distanceError` positive = too close (correct by moving back).
-  private static func framingInstruction(for output: EngineOutput) -> Lexicon.Phrase? {
-    guard let framing = output.framing else { return nil }
-    // swift-format wants a trailing comma on the last element of a
-    // multiline collection literal; swiftlint's (default-on)
-    // trailing_comma rule forbids one. Same tool disagreement noted
-    // elsewhere in this codebase (see SignalFormatter.swift) — format
-    // wins.
-    // swiftlint:disable trailing_comma
-    let candidates: [(magnitude: Float, phrase: Lexicon.Phrase)] = [
-      (
-        abs(framing.error.x),
-        framing.error.x > 0 ? Lexicon.Instruction.left : Lexicon.Instruction.right
-      ),
-      (
-        abs(framing.error.y),
-        framing.error.y > 0 ? Lexicon.Instruction.down : Lexicon.Instruction.up
-      ),
-      (
-        abs(framing.distanceError),
-        framing.distanceError > 0 ? Lexicon.Instruction.back : Lexicon.Instruction.closer
-      ),
-    ]
-    // swiftlint:enable trailing_comma
-    return candidates.max(by: { $0.magnitude < $1.magnitude })?.phrase
   }
 
   // swiftlint:disable opening_brace

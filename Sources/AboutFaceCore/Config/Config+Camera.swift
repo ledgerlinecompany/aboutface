@@ -88,6 +88,22 @@ extension Config {
     /// Default `true`.
     public var virtualCameraWarningEnabled: Bool
 
+    /// §12.5 Center Stage awareness: master on/off switch for the whole
+    /// feature (beacon suppression, spoken-framing suppression, good-zone
+    /// chime suppression, and the rising/falling-edge notice itself), same
+    /// shape and same §0/§11 reasoning as `cameraMismatchWarningEnabled`/
+    /// `virtualCameraWarningEnabled` above. Default `true` — the PR brief's
+    /// decided default. Unlike those two, disabling this is NOT scoped to
+    /// "stop announcing" while some internal state keeps tracking Center
+    /// Stage in the background: `FeedbackRouter.setCenterStageActive(_:at:)`
+    /// forces `centerStageActive` itself to `false` whenever this is off, so
+    /// every suppression point downstream (the beacon, spoken framing,
+    /// good-zone entry) sees a router that behaves exactly as if Center
+    /// Stage did not exist — see that method's own doc comment for why
+    /// gating the STATE, not just the notice, is what keeps three separate
+    /// call sites from each needing their own copy of this check.
+    public var centerStageAwarenessEnabled: Bool
+
     /// §12.4: "surface a one-time acknowledgeable warning." The set of
     /// `AVCaptureDevice.uniqueID`s the user has already acknowledged as
     /// known-virtual, persisted so the acknowledgement survives relaunch —
@@ -140,6 +156,7 @@ extension Config {
       reminderDelayMs: Int = 1500,
       cameraMismatchWarningEnabled: Bool = true,
       virtualCameraWarningEnabled: Bool = true,
+      centerStageAwarenessEnabled: Bool = true,
       acknowledgedVirtualCameraIDs: [String] = [],
       setup: CameraModeCaptureSettings = CameraModeCaptureSettings(
         width: 1280, height: 720, frameRate: 30, analysisHz: nil
@@ -156,6 +173,7 @@ extension Config {
       self.reminderDelayMs = reminderDelayMs
       self.cameraMismatchWarningEnabled = cameraMismatchWarningEnabled
       self.virtualCameraWarningEnabled = virtualCameraWarningEnabled
+      self.centerStageAwarenessEnabled = centerStageAwarenessEnabled
       self.acknowledgedVirtualCameraIDs = acknowledgedVirtualCameraIDs
       self.setup = setup
       self.monitor = monitor

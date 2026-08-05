@@ -147,6 +147,47 @@ public enum Lexicon {
     public static let otherPeoplePresent = Phrase.fixed("Other people are in frame.")
     public static let otherPeopleNone = Phrase.fixed("No one else in frame.")
     public static let allClear = Phrase.fixed("All good.")
+
+    /// §12.5 Center Stage awareness — one phrase per edge of
+    /// `FeedbackRouter.centerStageActive`, shared verbatim between TWO call
+    /// sites: `FeedbackRouter.setCenterStageActive(_:at:)`
+    /// (`FeedbackRouter+CenterStage.swift`, spoken unprompted through `fire`
+    /// on each rising/falling edge) and `QueryComposer.summarize(burst:
+    /// problemsOnly:centerStageActive:)`'s framing field (this round's
+    /// brief: "the framing field is the Center Stage phrase... including
+    /// under `problemsOnly`"). Living here in `State`, not `Reminder`, is a
+    /// deliberate departure from this file's usual "every `Instruction` case
+    /// has its own differently-worded `State` counterpart" pattern (compare
+    /// `Instruction.noFace` "No face." vs `State.noFace` "No face
+    /// detected." — two DIFFERENT strings for the same condition). The task
+    /// brief is explicit here instead: "Pick one, use the SAME phrase
+    /// constant in both call sites... Do not duplicate the string" — a
+    /// second, textually-different copy living in `Reminder` would be
+    /// exactly the duplication that instruction rules out, and would let the
+    /// spoken notice and the Query answer drift apart over time with no
+    /// compiler check to catch it.
+    ///
+    /// `State` wins over `Reminder` on two independent grounds, not just "a
+    /// register had to be picked": (1) `QueryComposer` has only ever drawn
+    /// from `State` — the whole framing/lighting/gaze/other-people field
+    /// vocabulary is `State`-only by construction (see this enum's own
+    /// entries) — so putting the shared constant anywhere else would be the
+    /// one field whose phrase comes from a foreign register. (2) `Reminder`
+    /// itself is documented as firing from "a different call site entirely
+    /// (the App-side `MonitorReminderController`, not `FeedbackRouter`)" —
+    /// this phrase is the opposite: it fires FROM `FeedbackRouter.fire`
+    /// itself, on the router's own edge-detected state, so it never actually
+    /// fits `Reminder`'s stated call-site contract even though its
+    /// unprompted, inference-driven TRIGGER (something changed in the world)
+    /// superficially resembles `Reminder`'s. Content-wise it is also
+    /// genuinely declarative ("Center Stage is on") rather than imperative,
+    /// which is `State`'s own defining character, not `Instruction`'s.
+    public static let centerStageOn = Phrase.fixed("Center Stage is on. Framing is automatic.")
+    /// Falling-edge counterpart — see `centerStageOn`'s doc comment. Chosen
+    /// wording confirms the return to normal operation ("Framing feedback is
+    /// back") rather than just negating the first sentence, so a user who
+    /// only catches the tail end of the utterance still knows what changed.
+    public static let centerStageOff = Phrase.fixed("Center Stage off. Framing feedback is back.")
   }
 
   // MARK: - Reminder register (§12.2/§16.4 camera-in-use rising-edge reminder)

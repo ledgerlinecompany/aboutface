@@ -238,6 +238,57 @@ struct QueryComposerTests {
     #expect(QueryComposer.summarize(burst: [], problemsOnly: false) == nil)
   }
 
+  // MARK: - §12.5 Center Stage: the framing field becomes the CS phrase
+
+  @Test("centerStageActive replaces the framing field even when problemsOnly is false")
+  func centerStageActiveReplacesFramingField_problemsOnlyFalse() throws {
+    // A burst with nothing else wrong: absent `centerStageActive`, framing
+    // would read `Lexicon.State.centered` (see `fixedFieldOrderWhenFine`
+    // above) — the ONLY thing that could produce `centerStageOn` here is
+    // the parameter itself.
+    let burst = Array(repeating: makeOutput(), count: 10)
+    let summary = try #require(
+      QueryComposer.summarize(burst: burst, problemsOnly: false, centerStageActive: true))
+    #expect(summary.framing == [Lexicon.State.centerStageOn])
+    // Every other field is untouched by Center Stage — same PR-brief
+    // reasoning as `FeedbackRouter+Announcements.swift`'s
+    // `announcementPayload`: Center Stage re-aims the crop, it does not fix
+    // light, gaze, or headcount.
+    #expect(summary.lighting == [Lexicon.State.lightingFine])
+    #expect(summary.gaze == [Lexicon.State.gazeOn, Lexicon.State.headLevel])
+    #expect(summary.otherPeople == [Lexicon.State.otherPeopleNone])
+  }
+
+  @Test("centerStageActive replaces the framing field under problemsOnly too, never omitting it")
+  func centerStageActiveReplacesFramingField_problemsOnlyTrue() throws {
+    // Under plain `problemsOnly` (no Center Stage), a burst this fine would
+    // omit framing entirely (see `problemsOnlyAllClearFallback` above,
+    // whose framing field is empty before the whole-summary fallback
+    // applies). Center Stage must still show its phrase — omitting it would
+    // read as "framing is fine," a claim this app cannot back up while
+    // Center Stage owns the crop.
+    let burst = Array(repeating: makeOutput(), count: 10)
+    let summary = try #require(
+      QueryComposer.summarize(burst: burst, problemsOnly: true, centerStageActive: true))
+    #expect(summary.orderedPhrases == [Lexicon.State.centerStageOn])
+  }
+
+  @Test("centerStageActive does not suppress the noFace frame-level short-circuit")
+  func centerStageActiveDoesNotSuppressNoFaceShortCircuit() throws {
+    let burst = Array(repeating: faceLostOutput(), count: 10)
+    let summary = try #require(
+      QueryComposer.summarize(burst: burst, problemsOnly: false, centerStageActive: true))
+    #expect(summary.orderedPhrases == [Lexicon.State.noFace])
+  }
+
+  @Test("centerStageActive does not suppress the noSignal frame-level short-circuit")
+  func centerStageActiveDoesNotSuppressNoSignalShortCircuit() throws {
+    let burst = Array(repeating: noSignalOutput(), count: 10)
+    let summary = try #require(
+      QueryComposer.summarize(burst: burst, problemsOnly: false, centerStageActive: true))
+    #expect(summary.orderedPhrases == [Lexicon.State.noSignal])
+  }
+
   // MARK: - Shared aggregation primitives, directly
 
   @Test("majorityIsProblem: strict majority wins, exact tie favors true")
