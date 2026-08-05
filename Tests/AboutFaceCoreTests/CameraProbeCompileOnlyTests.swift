@@ -93,6 +93,20 @@ struct CameraProbeCompileOnlyTests {
     _ = monitor
   }
 
+  // `CenterStageMonitor` (§12.5's app-side platform-probe layer) only
+  // touches AVFoundation inside `start(uniqueID:intervalSeconds:)`, via
+  // `CenterStageReader.read(forUniqueID:)` — the exact call this file's own
+  // header says must never be exercised for real (see the long comment
+  // above `centerStageReadForUniqueIDSignatureCompiles`: it opens a
+  // `DiscoverySession` and hung CI for 45+ minutes, twice). So, same as
+  // `CameraMismatchMonitor` above, only `init` is constructed for real here;
+  // `start()`/`stop()` are never called.
+  @Test("CenterStageMonitor constructs without touching AVFoundation")
+  func centerStageMonitorConstructs() {
+    let monitor = CenterStageMonitor()
+    _ = monitor
+  }
+
   @Test("PixelFormatCode renders a known four-character code")
   func pixelFormatCodeRendersKnownCode() {
     // kCVPixelFormatType_32BGRA == 'BGRA' as a four-character code.

@@ -15,6 +15,7 @@ struct SetupWindowView: View {
   let hotkeyCenter: HotkeyCenter
   let monitorReminderController: MonitorReminderController
   let cameraMismatchController: CameraMismatchController
+  let centerStageController: CenterStageController
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
@@ -90,6 +91,20 @@ struct SetupWindowView: View {
         }
       }
 
+      // §12.5: Center Stage's own status — "on" (framing suppressed), "off"
+      // (no suppression), or "could not be determined" (the device is
+      // unreadable; see `CenterStageStateMachine`'s doc comment for why that
+      // third case must stay distinguishable from "off" rather than
+      // collapsing into it). A plain status readout, not dismissible — see
+      // `CenterStageController`'s doc comment for why this section has no
+      // button, unlike the mismatch/virtual-camera notices next door.
+      if let message = model.centerStageNotice {
+        Section("Center Stage") {
+          Text(message)
+            .foregroundStyle(.secondary)
+        }
+      }
+
       // §8: one or more global hotkeys failed to register (most likely
       // another app already owns the combo) — never a silent no-op, see
       // `PipelineModel.hotkeyRegistrationIssue`'s doc comment.
@@ -111,6 +126,7 @@ struct SetupWindowView: View {
     }
     .task { monitorReminderBootstrap() }
     .task { cameraMismatchBootstrap() }
+    .task { centerStageBootstrap() }
     // §12.4 has no observation loop of its own — a device's NAME cannot
     // change under us the way its running state can — so the warning is
     // recomputed at launch and whenever either input to it moves: the
@@ -123,6 +139,7 @@ struct SetupWindowView: View {
     .onChange(of: model.selectedCameraID) { _, _ in
       monitorReminderController.deviceChanged()
       cameraMismatchController.deviceChanged()
+      centerStageController.deviceChanged()
       model.refreshVirtualCameraWarning()
     }
   }
@@ -154,6 +171,13 @@ struct SetupWindowView: View {
   /// exists rather than only while idle.
   private func cameraMismatchBootstrap() {
     cameraMismatchController.configure(model: model)
+  }
+
+  /// §12.5: same "first view guaranteed to exist at launch" reasoning as
+  /// `cameraMismatchBootstrap()` above — see `CenterStageController`'s doc
+  /// comment for why this signal is observed regardless of capture state.
+  private func centerStageBootstrap() {
+    centerStageController.configure(model: model)
   }
 
   // MARK: - Camera permission
@@ -289,59 +313,6 @@ struct SetupWindowView: View {
         + "later release.")
   }
 
-  /// §12.3's "never blocking... dismissible" notice row: the message text
-  /// plus a "Dismiss" button, both one VoiceOver-navigable unit's worth of
-  /// controls rather than a bare `Text` — a blind user needs an obvious,
-  /// discoverable way to act on this, not just to hear it. Dismissing calls
-  /// straight through to `CameraMismatchController.dismiss()`, which is the
-  /// only thing that changes `model.cameraMismatchWarning`; this view does
-  /// no state of its own (CLAUDE.md: keep `App/` thin).
-  /// §12.4's one-time acknowledgeable warning. "Acknowledge" rather than
-  /// "Dismiss" on purpose: unlike the mismatch notice next door, this one
-  /// does not come back on its own once accepted — it is a standing fact
-  /// about this device, recorded per-uniqueID in `Config` and persisted
-  /// across launches, so the button's label should promise exactly that
-  /// rather than implying a temporary silence.
-  private func virtualCameraNoticeRow(_ message: String) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Text(message)
-        .foregroundStyle(.orange)
-      Button("Acknowledge") {
-        model.acknowledgeVirtualCamera()
-      }
-      .accessibilityHint(
-        "Records that you know this camera is virtual. This notice will not appear again for "
-          + "this camera, on this or any future launch. Other cameras are unaffected.")
-    }
-  }
-
-  private func cameraMismatchNoticeRow(_ message: String) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Text(message)
-        .foregroundStyle(.orange)
-      Button("Dismiss") {
-        cameraMismatchController.dismiss()
-      }
-      .accessibilityHint(
-        "Dismisses this notice until the condition clears and a new mismatch is detected.")
-    }
-  }
-
-  private func configLoadIssueRow(_ issue: ConfigStore.LoadIssue) -> some View {
-    Group {
-      switch issue {
-      case .missing:
-        Text("No saved configuration found — using defaults.")
-      case .corruptBackedUp(let backupURL):
-        Text(
-          "Your saved configuration could not be read and was reset to defaults. "
-            + "The original file was kept at \(backupURL.path)."
-        )
-      }
-    }
-    .foregroundStyle(.secondary)
-    .disabled(!model.isRunning)
-  }
 }
 
 /// One §9 accessible value row: a single VoiceOver element

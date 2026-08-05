@@ -10,54 +10,6 @@ import SwiftUI
 
 // swiftlint:enable sorted_imports
 
-/// Camera-permission state for the Setup window's permission flow (spec
-/// §9/§12). Mirrors `AVAuthorizationStatus` with a name that reads cleanly
-/// in UI code; `.restricted` (parental controls / MDM) is folded in as its
-/// own case because the "ask again" affordance differs from a user-chosen
-/// `.denied`.
-public enum CameraPermissionState: Sendable, Equatable {
-  case notDetermined
-  case authorized
-  case denied
-  case restricted
-
-  init(_ status: AVAuthorizationStatus) {
-    switch status {
-    case .authorized: self = .authorized
-    case .denied: self = .denied
-    case .restricted: self = .restricted
-    case .notDetermined: self = .notDetermined
-    @unknown default: self = .denied
-    }
-  }
-}
-
-/// The throttled, VoiceOver-facing view of the latest engine output — the
-/// "one observable accessibility snapshot struct" the Setup window's rows
-/// read from (spec §9's "Post `.valueChanged` only for the currently-
-/// focused element, throttled to ~2 Hz").
-///
-/// Deliberately just a wrapper around `[SignalFormatter.FormattedSignal]`
-/// today — every row updates in lockstep, at the same ~2 Hz cadence. This
-/// is a known, documented simplification for Phase 2 (see
-/// `docs/acceptance/phase2-checklist.md`): the spec's stronger form of the
-/// requirement is per-*focused*-element throttling, which needs
-/// `NSAccessibility` focus tracking this pass deliberately does not build
-/// (per the task brief: "do not attempt per-element focus tracking...
-/// validated/tuned by the human pass"). Because every row already flows
-/// through this one struct, adding a per-row `lastPostedAt` (or a
-/// currently-focused-field flag) later is a change to this type only — no
-/// view or model rewiring required.
-public struct AccessibilitySnapshot: Sendable, Equatable {
-  public var rows: [SignalFormatter.FormattedSignal]
-
-  public static let empty = AccessibilitySnapshot(rows: [])
-
-  public func value(for field: SignalFormatter.Field) -> String? {
-    rows.first { $0.id == field }?.value
-  }
-}
-
 /// The Phase 2 "live pipeline model" (spec §9/§12): owns camera
 /// enumeration, the capture/engine lifecycle, `Config` load/save, and the
 /// throttled state the Setup window and debug panel read from. `@MainActor`
@@ -156,6 +108,41 @@ public final class PipelineModel {
   /// plain-`String?`, VoiceOver-readable, never-spoken shape as
   /// `cameraMismatchWarning` above.
   public internal(set) var virtualCameraWarning: String?
+
+  /// §12.5 Center Stage awareness: set by `CenterStageController` from
+  /// `CenterStageStateMachine.Outcome` — a plain, always-current status
+  /// readout distinguishing "Center Stage is on," "off," and "could not be
+  /// determined" (the `.unknown`/`.deviceNotFound` case — see
+  /// `CenterStageStateMachine`'s doc comment for why that third state must
+  /// never collapse into "off"). `nil` when the feature is disabled
+  /// (`Config.Camera.centerStageAwarenessEnabled == false`) or not yet
+  /// configured. Same plain-`String?`, VoiceOver-readable, never-spoken
+  /// shape as `cameraMismatchWarning`/`virtualCameraWarning` above — the
+  /// SPOKEN half of Center Stage awareness is
+  /// `FeedbackRouter.setCenterStageActive(_:at:)`'s own rising/falling-edge
+  /// notice, driven by the same controller; this property is only the
+  /// Setup window's VoiceOver-readable echo of the current reading.
+  public internal(set) var centerStageNotice: String?
+
+  /// §12.5 debug-panel override: forces the value
+  /// `CenterStageController` feeds to
+  /// `FeedbackRouter.setCenterStageActive(_:at:)`, regardless of what
+  /// `CenterStageMonitor`'s poller actually reads — so the maintainer can
+  /// judge Center Stage's feedback suppression by ear without depending on
+  /// the poller (or real hardware) being available. `nil` (the default)
+  /// means "follow the real signal"; `true`/`false` force the router
+  /// unconditionally. Tri-state rather than a plain `Bool` specifically so
+  /// "not overridden" is representable and distinct from "overridden to
+  /// off" — a plain `Bool` defaulting to `false` would be indistinguishable
+  /// from a genuine forced-off override. Deliberately NOT a `Config` field:
+  /// this is a debug-only, in-memory, session-lifetime aid the maintainer
+  /// may remove later during the app's presentation cleanup (see
+  /// `DebugPanelView`'s Center Stage section), not a tuning value worth
+  /// persisting or shipping in an exported profile. Does NOT affect
+  /// `centerStageNotice` above — that stays an honest report of the real
+  /// signal, specifically so the override can never be mistaken for a real
+  /// reading (see `CenterStageController.overrideChanged()`'s doc comment).
+  public var centerStageDebugOverride: Bool?
 
   /// §8: per-action `RegisterEventHotKey` failures, written by
   /// `HotkeyCenter.updateRegistrations(_:)` (see that method's doc comment

@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 /// tuning knob).
 struct DebugPanelView: View {
   @Bindable var model: PipelineModel
+  let centerStageController: CenterStageController
 
   @State private var showingGlobalResetConfirmation = false
   @State private var importErrorMessage: String?
@@ -20,6 +21,7 @@ struct DebugPanelView: View {
     Form {
       exportImportSection
       modeSection
+      centerStageOverrideSection
 
       ConfigSection(title: "Target framing") {
         ConfigSliderRow(
@@ -184,6 +186,9 @@ struct DebugPanelView: View {
       Button("OK") { importErrorMessage = nil }
     } message: {
       Text(importErrorMessage ?? "")
+    }
+    .onChange(of: model.centerStageDebugOverride) { _, _ in
+      centerStageController.overrideChanged()
     }
   }
 
