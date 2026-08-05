@@ -868,23 +868,48 @@ therefore `deviceReportsActive` (`isCenterStageActive`) alone — see that
 computed property's doc comment for the full "which direction is safe to be
 wrong in" argument, the same reasoning §12.4 uses for word-boundary matching.
 
-**Permanent blind spot, same posture as §12.4's name-list gap:** this process
-can only ever observe Center Stage on its OWN capture. A conferencing app's
-capture session can have Center Stage active while About Face's does not, or
-the reverse, and nothing here can see that. There is no more reliable signal
-available — reading `isCenterStageActive` on our own capture is the most
-specific answer AVFoundation exposes.
+**Measured on hardware 2026-08-05 — and this section's own instruction is
+wrong.** The bullet above says to query `centerStageControlMode` and
+`isCenterStageEnabled`. A feature built on that instruction would never have
+fired even once. With Center Stage genuinely switched ON by the user for a
+Continuity Camera, and no other application holding the device (CoreMediaIO
+`idle`, `isInUseByAnotherApplication` false), `probe-camera` reported:
 
-**Nothing is verified on hardware yet.** Unlike §12.2/§12.3/§12.6, this
-section has no live measurement behind it — this PR deliberately takes no
-measurement at all, landing the instrument first so the measurement can then be
-taken against it. The bullets above (query the two class
-properties, speak "Center Stage is on, framing is automatic," shift the
-report) remain the design intent, but are deliberately not built until the
-maintainer runs `probe-camera` on real Center Stage hardware and confirms what
-`deviceReportsActive` actually reports before and after About Face opens its
-own session, and specifically at the Monitor (640×480) format — exactly the
-before/after pair this PR's read layer exists to produce.
+- `AVCaptureDevice.isCenterStageEnabled` (class) — **`false`**
+- `device.isCenterStageActive` (instance) — **`true`**
+
+The process-wide class property does not track the user's per-camera toggle;
+the instance property does. Confirmed as a full round trip — off → on → off —
+with `isCenterStageActive` reading `no` / `yes` / `no` and
+`isCenterStageEnabled` reading `false` at every one of the three points. The
+class property tracked nothing at all on this hardware. The falling edge was
+measured deliberately and not inferred: any behavior that suppresses framing
+feedback while Center Stage is on depends on the signal actually clearing, or
+the app would go permanently silent about framing with no route back.
+This is §12.2's finding repeating in a new place: **the more obvious of the two
+signals is the one that lies**, and only reading both side by side made it
+visible. `CenterStageReading.automaticFramingInEffect` is `deviceReportsActive`
+alone, which this measurement turns from a defensible design call into the only
+correct one. Nothing may gate Center Stage behavior on `systemEnabled`.
+
+**The blind spot is narrower than first documented.** `isCenterStageActive`
+read `true` *before* this process opened any capture session on the device, so
+the state is observable device-wide without holding the camera — which means
+About Face can detect Center Stage while a conferencing app owns the device,
+the case that matters most. What remains genuinely unobservable is narrower: an
+app that takes `.app` or `.cooperative` control mode can override Center Stage
+for its own session only, and we would still read the user-level device state.
+In the ordinary `.user` control mode this Mac reports, our reading is the same
+one any other capture of that device gets.
+
+**Hardware facts from the same run** (maintainer's machine, 2026-08-05): the
+built-in FaceTime HD Camera supports Center Stage in **no** format, and neither
+does Desk View — the Continuity Camera is the only capable device present. Both
+640×480 (Monitor) and 1280×720 (Setup) support it there, so there is no
+format-dependent gotcha to design around. Unrelated finding from the same
+output, not yet addressed: the Continuity Camera **ignored a 15 fps request and
+delivered 30**, where the built-in camera honored 15 exactly — §5.2's Monitor
+format is silently capturing at double rate on that device.
 
 ### 12.6 Concurrent access test
 

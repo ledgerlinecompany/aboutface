@@ -106,10 +106,23 @@ struct CameraProbeCompileOnlyTests {
   // enumerates real hardware, so its *return count* is not asserted (varies
   // by machine) -- only that it has the documented signature, same
   // convention as `CMIOAllDevicesBusyReader.currentRunningStates` above.
-  // `read(forUniqueID:)` IS called for real below, because
-  // "nonexistent-device-for-testing" cannot resolve on any machine,
-  // camera hardware or none -- same reasoning as
-  // `CMIOCameraBusyProviderThrowsForUnresolvableDevice` above.
+  // `read(forUniqueID:)` is signature-only checked too, and MUST STAY THAT
+  // WAY. It was briefly called for real (PR #66), on the reasoning that
+  // "nonexistent-device-for-testing" cannot resolve on any machine, camera
+  // hardware or none, so the assertion would be deterministic everywhere.
+  // That reasoning is true about the RESULT and wrong about the COST: to
+  // discover that nothing matches, the call still opens an
+  // `AVCaptureDevice.DiscoverySession` and enumerates every capture device.
+  // On CI's headless runner that enumeration blocks -- it hung
+  // `swift test` for 45+ minutes, twice consecutively, on a docs-only PR,
+  // after passing once (2026-08-05). Intermittent, because it depends on
+  // whether the runner's camera daemon answers at all.
+  //
+  // This is exactly the rule in this file's own header, and in CLAUDE.md:
+  // never write a test that requires a live camera to pass in CI. A test
+  // that only READS "no devices" still has to ask the hardware. The
+  // `.deviceNotFound` semantics that test meant to pin are covered purely,
+  // with no AVFoundation involvement, by `CenterStageDeviceReadingTests`.
 
   @Test("CenterStageReader.read(device:) has the documented signature")
   func centerStageReadDeviceSignatureCompiles() {
@@ -123,11 +136,10 @@ struct CameraProbeCompileOnlyTests {
     _ = fn
   }
 
-  @Test("CenterStageReader.read(forUniqueID:) returns .deviceNotFound for an unresolvable uniqueID")
-  func centerStageReaderDeviceNotFoundForUnresolvableID() {
-    #expect(
-      CenterStageReader.read(forUniqueID: "nonexistent-device-for-testing")
-        == .deviceNotFound)
+  @Test("CenterStageReader.read(forUniqueID:) has the documented signature")
+  func centerStageReadForUniqueIDSignatureCompiles() {
+    let fn: (String) -> CenterStageDeviceReading = CenterStageReader.read(forUniqueID:)
+    _ = fn
   }
 }
 
