@@ -44,10 +44,16 @@ struct FeedbackRouterCenterStageFaceLostTests {
     await router.ingest(faceLostOutput(), at: t0.plus(ms: 2600))
     #expect(await audio.playedEvents().isEmpty)
 
-    // Reacquire. Nothing on the way back either: no `.faceReacquired`, and
-    // no `.enteredGoodZone` (also suppressed under Center Stage).
+    // Reacquire. Nothing from the LADDER on the way back either — asserted
+    // as the absence of those two specific earcons rather than as total
+    // silence, because the good-zone arrival chime is independently
+    // Config-keyed under Center Stage (`centerStageArrivalChimeEnabled`,
+    // default on) and may legitimately sound here. Conflating the two would
+    // make this test fail for a reason that has nothing to do with §7.3.
     await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 2700), count: 5)
-    #expect(await audio.playedEvents().isEmpty)
+    let events = await audio.playedEvents()
+    #expect(!events.contains(.faceLost))
+    #expect(!events.contains(.faceReacquired))
   }
 
   /// The same episode with Center Stage OFF still behaves exactly as before —
@@ -148,6 +154,10 @@ struct FeedbackRouterCenterStageFaceLostTests {
       await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: base + 1100), count: 5)
     }
 
-    #expect(await audio.playedEvents().isEmpty)
+    // Ladder earcons specifically — the arrival chime is a separate,
+    // Config-keyed decision under Center Stage (see the first test above).
+    let events = await audio.playedEvents()
+    #expect(!events.contains(.faceLost))
+    #expect(!events.contains(.faceReacquired))
   }
 }

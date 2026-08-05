@@ -142,11 +142,23 @@ extension FeedbackRouter {
       dwellFiredForCurrentEpisode = true
       goodZoneConfirmedAt = time
       nextHeartbeatAt = time.advanced(by: .milliseconds(feedbackConfig.heartbeatIntervalMs))
-      // Drops only the arrival chime and "Centered." — the beacon that
-      // would otherwise cut on this same frame is already suppressed
-      // upstream by `updateContinuousSonification`'s own `centerStageActive`
-      // branch, so there is no cut/chime pairing to keep atomic here.
-      let event: AudioEvent? = centerStageActive ? nil : .enteredGoodZone
+      // Under Center Stage the two halves of arrival are governed
+      // SEPARATELY, and not by the same rule.
+      //
+      // The chime is Config-keyed (`centerStageArrivalChimeEnabled`, default
+      // `true` — see its doc comment): whether an arrival marker is useful
+      // when the placement was automatic is a question about how it SOUNDS,
+      // which only the maintainer's ear can settle, so it is a live toggle
+      // rather than a decision baked in here.
+      //
+      // The spoken "Centered." is NOT toggleable and stays suppressed: it is
+      // a framing VERDICT, and §12.5 forbids reporting framing while the OS
+      // owns the crop. The beacon that would otherwise cut on this same
+      // frame is already suppressed upstream by
+      // `updateContinuousSonification`'s own `centerStageActive` branch, so
+      // there is no cut/chime pairing left to keep atomic here either way.
+      let suppressChime = centerStageActive && !feedbackConfig.centerStageArrivalChimeEnabled
+      let event: AudioEvent? = suppressChime ? nil : .enteredGoodZone
       let phrase: Lexicon.Phrase? =
         centerStageActive ? nil : (mode == .setup ? Lexicon.Instruction.centered : nil)
       await fire(event: event, phrase: phrase, key: .goodZoneEntered, at: time)

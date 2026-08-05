@@ -1018,6 +1018,25 @@ now supports `--warmup` (analyze but exclude, for settling) and prints the
 device's Center Stage state at the end, making every run label its own
 condition instead of depending on someone remembering how a toggle was set.
 
+**The arrival chime is now a toggle, defaulting ON**
+(`FeedbackConfig.centerStageArrivalChimeEnabled`). It originally shipped
+suppressed, on the argument that the chime marks the end of a correction the
+user made and under Center Stage they made none. That was never actually
+judged by ear, because the face-lost ladder was cycling over the top of it;
+once that was fixed the maintainer's call (2026-08-05) was "worth trying
+turned on, perhaps behind a toggle." The Debug panel exposes it beside the
+Center Stage override, and `PipelineModel.pushConfigToFeedbackChain` forwards
+`Config.feedback` to the live router, so it can be flipped mid-session — the
+only way a question about how something SOUNDS gets answered honestly.
+
+**The toggle governs the earcon only.** Setup's spoken "Centered." stays
+suppressed under Center Stage at either position and is deliberately not
+switchable: it is a framing VERDICT, and this section forbids reporting
+framing while the OS owns the crop — asserting the good case is the same
+claim with the sign flipped. The chime is not a verdict but a punctuation
+mark ("you are placed now"), which is why whether it earns its place under
+automatic framing is a question about sound rather than about truth.
+
 **Still unverified by ear.** Two judgment calls await the maintainer's own
 listening: the arrival chime is suppressed under Center Stage (it marks the
 end of a correction the user did not make — but its absence may read as the

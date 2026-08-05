@@ -118,6 +118,32 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   /// and §6.1's no-ambiguous-silence requirement outranks uniform dwell.
   public var goodZoneChimeDelayMs: Int
 
+  /// §12.5: whether the good-zone ARRIVAL EARCON still sounds while Center
+  /// Stage is active. Default `true` — the chime plays.
+  ///
+  /// This started life suppressed, on the argument that the chime marks the
+  /// end of a correction the user made, and under Center Stage they made
+  /// none. The maintainer never got to judge that by ear, because the
+  /// face-lost ladder was cycling over the top of it (see
+  /// `FeedbackRouter.faceLostEpisodeWasAudible`); once that was fixed his
+  /// call was "worth trying turned on, perhaps behind a toggle," which is
+  /// what this is. Flipping it needs no rebuild — `PipelineModel
+  /// .pushConfigToFeedbackChain` forwards `Config.feedback` to the live
+  /// router, so the Debug panel's toggle takes effect mid-session, which is
+  /// the only way a question like this gets answered honestly.
+  ///
+  /// **Scope: the earcon only.** Setup's spoken `Instruction.centered`
+  /// ("Centered.") stays suppressed under Center Stage no matter how this is
+  /// set, and deliberately so — a spoken "Centered." is a framing VERDICT,
+  /// which is exactly what §12.5 forbids while the OS owns the crop ("silently
+  /// reporting a framing problem the OS is already correcting is worse than
+  /// reporting nothing," and asserting the good case is the same claim with
+  /// the sign flipped). The chime is not a verdict; it is a punctuation mark
+  /// saying "you are placed now," and whether that is useful when the
+  /// placement was automatic is a genuine open question about how it SOUNDS,
+  /// not about what is true.
+  public var centerStageArrivalChimeEnabled: Bool
+
   /// §5.1/§5.2 per-mode rate limiting, and §16 (maintainer decision,
   /// 2026-08-01): "Monitor auto-enable will default ON... design your
   /// rate-limiting APIs so Monitor's limits... are Config-driven and
@@ -184,6 +210,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostRecoverySpeechEnabled: Bool = true,
     heartbeatIntervalMs: Int,
     goodZoneChimeDelayMs: Int = 0,
+    centerStageArrivalChimeEnabled: Bool = true,
     setup: ModeLimits,
     monitor: ModeLimits,
     query: Query = .defaults
@@ -198,6 +225,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     self.faceLostRecoverySpeechEnabled = faceLostRecoverySpeechEnabled
     self.heartbeatIntervalMs = heartbeatIntervalMs
     self.goodZoneChimeDelayMs = goodZoneChimeDelayMs
+    self.centerStageArrivalChimeEnabled = centerStageArrivalChimeEnabled
     self.setup = setup
     self.monitor = monitor
     self.query = query
@@ -219,6 +247,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostRecoverySpeechEnabled: true,
     heartbeatIntervalMs: 7000,
     goodZoneChimeDelayMs: 0,
+    centerStageArrivalChimeEnabled: true,
     setup: ModeLimits(minAnnouncementIntervalMs: nil, minSameConditionIntervalMs: nil),
     monitor: ModeLimits(minAnnouncementIntervalMs: 20000, minSameConditionIntervalMs: 180_000),
     query: .defaults
