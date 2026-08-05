@@ -104,6 +104,55 @@ extension Config {
     /// call sites from each needing their own copy of this check.
     public var centerStageAwarenessEnabled: Bool
 
+    /// §12.5 Center Stage poll cadence, seconds — its OWN knob rather than
+    /// `busyPollIntervalSeconds`, and `centerStageDebounceMs` below likewise
+    /// rather than `busyDebounceMs`. This deliberately REVERSES the reuse
+    /// decision the first wiring shipped with, on a maintainer field finding
+    /// (2026-08-05).
+    ///
+    /// **The finding.** At 1 Hz polling plus a 2000 ms debounce, up to three
+    /// seconds passed between Center Stage physically engaging and this app
+    /// believing it. Center Stage re-aims the camera in about a second — and
+    /// that re-aiming is itself what carries the user into the good zone. So
+    /// the arrival earcon fired, celebrating a correction the user never
+    /// made, and the spoken "Center Stage is on" notice arrived afterwards to
+    /// explain something the user had already been misinformed about. The
+    /// chime fired BECAUSE Center Stage engaged: §12.5's own "silently
+    /// reporting a framing problem the OS is already correcting" failure,
+    /// reached through a timing gap rather than through the suppression logic,
+    /// which was working exactly as designed the whole time.
+    ///
+    /// **Why the reuse argument does not hold here.** §0's "no second
+    /// debounce for one underlying signal" is about not inventing parallel
+    /// knobs for the SAME question. This is a different question.
+    /// `busyDebounceMs` exists to stop a flapping in-use signal from bouncing
+    /// modes — it is sized against signal NOISE. Center Stage is a deliberate
+    /// user action in Control Center; it does not flap. What sizes this value
+    /// is a race: the app must know before the good-zone arrival chime can
+    /// fire, and that budget is set by how fast the OS re-aims the camera,
+    /// not by how noisy the signal is. Defaults `0.25` / `200` are starting
+    /// points (§0) chosen to land comfortably inside that window; tune by ear.
+    ///
+    /// **Unmeasured cost, deliberately flagged:** `CenterStageReader
+    /// .read(forUniqueID:)` opens a fresh `AVCaptureDevice.DiscoverySession`
+    /// per call (by design — it is what makes a disconnected device surface
+    /// as `.deviceNotFound` instead of a stale reading), so raising the rate
+    /// four-fold raises that cost four-fold. It has not been profiled. §13's
+    /// Phase 4 acceptance already measures CPU and thermals over a long
+    /// session; that is where this belongs, and if it proves expensive the
+    /// answer is to make the read cheaper, not to go back to being wrong for
+    /// three seconds.
+    public var centerStagePollIntervalSeconds: Double
+
+    /// §12.5 Center Stage debounce, milliseconds — see
+    /// `centerStagePollIntervalSeconds` above for why this is its own knob
+    /// rather than `busyDebounceMs`, and for the field finding that forced
+    /// the split. Still a real debounce, not zero: §4/§7's hysteresis rule
+    /// admits no exceptions, and a format renegotiation or a Continuity
+    /// Camera reconnect could still produce a brief flap that should not
+    /// reach the user as two utterances.
+    public var centerStageDebounceMs: Int
+
     /// §12.4: "surface a one-time acknowledgeable warning." The set of
     /// `AVCaptureDevice.uniqueID`s the user has already acknowledged as
     /// known-virtual, persisted so the acknowledgement survives relaunch —
@@ -157,6 +206,8 @@ extension Config {
       cameraMismatchWarningEnabled: Bool = true,
       virtualCameraWarningEnabled: Bool = true,
       centerStageAwarenessEnabled: Bool = true,
+      centerStagePollIntervalSeconds: Double = 0.25,
+      centerStageDebounceMs: Int = 200,
       acknowledgedVirtualCameraIDs: [String] = [],
       setup: CameraModeCaptureSettings = CameraModeCaptureSettings(
         width: 1280, height: 720, frameRate: 30, analysisHz: nil
@@ -174,6 +225,8 @@ extension Config {
       self.cameraMismatchWarningEnabled = cameraMismatchWarningEnabled
       self.virtualCameraWarningEnabled = virtualCameraWarningEnabled
       self.centerStageAwarenessEnabled = centerStageAwarenessEnabled
+      self.centerStagePollIntervalSeconds = centerStagePollIntervalSeconds
+      self.centerStageDebounceMs = centerStageDebounceMs
       self.acknowledgedVirtualCameraIDs = acknowledgedVirtualCameraIDs
       self.setup = setup
       self.monitor = monitor

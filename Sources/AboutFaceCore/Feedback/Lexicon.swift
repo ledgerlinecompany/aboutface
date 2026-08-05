@@ -183,11 +183,17 @@ public enum Lexicon {
     /// genuinely declarative ("Center Stage is on") rather than imperative,
     /// which is `State`'s own defining character, not `Instruction`'s.
     public static let centerStageOn = Phrase.fixed("Center Stage is on. Framing is automatic.")
-    /// Falling-edge counterpart — see `centerStageOn`'s doc comment. Chosen
-    /// wording confirms the return to normal operation ("Framing feedback is
-    /// back") rather than just negating the first sentence, so a user who
-    /// only catches the tail end of the utterance still knows what changed.
-    public static let centerStageOff = Phrase.fixed("Center Stage off. Framing feedback is back.")
+    /// Falling-edge counterpart — see `centerStageOn`'s doc comment. The
+    /// second sentence deliberately MIRRORS `centerStageOn`'s ("Framing is
+    /// automatic." → "Manual framing required.") rather than describing the
+    /// app's own behavior, which is what an earlier draft did ("Framing
+    /// feedback is back"). Maintainer's wording, 2026-08-05, and the better
+    /// register: both phrases now say what the USER's situation is, so the
+    /// pair reads as one axis with two positions rather than as a fact
+    /// followed by a status report about the software. A listener who
+    /// catches only the tail of either utterance still learns the thing that
+    /// matters — who is responsible for framing right now.
+    public static let centerStageOff = Phrase.fixed("Center Stage off. Manual framing required.")
   }
 
   // MARK: - Reminder register (§12.2/§16.4 camera-in-use rising-edge reminder)

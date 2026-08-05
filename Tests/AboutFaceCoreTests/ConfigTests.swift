@@ -169,6 +169,23 @@ struct ConfigTests {
     #expect(defaults.forceBusyPolling == false)
   }
 
+  /// §12.5's poll/debounce pair is deliberately FASTER than §12.2's `busy*`
+  /// pair above, and pinned here so the difference cannot quietly erode back
+  /// toward those values. The field finding (2026-08-05): at 1 Hz + 2000 ms,
+  /// Center Stage engaged, re-aimed the camera, carried the user into the
+  /// good zone, and the arrival earcon fired — celebrating a correction the
+  /// user never made — all before this app knew Center Stage was on. See
+  /// `Config.Camera.centerStagePollIntervalSeconds`'s doc comment.
+  @Test("Default Center Stage cadence is faster than the §12.2 busy pair, deliberately")
+  func defaultCenterStageCadence() {
+    let defaults = Config.defaults.camera
+    #expect(defaults.centerStageAwarenessEnabled == true)
+    #expect(defaults.centerStagePollIntervalSeconds == 0.25)
+    #expect(defaults.centerStageDebounceMs == 200)
+    #expect(defaults.centerStagePollIntervalSeconds < defaults.busyPollIntervalSeconds)
+    #expect(defaults.centerStageDebounceMs < defaults.busyDebounceMs)
+  }
+
   // MARK: - §4 default values
 
   @Test("Default version is 1")
