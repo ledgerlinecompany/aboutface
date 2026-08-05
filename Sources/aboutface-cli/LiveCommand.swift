@@ -60,6 +60,21 @@ struct Live: AsyncParsableCommand {
   @Option(help: "How many seconds to run before printing the summary and exiting.")
   var seconds = 10
 
+  /// Field finding (2026-08-05): the first measurement of Center Stage's
+  /// effect on face detection was invalid because opening the session is what
+  /// activates a Continuity Camera, and the maintainer had to physically
+  /// reposition the phone once it woke — inside the measurement window. Two
+  /// multi-second "face lost" episodes got recorded that were a person moving
+  /// a camera, not the behavior under test. Any live measurement whose
+  /// subject is also the person operating the rig needs settling time that is
+  /// not counted, and asking them to be ready BEFORE the session opens is
+  /// impossible when opening the session is what wakes the hardware.
+  @Option(
+    help:
+      "Seconds to analyze but exclude from stats, letting the camera wake and the subject settle."
+  )
+  var warmup: Double = 0
+
   func run() async throws {
     guard let source = makeSource() else {
       print(
@@ -79,9 +94,34 @@ struct Live: AsyncParsableCommand {
     }
 
     let result = await runLoop(engine: engine, source: source)
+    let centerStageAfter = Self.centerStageDescription(device)
     await source.stop()
 
     printSummary(result)
+    print("centerStageAtEnd: \(centerStageAfter)")
+  }
+
+  /// §12.5's reading for the device under test, so a run LABELS ITS OWN
+  /// CONDITION instead of relying on someone remembering which way a toggle
+  /// was set. Two measurement sessions were invalidated on 2026-08-05 by
+  /// exactly that ambiguity — a Continuity Camera slept and silently reset
+  /// Center Stage between runs, and a locked phone changed what was being
+  /// captured — after which the numbers were untrustworthy in a way no
+  /// amount of care at the keyboard could have caught. Printed at the END of
+  /// the run, while the session is still the thing that was just measured.
+  ///
+  /// `.deviceNotFound` prints as itself, never as "off": the same rule
+  /// `CenterStageDeviceReading` exists to enforce (§12.5).
+  private static func centerStageDescription(_ uniqueID: String?) -> String {
+    guard let uniqueID else {
+      return "not read (no --device given; pass one to label the run's Center Stage condition)"
+    }
+    switch CenterStageReader.read(forUniqueID: uniqueID) {
+    case .found(let reading):
+      return reading.automaticFramingInEffect ? "ACTIVE (framing is automatic)" : "not active"
+    case .deviceNotFound:
+      return "could not read -- device not found"
+    }
   }
 
   /// `runLoop(engine:source:)`'s return value — a named struct rather than a
@@ -93,6 +133,29 @@ struct Live: AsyncParsableCommand {
     let frameCount: Int
     let elapsedSeconds: Double
     let actualDimensions: PixelDimensions?
+    /// EVERY frame's `signalState`, tallied — not the once-per-second sample
+    /// the `t=Ns` status lines print. §12.5 field finding (2026-08-05): the
+    /// maintainer reported the §7.3 face-lost/reacquired earcons firing
+    /// repeatedly under Center Stage, and a 1 Hz sample cannot see a dropout
+    /// shorter than a second, while §7.3's rung 1 fires at 500ms in Setup.
+    /// The instrument could not answer the question it was being asked, which
+    /// is its own kind of silent failure.
+    let stateCounts: [SignalState: Int]
+    /// Runs of consecutive frames where no face was available at all
+    /// (`.noFace`/`.noSignal`) — the states §7.3's ladder actually escalates
+    /// on. Count and worst-case duration, so "loses the face often" becomes a
+    /// number instead of an impression.
+    let faceLostEpisodes: Int
+    let longestFaceLostMs: Int
+    let totalFaceLostMs: Int
+    /// Every DISTINCT pixel dimension observed across the whole run, in the
+    /// order first seen. More than one entry means the delivered format
+    /// changed mid-stream — which `AVCaptureDevice.h` says Center Stage can
+    /// force (it restricts the device's zoom and frame-rate ranges while
+    /// active). Nothing in this app previously read the format back after the
+    /// first frame; that "latch it once" assumption is exactly the shape of
+    /// the bug PR #57 fixed, so this instrument no longer makes it.
+    let observedDimensions: [PixelDimensions]
   }
 
   private func makeSource() -> CameraCaptureSource? {
@@ -134,16 +197,23 @@ struct Live: AsyncParsableCommand {
     source: CameraCaptureSource
   ) async -> RunResult {
     let clock = ContinuousClock()
-    let start = clock.now
+    let runStart = clock.now
+    // Statistics start AFTER the warmup window — see `warmup`'s doc comment
+    // for the invalid measurement that motivated it. `start` is the point
+    // every reported number is measured from, so achieved fps, the state
+    // tally, and face-lost episodes all describe the settled window only.
+    let start = runStart.advanced(by: .seconds(warmup))
     let deadline = start.advanced(by: .seconds(seconds))
+    var announcedMeasuring = warmup <= 0
+    if warmup > 0 {
+      print("warmup: \(String(format: "%.0f", warmup))s -- settle now, not yet measuring")
+    }
 
-    var frameCount = 0
     var lastReportedSecond = -1
-    // Latched from the FIRST frame that carries one, same "confirm once,
-    // don't keep re-reading" shape as `PipelineModel.actualCaptureDimensions`
-    // — the format is not expected to change mid-session, so there's
-    // nothing more to learn from later frames.
-    var actualDimensions: PixelDimensions?
+    // Per-frame accumulation lives in `LiveRunStats` (its own file) — see
+    // that type's doc comment for why a once-per-second sample could not
+    // answer the question §12.5 needed answered.
+    var stats = LiveRunStats()
 
     let watchdog = Task {
       try await Task.sleep(
@@ -154,17 +224,23 @@ struct Live: AsyncParsableCommand {
 
     do {
       for try await output in engine.stream(from: source) {
-        frameCount += 1
-        if actualDimensions == nil {
-          actualDimensions = output.capturedPixelDimensions
+        // Warmup frames are analyzed (so the pipeline and the camera's own
+        // exposure/tracking are fully warm when measurement begins) but
+        // contribute to nothing that gets reported.
+        guard clock.now >= start else { continue }
+        if !announcedMeasuring {
+          announcedMeasuring = true
+          print("measuring now for \(seconds)s -- hold position")
         }
+        stats.record(output, at: clock.now)
+
         let elapsed = clock.now - start
         let elapsedWholeSeconds = Int(elapsed.components.seconds)
         if elapsedWholeSeconds != lastReportedSecond {
           lastReportedSecond = elapsedWholeSeconds
           print(
-            "t=\(elapsedWholeSeconds)s frames=\(frameCount) state=\(output.analysis.signalState) "
-              + "faces=\(output.analysis.faceCount)")
+            "t=\(elapsedWholeSeconds)s frames=\(stats.frameCount) "
+              + "state=\(output.analysis.signalState) faces=\(output.analysis.faceCount)")
         }
         if clock.now >= deadline {
           break
@@ -174,9 +250,13 @@ struct Live: AsyncParsableCommand {
       print("Live analysis stopped early due to an error: \(error)")
     }
 
+    stats.finish(at: clock.now)
+
     return RunResult(
-      frameCount: frameCount, elapsedSeconds: Self.seconds(clock.now - start),
-      actualDimensions: actualDimensions)
+      frameCount: stats.frameCount, elapsedSeconds: Self.seconds(clock.now - start),
+      actualDimensions: stats.firstDimensions, stateCounts: stats.stateCounts,
+      faceLostEpisodes: stats.faceLostEpisodes, longestFaceLostMs: stats.longestFaceLostMs,
+      totalFaceLostMs: stats.totalFaceLostMs, observedDimensions: stats.observedDimensions)
   }
 
   /// `Duration.components` gives whole seconds plus attoseconds, not a
@@ -231,5 +311,41 @@ struct Live: AsyncParsableCommand {
         "actualWidth=unknown actualHeight=unknown (no frame was ever received) "
           + "requestedWidth=\(width) requestedHeight=\(height)")
     }
+    printSignalBreakdown(result)
   }
+
+  /// The per-FRAME truth the once-per-second `t=Ns` lines above cannot show —
+  /// see `RunResult.stateCounts`'s doc comment for the §12.5 field finding
+  /// that motivated it. Split from `printSummary` to stay under SwiftLint's
+  /// `function_body_length` limit, same as `ProbeCameraCommand`'s own
+  /// per-topic print helpers.
+  private func printSignalBreakdown(_ result: RunResult) {
+    let total = max(1, result.frameCount)
+    let order: [SignalState] = [.ok, .lowConfidence, .noFace, .noSignal]
+    let counts = order.map { state -> String in
+      let count = result.stateCounts[state] ?? 0
+      let percent = Double(count) * 100 / Double(total)
+      return "\(state)=\(count) (\(String(format: "%.1f", percent))%)"
+    }
+    print("signalStates, every frame: " + counts.joined(separator: " "))
+    print(
+      "faceLostEpisodes=\(result.faceLostEpisodes) "
+        + "longestFaceLostMs=\(result.longestFaceLostMs) "
+        + "totalFaceLostMs=\(result.totalFaceLostMs) "
+        + "(episodes are runs of noFace/noSignal -- what §7.3's ladder escalates on)")
+
+    // More than one distinct set means the delivered format changed
+    // mid-stream. Printed as a plain fact either way, never silently, since
+    // "we only ever looked at the first frame" is what PR #57's bug was.
+    if result.observedDimensions.count > 1 {
+      let described = result.observedDimensions.map { "\($0.width)x\($0.height)" }
+      print(
+        "WARNING: delivered format CHANGED mid-stream: "
+          + described.joined(separator: " then ")
+          + " -- see §12.5 (Center Stage restricts the device's zoom and frame-rate ranges).")
+    } else {
+      print("deliveredFormatStableAcrossRun=yes")
+    }
+  }
+
 }

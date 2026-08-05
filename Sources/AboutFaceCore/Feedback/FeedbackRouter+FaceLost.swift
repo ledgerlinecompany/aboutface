@@ -71,8 +71,28 @@ extension FeedbackRouter {
 
     if faceLostRung < 1 {
       guard elapsedMs >= faceLostEarconDelayMs else { return }
+      // The rung ADVANCES unconditionally; only the earcon is gated — the
+      // same split `faceLostSpeechEnabled` already uses at rung 2 below, and
+      // for the same reason: rungs 2 and 3 are reachable only THROUGH rung
+      // 1, and §7.3's 30s STOP is safety-critical. Suppressing the rung
+      // itself under Center Stage would strand the STOP, a far worse bug
+      // than the nagging being fixed here.
+      //
+      // §12.5, measured 2026-08-05: while Center Stage re-aims its crop,
+      // Vision loses the face constantly — 24.6% of frames across 31
+      // episodes in 30s, longest 2.5s, versus 2.4%/9/169ms for the same
+      // movement with Center Stage off. Every one of those clears this
+      // rung's 500ms Setup threshold, so the earcon fired continuously at a
+      // user sitting still in front of a camera framing them correctly. The
+      // face is not lost in any sense the user can act on: the OS is
+      // tracking them, and there is no correction for them to make. See
+      // `FeedbackRouter.faceLostEpisodeWasAudible`.
+      let event: AudioEvent? = centerStageActive ? nil : .faceLost
       faceLostRung = 1
-      await fire(event: .faceLost, phrase: nil, key: nil, at: time, bypassRateLimit: true)
+      if event != nil {
+        faceLostEpisodeWasAudible = true
+      }
+      await fire(event: event, phrase: nil, key: nil, at: time, bypassRateLimit: true)
       return
     }
 
@@ -85,6 +105,13 @@ extension FeedbackRouter {
       // this call produce zero renderer calls while `faceLostRung` still
       // advanced — rung 3 stays reachable exactly as if speech were on.
       let phrase = feedbackConfig.faceLostSpeechEnabled ? Lexicon.Instruction.noFace : nil
+      // Rung 2 is NOT suppressed under Center Stage. A five-second absence is
+      // a real absence — no measured Center Stage re-aim came close (longest
+      // 2.5s) — so this rung still means what it always meant, and the user
+      // who actually walked away still hears about it.
+      if phrase != nil {
+        faceLostEpisodeWasAudible = true
+      }
       await fire(event: nil, phrase: phrase, key: nil, at: time, bypassRateLimit: true)
       return
     }
@@ -195,14 +222,22 @@ extension FeedbackRouter {
   ) async {
     guard case .problem(.faceLost) = previous, next != previous else { return }
 
-    let hadEscalated = faceLostRung >= 1
-    // Rung 3 ("STOP") is a STRICT superset of "escalated" — it can only be
-    // reached after passing through rungs 1 and 2 — so `wasAway` implies
-    // `hadEscalated` and this branch never has to reconcile the two
-    // independently. Captured BEFORE the unconditional clear two lines
-    // down, since that's what decides whether to speak a recovery phrase.
+    // Captured BEFORE the unconditional clear below, since it is what
+    // decides whether to speak a recovery phrase.
     let wasAway = userLikelyAway
+    // "Did this episode ever make a sound," NOT "did it advance a rung."
+    // §12.5 split the two: under Center Stage rung 1 advances silently (see
+    // `tickFaceLostLadder`), and firing `.faceReacquired` for an absence the
+    // user was never told about is exactly how the face-gone/face-back
+    // cycling gets its second half. `wasAway` is OR'd in so an episode that
+    // reached rung 3 ALWAYS gets its recovery: after a 30s STOP the user
+    // must be told feedback resumed, even in the corner where rung 1 was
+    // suppressed AND rung 2's speech was turned off by config, which would
+    // otherwise leave `faceLostEpisodeWasAudible == false` after a genuine
+    // half-minute absence and strand the router in silence.
+    let hadEscalated = wasAway || faceLostEpisodeWasAudible
     faceLostRung = 0
+    faceLostEpisodeWasAudible = false
     // Clear UNCONDITIONALLY, not only inside `if wasAway` below. The
     // `wasAway` implication above is an invariant held by ARGUMENT, not by
     // the type system — if it is ever wrong (a future edit to the ladder, a

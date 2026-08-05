@@ -176,7 +176,15 @@ final class CenterStageController {
     case .disabled:
       return nil
     case .active:
-      return "Center Stage is on. Framing is automatic."
+      // Longer than the spoken phrase on purpose. This is the read-at-leisure
+      // surface, so it carries the tradeoff §12.5 measured (2026-08-05):
+      // Center Stage loses the face roughly ten times as often as ordinary
+      // movement does, because Vision cannot track through the crop being
+      // re-aimed. The maintainer decided this belongs here rather than in the
+      // spoken notice — learned once, in a place it can be re-read, instead
+      // of lengthening an utterance heard on every toggle.
+      return "Center Stage is on. Framing is automatic. Face tracking is less reliable while "
+        + "Center Stage re-aims the camera, so brief face-lost alerts are suppressed."
     case .notActive:
       return "Center Stage is off. Manual framing required."
     case .unknown:
