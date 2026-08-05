@@ -5,6 +5,7 @@
 import AVFoundation
 import AboutFaceCore
 import Foundation
+
 // swiftlint:enable sorted_imports
 
 /// `PipelineModel`'s capture/engine session lifecycle — `start()` and

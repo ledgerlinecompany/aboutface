@@ -39,6 +39,27 @@ struct ConfigStoreTests {
     #expect(result.config == config)
   }
 
+  /// §12.4's acknowledgement is only meaningful if it survives relaunch —
+  /// "one-time acknowledgeable" means once ever, not once per launch. This
+  /// pins the persistence, and specifically that the per-device keying
+  /// survives the round trip rather than collapsing to a single flag.
+  @Test("Acknowledged virtual-camera IDs round-trip, per device")
+  func acknowledgedVirtualCameraIDsRoundTrip() throws {
+    let url = temporaryURL()
+    try prepare(url)
+    defer { cleanUp(url) }
+
+    var config = Config.defaults
+    config.camera.acknowledgedVirtualCameraIDs = ["obs-uid-1", "camo-uid-2"]
+    try ConfigStore.save(config, to: url)
+
+    let result = ConfigStore.load(from: url)
+    #expect(result.issue == nil)
+    #expect(result.config.camera.acknowledgedVirtualCameraIDs == ["obs-uid-1", "camo-uid-2"])
+    // A different device must NOT inherit another device's acknowledgement.
+    #expect(result.config.camera.acknowledgedVirtualCameraIDs.contains("some-other-uid") == false)
+  }
+
   @Test("Missing file loads defaults and reports .missing")
   func missingFile() {
     let result = ConfigStore.load(from: temporaryURL())
