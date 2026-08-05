@@ -36,6 +36,16 @@ struct ProbeCamera: AsyncParsableCommand {
       Run this while another app (Zoom, FaceTime, ...) already has the same camera open, to \
       empirically check whether the requested format is honored under concurrent access (§12.6), \
       and to compare isInUseByAnotherApplication against the CoreMediaIO reading (§12.2).
+
+      Also prints §12.5's Center Stage read layer: centerStageControlMode/isCenterStageEnabled \
+      (process-wide) plus isCenterStageActive for the selected device, read once BEFORE this \
+      tool opens its own session and again AFTER -- a difference between the two is meaningful, \
+      not noise, since isCenterStageActive depends on the device's current configuration and \
+      this tool's own session (or its requested format) can change it. Also prints a per-device \
+      breakdown of Center Stage support/activity across every camera, read before this tool \
+      opens anything, so it's possible to tell which cameras are even Center-Stage-capable. \
+      Nothing here has been verified against real Center Stage hardware yet -- this is read-only \
+      instrumentation, not a tuned feature; see §12.5 in docs/spec.md.
       """
   )
 
@@ -93,6 +103,7 @@ struct ProbeCamera: AsyncParsableCommand {
         + "pixel format \(result.deliveredPixelFormat)")
     print("in use by another application: \(result.isInUseByAnotherApplication ? "yes" : "no")")
     printCMIOReadings(result)
+    printCenterStage(result)
 
     let dimensionsDisagree =
       result.deviceGrantedWidth != result.deliveredFrameWidth
@@ -140,6 +151,44 @@ struct ProbeCamera: AsyncParsableCommand {
     }
   }
 
+  /// §12.5's Center Stage read layer: before/after-session-open readings
+  /// for the selected device, plus the per-device capability breakdown.
+  /// Split out of `printResult` purely to stay under SwiftLint's
+  /// `function_body_length` limit, same as `printCMIOReadings`.
+  private static func printCenterStage(_ result: CameraFormatProbe.Result) {
+    print(
+      "Center Stage, this device, read BEFORE this tool opened its own session: "
+        + describe(result.centerStageBeforeOpen))
+    print(
+      "Center Stage, this device, read AFTER this tool opened its own session: "
+        + describe(result.centerStageAfterOpen))
+    // swift-format requires the brace on its own line after a multiline
+    // condition; swiftlint's opening_brace rule disagrees. Format wins —
+    // same conflict documented at `AnalysisEngine+GazeBaseline.swift`'s own
+    // call site.
+    // swiftlint:disable opening_brace
+    if case .found(let before) = result.centerStageBeforeOpen,
+      case .found(let after) = result.centerStageAfterOpen,
+      before.deviceReportsActive != after.deviceReportsActive
+    {
+      // swiftlint:enable opening_brace
+      print(
+        "note: Center Stage active state DIFFERS before vs after opening this session -- "
+          + "this is meaningful, not noise (§12.5).")
+    }
+    print(
+      "Center Stage, per device, read BEFORE this tool opened its own session:")
+    if result.centerStageDeviceReadings.isEmpty {
+      print("  (no video devices enumerated)")
+    }
+    for device in result.centerStageDeviceReadings {
+      print(
+        "  \(device.deviceLocalizedName) (\(device.deviceUniqueID)): "
+          + "any format supports Center Stage: \(device.anyFormatSupports ? "yes" : "no"); "
+          + "currently reports active: \(device.deviceReportsActive ? "yes" : "no")")
+    }
+  }
+
   private static func formatted(_ value: Double) -> String {
     String(format: "%.2f", value)
   }
@@ -158,6 +207,37 @@ struct ProbeCamera: AsyncParsableCommand {
       return "device not found (no CoreMediaIO device UID matched)"
     case .propertyReadFailed(let status):
       return "property read failed (OSStatus \(status))"
+    }
+  }
+
+  /// Renders §12.5's `CenterStageDeviceReading` factually. `.deviceNotFound`
+  /// prints distinctly from any "off" reading on purpose -- same rationale
+  /// as `describe(_ reading: CMIORunningSomewhereReading)` above: a device
+  /// this call could not read must never look, on the page, like a device
+  /// that was read and came back with Center Stage off.
+  private static func describe(_ reading: CenterStageDeviceReading) -> String {
+    switch reading {
+    case .found(let reading):
+      return "control mode \(describe(reading.controlMode)); "
+        + "system-enabled (process-wide): \(reading.systemEnabled ? "yes" : "no"); "
+        + "active format supports Center Stage: \(reading.activeFormatSupports ? "yes" : "no"); "
+        + "any format supports Center Stage: \(reading.anyFormatSupports ? "yes" : "no"); "
+        + "device reports active: \(reading.deviceReportsActive ? "yes" : "no")"
+    case .deviceNotFound:
+      return "could not read -- device not found (did it disconnect?)"
+    }
+  }
+
+  private static func describe(_ mode: CenterStageControlMode) -> String {
+    switch mode {
+    case .user:
+      return "user"
+    case .app:
+      return "app"
+    case .cooperative:
+      return "cooperative"
+    case .unknown(let raw):
+      return "unknown (raw \(raw))"
     }
   }
 
