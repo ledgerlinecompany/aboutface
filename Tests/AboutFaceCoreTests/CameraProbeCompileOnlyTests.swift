@@ -80,6 +80,19 @@ struct CameraProbeCompileOnlyTests {
     #expect(await monitor.activePath == nil)
   }
 
+  // `CameraMismatchMonitor` (§12.3's platform-probe layer) only touches
+  // CoreMediaIO inside `start()`, via `CMIOAllDevicesBusyReader
+  // .currentRunningStates()` — same hardware-backed category as everything
+  // else in this file, so `start()`/`stop()` are never called here. `init`
+  // only sets up an `AsyncStream` and touches no hardware, so it IS
+  // constructed for real, matching this file's `CameraInUseMonitor`
+  // convenience-init precedent immediately above.
+  @Test("CameraMismatchMonitor constructs without touching CoreMediaIO")
+  func mismatchMonitorConstructs() {
+    let monitor = CameraMismatchMonitor()
+    _ = monitor
+  }
+
   @Test("PixelFormatCode renders a known four-character code")
   func pixelFormatCodeRendersKnownCode() {
     // kCVPixelFormatType_32BGRA == 'BGRA' as a four-character code.

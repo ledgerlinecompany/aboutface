@@ -29,12 +29,20 @@ struct AboutFaceApp: App {
   // see `MonitorReminderController`'s doc comment for why it must outlive
   // any single pipeline run.
   @State private var monitorReminderController = MonitorReminderController()
+  // §12.3 mismatch warning: same "@State on AboutFaceApp, one instance for
+  // the app's lifetime" pattern as `monitorReminderController` — see
+  // `CameraMismatchController`'s doc comment. A separate instance, not
+  // folded into `monitorReminderController`, because the two watch
+  // different CoreMediaIO signals (one device vs. every device) and run
+  // under different conditions (idle-only vs. regardless of capture state).
+  @State private var cameraMismatchController = CameraMismatchController()
 
   var body: some Scene {
     WindowGroup("About Face — Setup", id: "setup") {
       SetupWindowView(
         model: model, hotkeyCenter: hotkeyCenter,
-        monitorReminderController: monitorReminderController
+        monitorReminderController: monitorReminderController,
+        cameraMismatchController: cameraMismatchController
       )
       .frame(minWidth: 480, minHeight: 420)
     }

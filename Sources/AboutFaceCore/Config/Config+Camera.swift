@@ -72,6 +72,17 @@ extension Config {
     /// mandatory rather than optional.
     public var reminderDelayMs: Int
 
+    /// §12.3 mismatch warning: master on/off switch for
+    /// `CameraMismatchStateMachine`'s `isEnabled` gate (§0/§11: every
+    /// tunable lives in `Config`, never a hardcoded `true`). Default `true`
+    /// — the PR brief's decided default. Unlike `monitorReminderEnabled`,
+    /// disabling this does NOT need any "does not retroactively announce"
+    /// footnote: `CameraMismatchStateMachine.Outcome` is a live status
+    /// read, not a one-shot utterance, so flipping this back on shows
+    /// whatever is currently true immediately — see that type's doc
+    /// comment ("Why `isEnabled` is a live gate, not part of the episode").
+    public var cameraMismatchWarningEnabled: Bool
+
     /// §5.1/§5.2 per-mode capture + analysis settings: one
     /// `CameraModeCaptureSettings` value per `FeedbackMode` case, following
     /// the SAME per-mode-fields shape `FeedbackConfig.setup`/`.monitor`
@@ -103,6 +114,7 @@ extension Config {
       forceBusyPolling: Bool = false,
       monitorReminderEnabled: Bool = true,
       reminderDelayMs: Int = 1500,
+      cameraMismatchWarningEnabled: Bool = true,
       setup: CameraModeCaptureSettings = CameraModeCaptureSettings(
         width: 1280, height: 720, frameRate: 30, analysisHz: nil
       ),
@@ -116,6 +128,7 @@ extension Config {
       self.forceBusyPolling = forceBusyPolling
       self.monitorReminderEnabled = monitorReminderEnabled
       self.reminderDelayMs = reminderDelayMs
+      self.cameraMismatchWarningEnabled = cameraMismatchWarningEnabled
       self.setup = setup
       self.monitor = monitor
     }

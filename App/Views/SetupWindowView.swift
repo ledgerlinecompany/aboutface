@@ -14,6 +14,7 @@ struct SetupWindowView: View {
   @Bindable var model: PipelineModel
   let hotkeyCenter: HotkeyCenter
   let monitorReminderController: MonitorReminderController
+  let cameraMismatchController: CameraMismatchController
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
@@ -65,6 +66,19 @@ struct SetupWindowView: View {
         }
       }
 
+      // §12.3: another camera appears to be running while this one is
+      // selected — informational and dismissible, NEVER blocking (§12.3's
+      // own wording): it must not, and does not, disable Start/Stop or any
+      // other control. See `CameraMismatchController`'s doc comment for the
+      // corrected heuristic this notice is built on and
+      // `model.cameraMismatchWarning`'s doc comment for exactly what each
+      // wording means.
+      if let message = model.cameraMismatchWarning {
+        Section("Possible camera mismatch") {
+          cameraMismatchNoticeRow(message)
+        }
+      }
+
       // §8: one or more global hotkeys failed to register (most likely
       // another app already owns the combo) — never a silent no-op, see
       // `PipelineModel.hotkeyRegistrationIssue`'s doc comment.
@@ -85,8 +99,10 @@ struct SetupWindowView: View {
       hotkeyCenter.updateRegistrations(newValue)
     }
     .task { monitorReminderBootstrap() }
+    .task { cameraMismatchBootstrap() }
     .onChange(of: model.selectedCameraID) { _, _ in
       monitorReminderController.deviceChanged()
+      cameraMismatchController.deviceChanged()
     }
   }
 
@@ -109,6 +125,14 @@ struct SetupWindowView: View {
   /// with no window focused.
   private func monitorReminderBootstrap() {
     monitorReminderController.configure(model: model)
+  }
+
+  /// §12.3: same "first view guaranteed to exist at launch" reasoning as
+  /// `monitorReminderBootstrap()` above — see `CameraMismatchController`'s
+  /// doc comment for why this signal must be observed while a Setup window
+  /// exists rather than only while idle.
+  private func cameraMismatchBootstrap() {
+    cameraMismatchController.configure(model: model)
   }
 
   // MARK: - Camera permission
@@ -242,6 +266,25 @@ struct SetupWindowView: View {
       "Command Control Shift Slash. Immediately cuts audio and speech feedback; analysis keeps "
         + "running. This is a temporary in-app stand-in for the global shortcut planned for a "
         + "later release.")
+  }
+
+  /// §12.3's "never blocking... dismissible" notice row: the message text
+  /// plus a "Dismiss" button, both one VoiceOver-navigable unit's worth of
+  /// controls rather than a bare `Text` — a blind user needs an obvious,
+  /// discoverable way to act on this, not just to hear it. Dismissing calls
+  /// straight through to `CameraMismatchController.dismiss()`, which is the
+  /// only thing that changes `model.cameraMismatchWarning`; this view does
+  /// no state of its own (CLAUDE.md: keep `App/` thin).
+  private func cameraMismatchNoticeRow(_ message: String) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(message)
+        .foregroundStyle(.orange)
+      Button("Dismiss") {
+        cameraMismatchController.dismiss()
+      }
+      .accessibilityHint(
+        "Dismisses this notice until the condition clears and a new mismatch is detected.")
+    }
   }
 
   private func configLoadIssueRow(_ issue: ConfigStore.LoadIssue) -> some View {

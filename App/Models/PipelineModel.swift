@@ -136,6 +136,17 @@ public final class PipelineModel {
   /// not yet configured. Surfaced next to `captureErrorMessage`.
   public internal(set) var monitorReminderIssue: String?
 
+  /// §12.3 mismatch warning: set by `CameraMismatchController` when
+  /// `CameraMismatchStateMachine` decides a notice should show — a
+  /// non-selected camera appears to be running, or the cross-device signal
+  /// itself is unreadable (see `CameraMismatchClassifier`'s doc comment for
+  /// what each case means). `nil` when clear, dismissed, disabled, or not
+  /// yet configured. Deliberately a plain `String?`, the same shape
+  /// `monitorReminderIssue`/`hotkeyRegistrationIssue` use — this is
+  /// VoiceOver-readable text, never spoken (§12.3 is informational, not an
+  /// automatic utterance; see `CameraMismatchController`'s doc comment).
+  public internal(set) var cameraMismatchWarning: String?
+
   /// §8: per-action `RegisterEventHotKey` failures, written by
   /// `HotkeyCenter.updateRegistrations(_:)` (see that method's doc comment
   /// for why a failure must never be silently discarded). `nil` when every
