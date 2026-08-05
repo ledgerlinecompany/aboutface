@@ -718,10 +718,71 @@ is a candidate substitute: unlike `isInUseByAnotherApplication` it is read
 per-device — the reference probe enumerated every device on the test
 machine (the built-in camera, an iPhone Continuity camera, and a Desk View
 camera) and reported each one's running state independently — which is a
-natural fit for exactly this cross-device comparison, and it works
-precisely when the mismatch warning matters: while About Face is idle and
-not itself capturing. Designing and building the replacement is separate,
-later work, not decided here.
+natural fit for exactly this cross-device comparison. Designing and
+building the replacement was separate, later work — now done; see below.
+
+**Status: shipped, on a corrected heuristic.** Built on
+`CMIOAllDevicesBusyReader.currentRunningStates()` (§12.2's per-device
+signal, one reading per enumerable CoreMediaIO device). The literal rule
+above — "another device running while the SELECTED one is not" — turned out
+to silently assume About Face itself is not using the selected camera. It
+isn't a safe assumption: `kCMIODevicePropertyDeviceIsRunningSomewhere`
+reads true for **any** process streaming, including About Face's own
+Setup/Monitor capture (§12.2's asymmetry), so the instant this app opens
+the selected device, that device's own reading stops being "not running" —
+and the literal rule can never fire in exactly the scenario it exists for:
+About Face monitoring camera A while the real call is on camera B. The user
+who most needs this warning is precisely the one for whom the literal rule
+goes permanently silent.
+
+**Corrected rule, implemented:** warn when any NON-selected device reads
+`.running` — full stop, never consulting the selected device's own reading
+in either direction. This works identically whether About Face is idle or
+actively capturing, unlike the literal rule, because it never needs to
+distinguish "someone else" from "us" on the selected device — it simply
+never asks that question. A conferencing app is presumably on one camera;
+another camera running is the only signal CoreMediaIO can actually give,
+regardless of what About Face itself is doing at that moment.
+
+Accepted false positive, stated honestly (also documented at the type
+level, `CameraMismatchClassifier.swift`): this fires whenever ANY other
+camera is running, not only when a conferencing app is confusably on it —
+Photo Booth, a second video app, or a background utility touching a
+different camera produces the identical reading. CoreMediaIO gives no way
+to tell those apart ("the API tells you a device is busy, not which app
+holds it," verbatim above). This is judged acceptable because the surface
+was already designed for it: "informational and dismissible, never
+blocking." The cost of a false positive is one dismissible notice, not a
+wrong decision made on the user's behalf.
+
+Failed reads (`.deviceNotFound`/`.propertyReadFailed`) are treated as "not
+running" for the running-device comparison, but a total read failure is
+never presented as an all-clear: if every device in a snapshot failed to
+read (including an empty snapshot), `CameraMismatchClassifier` reports
+`.unreliable`, a third classification distinct from `.clear`/`.mismatch` —
+repeating §12.2's own "a signal that 'worked' while silently uncertain"
+failure was the one thing this section could not also do quietly.
+
+Structure: `CameraMismatchClassifier` (pure per-snapshot classification,
+`AboutFaceCore`) → `CameraMismatchStateMachine` (debounce, reusing
+`Config.Camera.busyDebounceMs` — no second debounce for one signal, and a
+dismiss/re-arm discipline: dismissing suppresses the current episode;
+re-arming happens only when the debounced classification settles back to
+`.clear`, after which the next non-clear settle shows again with no
+explicit un-dismiss) → `CameraMismatchMonitor` (Core actor, polls
+`currentRunningStates()` on `Config.Camera.busyPollIntervalSeconds` — no
+per-device listener exists for "every device, including ones that connect
+later," so this is a poll loop, gated to run only while a camera is
+selected and a Setup window exists, never an always-on background timer) →
+`CameraMismatchController` (App/, thin, wires the above to
+`PipelineModel.cameraMismatchWarning`). Config-keyed via
+`Config.Camera.cameraMismatchWarningEnabled`, default `true`, no
+`Config.version` bump. Surfaced as a dismissible, VoiceOver-readable
+notice in the Setup window, next to `monitorReminderIssue`/
+`hotkeyRegistrationIssue` — never spoken automatically (unlike §12.2's
+reminder; this section's own wording is "informational," and a second
+unprompted utterance is a product decision left to the maintainer), and
+never blocking any control.
 
 ### 12.4 Virtual cameras — silent-wrongness risk
 
