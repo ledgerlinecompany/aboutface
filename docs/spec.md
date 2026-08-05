@@ -844,6 +844,48 @@ setting** — the conferencing app's state and this app's state can differ.
 - Silently reporting a framing problem the OS is already correcting is worse than
   reporting nothing.
 
+**Status (2026-08-04): read layer only, nothing built on top of it yet.**
+This PR added `CenterStageReading`/`CenterStageReader`/`CenterStageDeviceReading`
+(`AboutFaceCore`) and wired `probe-camera` to print what these signals actually
+report — on the selected device, before and after this tool opens its own
+capture session, plus a per-device capability breakdown across every camera —
+and nothing else: no feedback routing, no Query change, no `Config` key, no
+Setup-window UI. §12.2 shipped a camera-gating feature on
+`isInUseByAnotherApplication` that turned out to read `false` during a live
+Zoom call, and the whole feature had to be un-shipped; this section is
+deliberately sequenced so that doesn't happen again here.
+
+**Correction to this section's own text, from `AVCaptureDevice.h` (verified
+against the header, 2026-08-04):** "it is a per-capture-session setting,"
+above, is not quite right. `centerStageControlMode` and `isCenterStageEnabled`
+are **class** properties — process-wide, driven by the user's own Control
+Center toggle, not by a capture session. What actually varies per
+device/configuration is `device.isCenterStageActive`, an **instance**
+property: per the header, "a particular AVCaptureDevice instance may return
+YES for this property, depending whether it supports the feature in its
+current configuration." `CenterStageReading.automaticFramingInEffect` is
+therefore `deviceReportsActive` (`isCenterStageActive`) alone — see that
+computed property's doc comment for the full "which direction is safe to be
+wrong in" argument, the same reasoning §12.4 uses for word-boundary matching.
+
+**Permanent blind spot, same posture as §12.4's name-list gap:** this process
+can only ever observe Center Stage on its OWN capture. A conferencing app's
+capture session can have Center Stage active while About Face's does not, or
+the reverse, and nothing here can see that. There is no more reliable signal
+available — reading `isCenterStageActive` on our own capture is the most
+specific answer AVFoundation exposes.
+
+**Nothing is verified on hardware yet.** Unlike §12.2/§12.3/§12.6, this
+section has no live measurement behind it — this PR deliberately takes no
+measurement at all, landing the instrument first so the measurement can then be
+taken against it. The bullets above (query the two class
+properties, speak "Center Stage is on, framing is automatic," shift the
+report) remain the design intent, but are deliberately not built until the
+maintainer runs `probe-camera` on real Center Stage hardware and confirms what
+`deviceReportsActive` actually reports before and after About Face opens its
+own session, and specifically at the Monitor (640×480) format — exactly the
+before/after pair this PR's read layer exists to produce.
+
 ### 12.6 Concurrent access test
 
 Write an explicit test/tool that opens the selected device **while another app

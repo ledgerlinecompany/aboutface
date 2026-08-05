@@ -37,6 +37,18 @@ import CoreVideo
 ///    negotiation by another process).
 /// 4. `isInUseByAnotherApplication` — read once *before* this probe opens
 ///    its own session (so it reflects only OTHER processes, not this one).
+/// 5. `centerStageBeforeOpen`/`centerStageAfterOpen` (§12.5's read layer) —
+///    the same `CenterStageReader.read(forUniqueID:)` reading, taken once
+///    before this probe opens its own session and again after the session
+///    started and a frame was delivered. The pair is the point: per
+///    `AVCaptureDevice.isCenterStageActive`'s header, that instance property
+///    "depends on the device's current configuration," so it is entirely
+///    plausible for it to read `false` with no session open and `true` once
+///    a Center-Stage-capable session is running — or for the Monitor
+///    default (640×480) to turn it off where a higher-resolution Setup
+///    format would not. Only comparing the two readings can show that; see
+///    `CameraFormatProbe.Result`'s doc comments for exactly where each is
+///    taken.
 ///
 /// ## Concurrency
 ///
@@ -78,13 +90,7 @@ public actor CameraFormatProbe {
     frameTimeoutSeconds: Double
   ) async throws -> Result {
     let device = try resolveDevice(uniqueID: deviceUniqueID)
-    // Read BEFORE we touch the session ourselves, per the type-level doc
-    // comment. All three readings below are taken at this same instant, so
-    // they describe the same moment even though they come from different
-    // APIs.
-    let busyBeforeOpen = device.isInUseByAnotherApplication
-    let cmioBeforeOpen = CMIOPropertyReader.runningSomewhere(forUniqueID: device.uniqueID)
-    let cmioAllDeviceReadingsBeforeOpen = CMIOAllDevicesBusyReader.currentRunningStates()
+    let preOpen = capturePreOpenReadings(device: device)
 
     let exactMatch = try hasExactFormatMatch(
       device: device, width: width, height: height, frameRate: frameRate)
@@ -145,11 +151,41 @@ public actor CameraFormatProbe {
       deliveredFrameWidth: outcome.deliveredWidth,
       deliveredFrameHeight: outcome.deliveredHeight,
       deliveredPixelFormat: outcome.deliveredPixelFormat,
-      isInUseByAnotherApplication: busyBeforeOpen,
-      cmioRunningSomewhereBeforeOpen: cmioBeforeOpen,
+      isInUseByAnotherApplication: preOpen.busy,
+      cmioRunningSomewhereBeforeOpen: preOpen.cmio,
       cmioRunningSomewhereAfterOpen: outcome.cmioRunningSomewhereAfterOpen,
-      cmioAllDeviceReadings: cmioAllDeviceReadingsBeforeOpen
+      cmioAllDeviceReadings: preOpen.cmioAllDevices,
+      centerStageBeforeOpen: preOpen.centerStage,
+      centerStageAfterOpen: outcome.centerStageAfterOpen,
+      centerStageDeviceReadings: preOpen.centerStageAllDevices
     )
+  }
+
+  /// Everything §12.2/§12.5's before/after pairing reads BEFORE this probe
+  /// touches its own session, bundled purely to keep `probe(...)`'s own
+  /// body under SwiftLint's `function_body_length` limit — same rationale
+  /// as `CaptureRequest` bundling `captureOneFrame`'s parameters. All five
+  /// readings are taken at the same instant, so they describe the same
+  /// moment even though they come from different APIs; see this type's
+  /// doc comment (items 4 and 5) for what each one means.
+  private struct PreOpenReadings {
+    let busy: Bool
+    let cmio: CMIORunningSomewhereReading
+    let cmioAllDevices: [CMIODeviceRunningState]
+    let centerStage: CenterStageDeviceReading
+    let centerStageAllDevices: [CenterStageDeviceSummary]
+  }
+
+  private static func capturePreOpenReadings(device: AVCaptureDevice) -> PreOpenReadings {
+    // §12.5's read layer re-resolves by uniqueID rather than reading
+    // straight off `device` — see `CenterStageReader.read(forUniqueID:)`'s
+    // doc comment for why.
+    PreOpenReadings(
+      busy: device.isInUseByAnotherApplication,
+      cmio: CMIOPropertyReader.runningSomewhere(forUniqueID: device.uniqueID),
+      cmioAllDevices: CMIOAllDevicesBusyReader.currentRunningStates(),
+      centerStage: CenterStageReader.read(forUniqueID: device.uniqueID),
+      centerStageAllDevices: CenterStageReader.currentSummaries())
   }
 
   private static func resolveDevice(uniqueID: String?) throws -> AVCaptureDevice {
@@ -220,6 +256,11 @@ public actor CameraFormatProbe {
     /// doc comment for why that timing matters (our own session must still
     /// be open for this to show the self-detection effect).
     let cmioRunningSomewhereAfterOpen: CMIORunningSomewhereReading
+    /// Read at the same post-start-and-post-frame, pre-stop point as
+    /// `cmioRunningSomewhereAfterOpen` — see `Result.centerStageAfterOpen`'s
+    /// doc comment and this type's item-5 doc comment for why this timing
+    /// is the entire point of capturing it at all.
+    let centerStageAfterOpen: CenterStageDeviceReading
   }
 
   /// Bundles `captureOneFrame`'s inputs — purely to keep that function's
@@ -294,6 +335,9 @@ public actor CameraFormatProbe {
         // before `stopRunning()` below, not after.
         let cmioAfterOpen = CMIOPropertyReader.runningSomewhere(
           forUniqueID: deviceBox.device.uniqueID)
+        // Same "while our own session is still running" timing as above --
+        // see `Result.centerStageAfterOpen`'s doc comment.
+        let centerStageAfterOpen = CenterStageReader.read(forUniqueID: deviceBox.device.uniqueID)
         if sessionBox.session.isRunning {
           sessionBox.session.stopRunning()
         }
@@ -305,7 +349,8 @@ public actor CameraFormatProbe {
             deviceGrantedWidth: Int(dims.width),
             deviceGrantedHeight: Int(dims.height),
             deviceGrantedFrameRate: grantedFrameRate,
-            cmioRunningSomewhereAfterOpen: cmioAfterOpen
+            cmioRunningSomewhereAfterOpen: cmioAfterOpen,
+            centerStageAfterOpen: centerStageAfterOpen
           ))
       }
     }

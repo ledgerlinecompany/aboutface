@@ -82,6 +82,40 @@ extension CameraFormatProbe {
     /// since none of the readings are contaminated by this probe's own
     /// capture yet.
     public let cmioAllDeviceReadings: [CMIODeviceRunningState]
+
+    /// §12.5's read layer: `CenterStageReader.read(forUniqueID:)` for the
+    /// SAME device, read at the SAME "before this probe opened its own
+    /// session" point as `cmioRunningSomewhereBeforeOpen`. Per
+    /// `AVCaptureDevice.isCenterStageActive`'s header, this instance
+    /// property "depends on the device's current configuration" -- with no
+    /// session open, that configuration is whatever the device defaulted to
+    /// before this probe touched it, which may or may not be a
+    /// Center-Stage-capable format. Only comparing this against
+    /// `centerStageAfterOpen` can show whether opening OUR session (or the
+    /// specific requested format) changes anything.
+    public let centerStageBeforeOpen: CenterStageDeviceReading
+
+    /// The same read, taken again AFTER this probe's own session started
+    /// and a frame was delivered -- the SAME post-start-and-post-frame,
+    /// pre-stop point `cmioRunningSomewhereAfterOpen` is read at. This
+    /// pairing is the entire point of §12.5's read layer: it is entirely
+    /// possible for `deviceReportsActive` to read `false` before any
+    /// session is open and `true` once a Center-Stage-capable session is
+    /// running, or for a low-resolution Monitor format to turn it off where
+    /// a higher-resolution Setup format would not. Only the pair can show
+    /// that -- neither reading alone can. `.deviceNotFound` here (rather
+    /// than at `centerStageBeforeOpen`) would mean the device disconnected
+    /// during this probe's frame wait -- itself a meaningful finding, not
+    /// noise.
+    public let centerStageAfterOpen: CenterStageDeviceReading
+
+    /// One `CenterStageDeviceSummary` per enumerable video device (§12.5's
+    /// per-device breakdown, mirroring `cmioAllDeviceReadings`'s per-device
+    /// shape), read at the same "before this probe opened its own session"
+    /// point as `centerStageBeforeOpen` -- lets the maintainer identify
+    /// which of his cameras is even Center-Stage-capable before this
+    /// probe's own capture can affect any of their readings.
+    public let centerStageDeviceReadings: [CenterStageDeviceSummary]
   }
 }
 

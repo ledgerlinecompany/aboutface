@@ -99,6 +99,36 @@ struct CameraProbeCompileOnlyTests {
     let code: UInt32 = 0x4247_5241
     #expect(PixelFormatCode.string(from: code) == "BGRA")
   }
+
+  // `CenterStageReader.read(device:)` talks directly to an `AVCaptureDevice`
+  // instance, so (like everything else CoreMediaIO/AVFoundation-backed in
+  // this file) it is signature-only checked, never called. `currentSummaries()`
+  // enumerates real hardware, so its *return count* is not asserted (varies
+  // by machine) -- only that it has the documented signature, same
+  // convention as `CMIOAllDevicesBusyReader.currentRunningStates` above.
+  // `read(forUniqueID:)` IS called for real below, because
+  // "nonexistent-device-for-testing" cannot resolve on any machine,
+  // camera hardware or none -- same reasoning as
+  // `CMIOCameraBusyProviderThrowsForUnresolvableDevice` above.
+
+  @Test("CenterStageReader.read(device:) has the documented signature")
+  func centerStageReadDeviceSignatureCompiles() {
+    let fn: (AVCaptureDevice) -> CenterStageReading = CenterStageReader.read(device:)
+    _ = fn
+  }
+
+  @Test("CenterStageReader.currentSummaries has the documented signature")
+  func centerStageCurrentSummariesSignatureCompiles() {
+    let fn: () -> [CenterStageDeviceSummary] = CenterStageReader.currentSummaries
+    _ = fn
+  }
+
+  @Test("CenterStageReader.read(forUniqueID:) returns .deviceNotFound for an unresolvable uniqueID")
+  func centerStageReaderDeviceNotFoundForUnresolvableID() {
+    #expect(
+      CenterStageReader.read(forUniqueID: "nonexistent-device-for-testing")
+        == .deviceNotFound)
+  }
 }
 
 /// `CameraSessionPreset` (the fix for the production bug `probe-camera`
