@@ -939,13 +939,45 @@ this app cannot back up while Center Stage owns the crop. Config-keyed via
 itself rather than just the notice, so none of the three suppression sites
 needs its own copy of the check.
 
-**Not yet built: anything that reads a live signal.** No app-side poller
-calls `setCenterStageActive` yet — no `CenterStageMonitor`/
-`CenterStageController` analogous to §12.3's `CameraMismatchMonitor`/
-`CameraMismatchController`, and no Setup-window surface. Everything above is
-exercised only by `FeedbackRouterCenterStageTests`/`QueryComposerTests`
-driving the router directly; until that wiring lands, `centerStageActive`
-never leaves `false` in the running app.
+**Status (2026-08-05): app-side wiring shipped — the signal is now live.**
+`CenterStageMonitor` (Core) polls `CenterStageReader.read(forUniqueID:)` for
+the selected device on `Config.Camera.busyPollIntervalSeconds`; there is no
+per-device listener for this property, so it is a poll loop, started only
+while a camera is actually selected rather than as an always-on timer — the
+same restraint and the same cadence field §12.3's monitor uses.
+`CenterStageClassifier` turns each reading into a `CenterStageSignal`,
+`CenterStageStateMachine` debounces it on `Config.Camera.busyDebounceMs` (§4/§7
+hysteresis, and §0's "no second debounce for one underlying signal"), and the
+App-side `CenterStageController` drives both
+`FeedbackRouter.setCenterStageActive(_:at:)` and the Setup window's notice.
+
+**Three states, never two.** A device that cannot be resolved is `.unknown`,
+kept distinct from `.notActive` all the way out to the UI, which reports
+"Center Stage status could not be determined for the selected camera" rather
+than the confident "off" a two-state `Bool` would have forced. For the
+router's boolean both resolve to *not active*: over-detection would silence
+framing feedback on a camera nothing is auto-framing, which
+`automaticFramingInEffect`'s doc comment establishes as the worse direction to
+be wrong in. This is the same refusal to let "couldn't read this" masquerade
+as an all-clear that §12.3's `.unreliable` classification exists for.
+
+**Debug override.** `PipelineModel.centerStageDebugOverride` is a tri-state
+(`nil` = follow the real signal), settable from the debug panel, so the
+suppression behavior can be judged by ear without depending on the poller —
+or on Center-Stage-capable hardware — being available. It wins over the
+poller and is re-resolved on every tick, so a poll landing mid-override
+cannot silently revert it. It deliberately never writes
+`centerStageNotice`: the Setup window keeps reporting what the hardware
+actually says even while the router is being forced, so a forced value can
+only ever appear as behavior, never as a fabricated reading. Removable once
+§13's Phase 4.5 presentation pass reaches this surface.
+
+**Still unverified by ear.** Two judgment calls await the maintainer's own
+listening: the arrival chime is suppressed under Center Stage (it marks the
+end of a correction the user did not make — but its absence may read as the
+app having died), and the falling edge speaks as well as the rising one (the
+beacon resumes there, and an unexplained tone reappearing is the same
+disorientation inverted). Both are trivially reversible.
 
 ### 12.6 Concurrent access test
 

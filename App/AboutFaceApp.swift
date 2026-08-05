@@ -36,13 +36,22 @@ struct AboutFaceApp: App {
   // different CoreMediaIO signals (one device vs. every device) and run
   // under different conditions (idle-only vs. regardless of capture state).
   @State private var cameraMismatchController = CameraMismatchController()
+  // §12.5 Center Stage awareness: same "@State on AboutFaceApp, one instance
+  // for the app's lifetime" pattern as `cameraMismatchController` — see
+  // `CenterStageController`'s doc comment. A separate instance because it
+  // watches a third, differently-shaped signal (one device's
+  // `isCenterStageActive`, via AVFoundation rather than CoreMediaIO) and
+  // additionally drives `FeedbackRouter.setCenterStageActive`, which neither
+  // of the other two controllers touches.
+  @State private var centerStageController = CenterStageController()
 
   var body: some Scene {
     WindowGroup("About Face — Setup", id: "setup") {
       SetupWindowView(
         model: model, hotkeyCenter: hotkeyCenter,
         monitorReminderController: monitorReminderController,
-        cameraMismatchController: cameraMismatchController
+        cameraMismatchController: cameraMismatchController,
+        centerStageController: centerStageController
       )
       .frame(minWidth: 480, minHeight: 420)
     }
@@ -52,7 +61,7 @@ struct AboutFaceApp: App {
     // debug panel edits one shared `Config`, so more than one copy open at
     // once would be confusing rather than useful.
     Window("About Face — Debug Panel", id: "debug-panel") {
-      DebugPanelView(model: model)
+      DebugPanelView(model: model, centerStageController: centerStageController)
         .frame(minWidth: 480, minHeight: 420)
     }
     .defaultSize(width: 560, height: 760)
