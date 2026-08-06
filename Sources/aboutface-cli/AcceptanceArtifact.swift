@@ -33,6 +33,9 @@ struct AcceptanceSessionLog: Codable {
     var capture: CaptureRecord
     var signal: SignalRecord
     var resources: ResourceRecord
+    /// Idle windows before/after the session — §13's "impact" is a delta.
+    var baselineBefore: ResourceWindowRecord
+    var baselineAfter: ResourceWindowRecord
     var acceptance: AcceptanceRecord
   }
 
@@ -77,7 +80,30 @@ struct AcceptanceSessionLog: Codable {
     var referenceEpisodeStartIsInferred: Bool
     var rungs: [RungRecord]
     var unexplainedEvents: [EventRecord]
+    /// §6.1's liveness heartbeats as a COUNT plus first/last, not one record
+    /// each: a 30-minute run produces ~170, and the artifact is meant to stay
+    /// diffable across sessions. See `AcceptanceReport.heartbeats`.
+    var heartbeatCount: Int
+    var firstHeartbeatMs: Int?
+    var lastHeartbeatMs: Int?
     var strayRendererActivityDuringStop: [EventRecord]
+  }
+
+  /// One idle CPU/thermal window — see `AcceptanceBaseline`.
+  struct ResourceWindowRecord: Codable {
+    var sampleCount: Int
+    var averageCpuPercent: Double
+    var peakCpuPercent: Double
+    var thermalEvents: [ThermalEventRecord]
+
+    init(_ window: AcceptanceResourceWindow) {
+      sampleCount = window.sampleCount
+      averageCpuPercent = window.averageCpuPercent
+      peakCpuPercent = window.peakCpuPercent
+      thermalEvents = window.thermalEvents.map {
+        ThermalEventRecord(elapsedMs: $0.elapsedMs, state: "\($0.state)")
+      }
+    }
   }
 
   struct RungRecord: Codable {

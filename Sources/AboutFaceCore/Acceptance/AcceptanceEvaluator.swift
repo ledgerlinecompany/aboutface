@@ -101,17 +101,71 @@ public enum AcceptanceEvaluator {
       recovery != nil && matcher.peekMatch(after: recovery!.elapsedMs, kind: .recovery) != nil
     let rung4 = recoveryRungResult(match: recovery, duplicateFound: hasDuplicateRecovery)
 
-    let unexplained = matcher.unconsumedEvents()
+    let unconsumed = matcher.unconsumedEvents()
+    // §6.1's liveness heartbeat is separated out BEFORE `unexplainedEvents`
+    // is built, and this is a readability fix with teeth. The heartbeat
+    // fires every `heartbeatIntervalMs` (7s default) for the whole time the
+    // user is placed, so a 30-minute acceptance run with a 10-minute absence
+    // produces on the order of 170 of them. Leaving those in the "everything
+    // else that fired" list would bury the handful of entries that clause
+    // exists to expose under a wall of expected ones — and a list nobody can
+    // read is worth exactly as much as no list, which is the failure this
+    // whole instrument was built to prevent.
+    //
+    // Separating them costs nothing in rigor: heartbeats are still counted
+    // and still checked in the one place where a heartbeat is genuinely
+    // damning — `strayRendererActivityDuringStop` is computed from the FULL
+    // unconsumed set below, so a heartbeat during the STOP window (§7.3
+    // demands total silence there) is still flagged, and flagged as the
+    // safety-critical violation it is rather than as one more line in a long
+    // list.
+    // ...but ONLY heartbeats outside the face-lost episode -- see
+    // `isRoutineHeartbeat(_:episodeStartMs:episodeEndMs:)` for why position,
+    // not kind, is what decides.
+    let episodeStartMs = earcon?.elapsedMs ?? reference.startMs
+    let heartbeats = unconsumed.filter {
+      Self.isRoutineHeartbeat($0, episodeStartMs: episodeStartMs, episodeEndMs: recovery?.elapsedMs)
+    }
+    let unexplained = unconsumed.filter {
+      !Self.isRoutineHeartbeat(
+        $0, episodeStartMs: episodeStartMs, episodeEndMs: recovery?.elapsedMs)
+    }
     let strayDuringStop = Self.strayRendererActivity(
-      unexplained: unexplained, stopElapsedMs: stop?.elapsedMs,
+      unexplained: unconsumed, stopElapsedMs: stop?.elapsedMs,
       recoveryElapsedMs: recovery?.elapsedMs)
 
     return AcceptanceReport(
       rungs: [rung1, rung2, rung3, rung4],
       unexplainedEvents: unexplained,
+      heartbeats: heartbeats,
       strayRendererActivityDuringStop: strayDuringStop,
       referenceEpisodeStartMs: reference.startMs,
       referenceEpisodeStartIsInferred: reference.isInferred)
+  }
+
+  /// Whether a heartbeat is routine (bucketed into
+  /// `AcceptanceReport.heartbeats`) rather than evidence (left in
+  /// `unexplainedEvents`). The split is by POSITION, not by kind.
+  ///
+  /// §6.1's heartbeat only ever fires from inside a confirmed good zone, so
+  /// one arriving BETWEEN the face-lost episode's start and its recovery is a
+  /// contradiction — the router simultaneously believing the user is placed
+  /// and that the face is lost — and must stay visible. Outside that window a
+  /// heartbeat is exactly what §6.1 requires, and a 30-minute run produces
+  /// ~170 of them; leaving those in `unexplainedEvents` would bury the
+  /// handful of entries that list exists to expose.
+  ///
+  /// A missing recovery is treated as "the episode never ended," so every
+  /// heartbeat after its start stays evidence — the conservative reading, and
+  /// the right one when the run is already anomalous.
+  private static func isRoutineHeartbeat(
+    _ event: AcceptanceEvent, episodeStartMs: Int?, episodeEndMs: Int?
+  ) -> Bool {
+    guard event.isLivenessHeartbeat else { return false }
+    guard let episodeStartMs else { return true }
+    if event.elapsedMs < episodeStartMs { return true }
+    guard let episodeEndMs else { return false }
+    return event.elapsedMs > episodeEndMs
   }
 
   /// The three §7.3-configured ladder delays, mode-selecting rung 1's the

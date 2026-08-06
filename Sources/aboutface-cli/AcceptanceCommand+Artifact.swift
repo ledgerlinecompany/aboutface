@@ -33,7 +33,10 @@ extension Acceptance {
       completedFullDuration: summaryData.completedFullDuration,
       terminationReason: summaryData.terminationReason,
       capture: captureRecord(summaryData), signal: signalRecord(summaryData),
-      resources: resourceRecord(summaryData), acceptance: acceptanceRecord(summaryData.report))
+      resources: resourceRecord(summaryData),
+      baselineBefore: AcceptanceSessionLog.ResourceWindowRecord(summaryData.baselineBefore),
+      baselineAfter: AcceptanceSessionLog.ResourceWindowRecord(summaryData.baselineAfter),
+      acceptance: acceptanceRecord(summaryData.report))
   }
 
   private func captureRecord(_ summaryData: AcceptanceSummary.Data)
@@ -79,6 +82,9 @@ extension Acceptance {
       referenceEpisodeStartIsInferred: report.referenceEpisodeStartIsInferred,
       rungs: report.rungs.map(AcceptanceSessionLog.RungRecord.init),
       unexplainedEvents: report.unexplainedEvents.map(AcceptanceSessionLog.EventRecord.init),
+      heartbeatCount: report.heartbeats.count,
+      firstHeartbeatMs: report.heartbeats.first?.elapsedMs,
+      lastHeartbeatMs: report.heartbeats.last?.elapsedMs,
       strayRendererActivityDuringStop: report.strayRendererActivityDuringStop.map(
         AcceptanceSessionLog.EventRecord.init))
   }
