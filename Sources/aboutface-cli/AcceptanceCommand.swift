@@ -98,6 +98,14 @@ struct Acceptance: AsyncParsableCommand {
   var awayPollIntervalSeconds: Double = 1.0
 
   @Option(
+    name: .customLong("baseline-seconds"),
+    help: ArgumentHelp(
+      "Seconds of idle CPU/thermal sampling taken BEFORE the camera opens and again AFTER it "
+        + "closes, so the session's own numbers read as an impact rather than an absolute. 0 to "
+        + "skip. Total runtime is 2x this plus --minutes."))
+  var baselineSeconds: Double = 60
+
+  @Option(
     name: .customLong("resource-sample-interval-seconds"),
     help: "How often to sample CPU usage and thermal state.")
   var resourceSampleIntervalSeconds: Double = 5.0
@@ -121,6 +129,13 @@ struct Acceptance: AsyncParsableCommand {
   func run() async throws {
     let config = try AudioCLISupport.loadConfig(configPath: configPath)
     let modeSettings = config.camera.monitor
+
+    // Measured BEFORE the camera opens, deliberately: this is the floor the
+    // session's CPU/thermal numbers are read against (§13 asks for
+    // "impact," which is a delta). No need to be in frame for this phase --
+    // nothing is capturing yet.
+    let baselineBefore = await measureBaselineBefore()
+
     let pipeline = try await openPipeline(config: config)
 
     let awayPoller = AcceptanceAwayPoller(
@@ -149,12 +164,16 @@ struct Acceptance: AsyncParsableCommand {
     resourceTask.cancel()
     await pipeline.audio.stop()
 
+    let baselineAfter = await measureBaselineAfter()
+
     let events = await pipeline.recorder.snapshot()
     let resourceSnapshot = await pipeline.resourceSampler.snapshot()
     let report = evaluateReport(config: config, events: events)
     let summaryData = makeSummaryData(
-      modeSettings: modeSettings, loopResult: loopResult, resourceSnapshot: resourceSnapshot,
-      report: report)
+      SummaryInputs(
+        modeSettings: modeSettings, loopResult: loopResult,
+        resourceSamples: resourceSnapshot.samples, thermalEvents: resourceSnapshot.thermalEvents,
+        report: report, baselineBefore: baselineBefore, baselineAfter: baselineAfter))
 
     // Spoken BEFORE the report prints, not after: the report is long, and
     // the cue's job is to tell him the session is over and worth coming back
@@ -259,6 +278,33 @@ struct Acceptance: AsyncParsableCommand {
     await speakSessionCue("Recording started. You may leave the desk now.")
   }
 
+  /// The idle floor the session's CPU/thermal numbers are read against (§13
+  /// asks for "impact," which is a delta). Taken BEFORE the camera opens, so
+  /// there is nothing to be in frame for yet — see `AcceptanceBaseline` for
+  /// what this window can and cannot show.
+  private func measureBaselineBefore() async -> AcceptanceResourceWindow {
+    guard baselineSeconds > 0 else { return .empty }
+    Swift.print(
+      "baseline: sampling idle CPU and thermal for \(Int(baselineSeconds))s before opening the "
+        + "camera -- no need to be in frame yet.")
+    await speakSessionCue(
+      "Measuring idle baseline for \(Int(baselineSeconds)) seconds. No need to be in frame.")
+    return await AcceptanceBaseline.measure(
+      seconds: baselineSeconds, intervalSeconds: resourceSampleIntervalSeconds)
+  }
+
+  /// The same window again once capture has stopped: shows whether thermals
+  /// recover, and whether this process actually returns to idle rather than
+  /// leaving something spinning.
+  private func measureBaselineAfter() async -> AcceptanceResourceWindow {
+    guard baselineSeconds > 0 else { return .empty }
+    Swift.print(
+      "baseline: session over -- sampling idle CPU and thermal for another "
+        + "\(Int(baselineSeconds))s to see whether the machine settles back.")
+    return await AcceptanceBaseline.measure(
+      seconds: baselineSeconds, intervalSeconds: resourceSampleIntervalSeconds)
+  }
+
   /// Speaks a session cue aloud, unless `--no-speak`.
   ///
   /// A printed banner alone is not sufficient here, for a specific reason
@@ -316,41 +362,4 @@ struct Acceptance: AsyncParsableCommand {
         events: events, feedbackConfig: config.feedback, mode: .monitor, tolerances: tolerances))
   }
 
-  private func makeSummaryData(
-    modeSettings: CameraModeCaptureSettings, loopResult: AcceptanceRunLoopResult,
-    resourceSnapshot: (
-      samples: [AcceptanceResourceSample], thermalEvents: [AcceptanceThermalEvent]
-    ),
-    report: AcceptanceReport
-  ) -> AcceptanceSummary.Data {
-    let cpuPercents = resourceSnapshot.samples.map(\.cpuPercent)
-    return AcceptanceSummary.Data(
-      requestedMinutes: minutes, actualElapsedSeconds: loopResult.actualElapsedSeconds,
-      completedFullDuration: loopResult.completedFullDuration,
-      terminationReason: loopResult.terminationReason, requestedWidth: modeSettings.width,
-      requestedHeight: modeSettings.height, requestedFrameRateFps: modeSettings.frameRate,
-      rawFrameCount: loopResult.rawFrameCount,
-      achievedRawCaptureFps: loopResult.achievedRawCaptureFps,
-      requestedAnalysisHz: modeSettings.analysisHz, analyzedFrameCount: loopResult.stats.frameCount,
-      achievedAnalysisFps: Self.rate(
-        count: loopResult.stats.frameCount, overSeconds: loopResult.actualElapsedSeconds),
-      observedDimensions: loopResult.stats.observedDimensions.map { "\($0.width)x\($0.height)" },
-      stateCounts: loopResult.stats.stateCounts,
-      faceLostEpisodes: loopResult.stats.faceLostEpisodes,
-      longestFaceLostMs: loopResult.stats.longestFaceLostMs,
-      totalFaceLostMs: loopResult.stats.totalFaceLostMs,
-      resourceSampleCount: resourceSnapshot.samples.count,
-      averageCpuPercent: Self.average(cpuPercents), peakCpuPercent: cpuPercents.max(),
-      thermalEvents: resourceSnapshot.thermalEvents, report: report)
-  }
-
-  private static func rate(count: Int, overSeconds seconds: Double) -> Double {
-    guard seconds > 0 else { return 0 }
-    return Double(count) / seconds
-  }
-
-  private static func average(_ values: [Double]) -> Double? {
-    guard !values.isEmpty else { return nil }
-    return values.reduce(0, +) / Double(values.count)
-  }
 }

@@ -52,4 +52,20 @@ public struct AcceptanceEvent: Sendable, Equatable {
     self.elapsedMs = elapsedMs
     self.kind = kind
   }
+
+  /// §6.1's liveness heartbeat, which `AcceptanceEvaluator` reports as its
+  /// own category rather than as one of the "everything else that fired"
+  /// entries. Measured on a real 2-minute run (2026-08-06): six heartbeats
+  /// across roughly forty seconds of presence, i.e. on the order of 170 in
+  /// the 30-minute session §13 actually asks for. Left in the unexplained
+  /// list they would bury the handful of entries that clause exists to
+  /// expose, and a list nobody can read is worth what no list is worth.
+  ///
+  /// Separating them costs no rigor: a heartbeat inside the STOP window is
+  /// still caught by `AcceptanceReport.strayRendererActivityDuringStop`,
+  /// which is computed before this split and is where a heartbeat would be
+  /// genuinely damning (§7.3 demands total silence there).
+  public var isLivenessHeartbeat: Bool {
+    kind == .audioEvent(.livenessHeartbeat)
+  }
 }

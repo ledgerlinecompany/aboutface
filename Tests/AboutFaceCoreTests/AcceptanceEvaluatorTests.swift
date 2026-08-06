@@ -108,6 +108,31 @@ struct AcceptanceEvaluatorTests {
 
   // MARK: - A stray extra event is reported, never silently absorbed
 
+  /// §6.1's heartbeat fires every 7s while placed, so a 30-minute run puts
+  /// ~170 of them in the record. Those must not bury `unexplainedEvents` —
+  /// the one list a human has to read to check "and nothing else" — but the
+  /// split is by POSITION, not by kind: a heartbeat inside the face-lost
+  /// episode still counts as evidence (see
+  /// `strayEventReportedAsUnexplained`).
+  @Test("Heartbeats outside the episode are bucketed; the ideal sequence's rungs still match")
+  func routineHeartbeatsAreBucketedSeparately() {
+    let events: [AcceptanceEvent] = [
+      AcceptanceEvent(elapsedMs: 500, kind: .audioEvent(.livenessHeartbeat)),
+      AcceptanceEvent(elapsedMs: 1500, kind: .audioEvent(.faceLost)),
+      AcceptanceEvent(elapsedMs: 5000, kind: .spokenPhrase(Lexicon.Instruction.noFace)),
+      AcceptanceEvent(elapsedMs: 30000, kind: .userLikelyAway(true)),
+      AcceptanceEvent(elapsedMs: 600_000, kind: .audioEvent(.faceReacquired)),
+      AcceptanceEvent(elapsedMs: 607_000, kind: .audioEvent(.livenessHeartbeat)),
+    ]  // swiftlint:disable:previous trailing_comma
+    let report = Self.evaluate(events)
+
+    #expect(report.heartbeats.map(\.elapsedMs) == [500, 607_000])
+    #expect(!report.unexplainedEvents.contains { $0.isLivenessHeartbeat })
+    for result in report.rungs {
+      #expect(result.matched, "\(result.rung): \(result.note)")
+    }
+  }
+
   @Test("A stray extra event surfaces in unexplainedEvents, not folded into a rung")
   func strayEventReportedAsUnexplained() {
     let events: [AcceptanceEvent] = [

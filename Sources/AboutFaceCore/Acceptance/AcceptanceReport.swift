@@ -72,14 +72,26 @@ public struct AcceptanceReport: Sendable, Equatable {
   /// EVERY recorded event not consumed as one of the four rungs above —
   /// the "and nothing else" clause, and the part of §13 Phase 4's
   /// acceptance criterion a human cannot check by ear across half an hour
-  /// (PR brief). Deliberately unfiltered: an event that is obviously benign
-  /// (e.g. the `userLikelyAway(false)` transition that clears rung 3 on
-  /// recovery, or a heartbeat that fired long before the episode began)
+  /// (PR brief). Near-unfiltered: an event that is obviously benign (e.g.
+  /// the `userLikelyAway(false)` transition that clears rung 3 on recovery)
   /// still appears here rather than being silently reclassified as
-  /// "expected" — see `AcceptanceEvaluator`'s doc comment for why hiding
-  /// even an explainable event was judged worse than a human having to
-  /// dismiss a few obviously-fine lines.
+  /// "expected" — hiding an explainable event is worse than a human having
+  /// to dismiss a few obviously-fine lines.
+  ///
+  /// The ONE exception is §6.1's liveness heartbeat, moved to `heartbeats`
+  /// below. That is not a softening of the rule but an application of it: a
+  /// 30-minute run puts ~170 heartbeats here, and a list that long stops
+  /// being read at all, which would defeat the clause far more completely
+  /// than reclassifying one well-understood periodic event ever could.
   public let unexplainedEvents: [AcceptanceEvent]
+
+  /// §6.1's liveness heartbeats, split out of `unexplainedEvents` so that
+  /// list stays readable — see `AcceptanceEvent.isLivenessHeartbeat` for the
+  /// measurement that forced the split. Reported as its own category rather
+  /// than discarded: the heartbeat is what distinguishes "good" from "the app
+  /// crashed," so its COUNT and cadence are themselves worth seeing, and a
+  /// run with zero of them across a long placed stretch would be a finding.
+  public let heartbeats: [AcceptanceEvent]
 
   /// The subset of `unexplainedEvents` that are audio/speech RENDERER
   /// activity (not `userLikelyAway` samples, which are silent bookkeeping,
@@ -111,11 +123,13 @@ public struct AcceptanceReport: Sendable, Equatable {
 
   public init(
     rungs: [RungResult], unexplainedEvents: [AcceptanceEvent],
+    heartbeats: [AcceptanceEvent] = [],
     strayRendererActivityDuringStop: [AcceptanceEvent], referenceEpisodeStartMs: Int?,
     referenceEpisodeStartIsInferred: Bool
   ) {
     self.rungs = rungs
     self.unexplainedEvents = unexplainedEvents
+    self.heartbeats = heartbeats
     self.strayRendererActivityDuringStop = strayRendererActivityDuringStop
     self.referenceEpisodeStartMs = referenceEpisodeStartMs
     self.referenceEpisodeStartIsInferred = referenceEpisodeStartIsInferred

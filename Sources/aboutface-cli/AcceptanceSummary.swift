@@ -38,6 +38,11 @@ enum AcceptanceSummary {
     var averageCpuPercent: Double?
     var peakCpuPercent: Double?
     var thermalEvents: [AcceptanceThermalEvent]
+    /// Idle windows measured before the camera opened and after it closed —
+    /// see `AcceptanceBaseline`'s doc comment for what each can and cannot
+    /// tell you. `.empty` when `--baseline-seconds 0` skipped the phase.
+    var baselineBefore: AcceptanceResourceWindow
+    var baselineAfter: AcceptanceResourceWindow
 
     var report: AcceptanceReport
   }
@@ -118,6 +123,44 @@ enum AcceptanceSummary {
         Swift.print("resources: thermalState t=\(event.elapsedMs)ms -> \(event.state)")
       }
     }
+    Self.printBaselines(data)
+  }
+
+  /// §13 asks for CPU/thermal IMPACT, which is a delta -- the session's own
+  /// numbers mean nothing without a floor to read them against (maintainer,
+  /// 2026-08-06). See `AcceptanceBaseline` for why the "before" CPU figure is
+  /// expected to be near zero and what the two windows genuinely show.
+  private static func printBaselines(_ data: Data) {
+    Self.printWindow("baselineBefore", data.baselineBefore)
+    Self.printWindow("baselineAfter", data.baselineAfter)
+    if let sessionAverage = data.averageCpuPercent, data.baselineBefore.sampleCount > 0 {
+      let delta = sessionAverage - data.baselineBefore.averageCpuPercent
+      Swift.print("resources: sessionMinusBaselineAvgCpuPercent=" + Self.formatted(delta))
+    }
+    if data.baselineAfter.sampleCount > 0 {
+      Swift.print(
+        "resources: note -- a non-trivial baselineAfter CPU figure means this process was still "
+          + "busy after the session stopped (a timer, task, or capture session that outlived its "
+          + "cancellation); thermal recovery across the two baselines is the other signal here.")
+    }
+  }
+
+  private static func printWindow(_ label: String, _ window: AcceptanceResourceWindow) {
+    guard window.sampleCount > 0 else {
+      Swift.print("resources: \(label)=skipped (--baseline-seconds 0)")
+      return
+    }
+    Swift.print(
+      "resources: \(label) sampleCount=\(window.sampleCount) "
+        + "averageCpuPercent=" + Self.formatted(window.averageCpuPercent) + " "
+        + "peakCpuPercent=" + Self.formatted(window.peakCpuPercent))
+    if window.thermalEvents.isEmpty {
+      Swift.print("resources: \(label) thermalStateChanges=none observed")
+    } else {
+      for event in window.thermalEvents {
+        Swift.print("resources: \(label) thermalState t=\(event.elapsedMs)ms -> \(event.state)")
+      }
+    }
   }
 
   private static func printAcceptance(_ report: AcceptanceReport) {
@@ -141,6 +184,19 @@ enum AcceptanceSummary {
       for event in report.strayRendererActivityDuringStop {
         Swift.print("acceptance:   " + AcceptanceDescribe.event(event))
       }
+    }
+    // §6.1's heartbeat reported as a COUNT, not one line each: a 30-minute
+    // run produces ~170 and they would bury the list below, which is the one
+    // a human actually has to read. A run with zero across a long placed
+    // stretch would itself be a finding, so the count is stated either way.
+    if report.heartbeats.isEmpty {
+      Swift.print("acceptance: livenessHeartbeats=0")
+    } else {
+      let first = report.heartbeats.first?.elapsedMs ?? 0
+      let last = report.heartbeats.last?.elapsedMs ?? 0
+      Swift.print(
+        "acceptance: livenessHeartbeats=\(report.heartbeats.count) "
+          + "(first at \(first)ms, last at \(last)ms) -- §6.1 liveness, expected while placed")
     }
     if report.unexplainedEvents.isEmpty {
       Swift.print("acceptance: unexplainedEvents=none -- nothing else fired")
