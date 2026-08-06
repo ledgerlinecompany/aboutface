@@ -1131,6 +1131,28 @@ been performed.** No 30-minute session with a 10-minute absence has been run
 against it yet — that is the maintainer's to run, away from the keyboard,
 which is the whole point.
 
+**Acceptance instrument note (2026-08-06): evaluation is episode-aware.**
+The first real 30-minute run passed — earcon, "No face." at +5.0s, the STOP at
++30.4s, 11.8 minutes of verified silence, one recovery — and the evaluator
+scored three of its four rungs as failures. It matched each rung by first
+eligible occurrence, which silently assumed a session contains ONE face-lost
+episode; that run contained ten. Nine were blink-length (leaning out of frame,
+looking away, settling back), and the first of them, 57 seconds in, is what the
+ladder anchored on.
+
+`AcceptanceEpisodeSegmenter` now splits the recording into episodes and the
+evaluator judges the one that reached rung 3 — the only episode the acceptance
+criterion is about. Non-escalating episodes, heartbeats, and arrival chimes
+outside the judged episode are reported as their own counted categories, so
+"and nothing else" stays a list short enough for a human to actually read (that
+run left 52 entries in it, almost all benign). Nothing is discarded, and
+`strayRendererActivityDuringStop` is still computed from the full event set, so
+anything inside the STOP window is caught regardless of category. The real
+session is kept as a regression fixture in `AcceptanceRealSessionTests`.
+
+An instrument that reports a false negative on a passing run is exactly as
+useless as one reporting a false pass — neither verdict can be acted on.
+
 ### Phase 4.5 — Design coherence pass
 
 Added 2026-08-02, from maintainer field experience: by this point the app's

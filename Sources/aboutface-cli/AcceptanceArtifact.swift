@@ -84,9 +84,29 @@ struct AcceptanceSessionLog: Codable {
     /// each: a 30-minute run produces ~170, and the artifact is meant to stay
     /// diffable across sessions. See `AcceptanceReport.heartbeats`.
     var heartbeatCount: Int
+    /// How many face-lost episodes reached §7.3's STOP. Exactly one is the
+    /// expected shape; zero means the criterion was not met.
+    var escalatedEpisodeCount: Int
+    /// Brief face-lost episodes that never escalated — expected in any real
+    /// session, reported so they are neither mistaken for the judged episode
+    /// nor buried in `unexplainedEvents`.
+    var nonEscalatingEpisodes: [EpisodeRecord]
+    var routineGoodZoneEntryCount: Int
     var firstHeartbeatMs: Int?
     var lastHeartbeatMs: Int?
     var strayRendererActivityDuringStop: [EventRecord]
+  }
+
+  struct EpisodeRecord: Codable {
+    var startMs: Int
+    var endMs: Int?
+    var durationMs: Int?
+
+    init(_ episode: AcceptanceEpisode) {
+      startMs = episode.startMs
+      endMs = episode.endMs
+      durationMs = episode.durationMs
+    }
   }
 
   /// One idle CPU/thermal window — see `AcceptanceBaseline`.

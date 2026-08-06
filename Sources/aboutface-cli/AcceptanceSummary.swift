@@ -198,6 +198,7 @@ enum AcceptanceSummary {
         "acceptance: livenessHeartbeats=\(report.heartbeats.count) "
           + "(first at \(first)ms, last at \(last)ms) -- §6.1 liveness, expected while placed")
     }
+    Self.printEpisodes(report)
     if report.unexplainedEvents.isEmpty {
       Swift.print("acceptance: unexplainedEvents=none -- nothing else fired")
     } else {
@@ -208,6 +209,44 @@ enum AcceptanceSummary {
         Swift.print("acceptance:   " + AcceptanceDescribe.event(event))
       }
     }
+  }
+
+  /// Episode taxonomy — which absence the ladder was judged against, and
+  /// what else the session contained. Split from `printAcceptance` for
+  /// SwiftLint's body-length and complexity budgets, which CI enforces as
+  /// errors.
+  private static func printEpisodes(_ report: AcceptanceReport) {
+    // Episode taxonomy: which absence the ladder was judged against, and
+    // what else the session contained. A 30-minute run legitimately holds
+    // several blink-length face-lost episodes; reporting them here keeps
+    // them out of the list below without hiding them.
+    switch report.escalatedEpisodeCount {
+    case 0:
+      Swift.print(
+        "acceptance: escalatedEpisodes=0 -- NO episode reached the §7.3 STOP. The acceptance "
+          + "criterion is not met: either the absence was too short, or the ladder did not "
+          + "escalate.")
+    case 1:
+      Swift.print("acceptance: escalatedEpisodes=1 (the ladder was judged against this one)")
+    default:
+      Swift.print(
+        "acceptance: escalatedEpisodes=\(report.escalatedEpisodeCount) -- more than one long "
+          + "absence; the rungs above describe the FIRST.")
+    }
+    if report.nonEscalatingEpisodes.isEmpty {
+      Swift.print("acceptance: nonEscalatingEpisodes=0")
+    } else {
+      Swift.print(
+        "acceptance: nonEscalatingEpisodes=\(report.nonEscalatingEpisodes.count) "
+          + "-- brief face-lost episodes that never reached the STOP (expected in a long session):")
+      for episode in report.nonEscalatingEpisodes {
+        let duration = episode.durationMs.map { "\($0)ms" } ?? "never recovered"
+        Swift.print("acceptance:   start=\(episode.startMs)ms duration=\(duration)")
+      }
+    }
+    Swift.print(
+      "acceptance: routineGoodZoneEntries=\(report.routineGoodZoneEntries.count) "
+        + "-- arrival chimes outside the judged episode, i.e. ordinary re-settling")
   }
 
   private static func formatted(_ value: Double) -> String {
