@@ -61,17 +61,74 @@ struct AnalysisRateDecimatorTests {
     #expect(decimator.shouldAnalyze(at: exactlyOnePeriodLater) == true)
   }
 
-  @Test("Just under the boundary is rejected; just at/over it is accepted")
-  func justUnderBoundaryRejected() {
+  /// This test used to assert the opposite — that a frame 1 ms under the
+  /// period is REJECTED — and that strict boundary was the bug. Measured
+  /// 2026-08-07: a camera asked for 15fps delivering 15.01 leaves three frame
+  /// intervals 0.13 ms short of 200 ms, so the third frame was rejected, the
+  /// fourth taken, and Monitor analyzed at 3.75 Hz instead of the configured
+  /// 5 for three phases. See `AnalysisRateDecimator`'s doc comment.
+  ///
+  /// The question the decimator answers is now "is this the frame NEAREST the
+  /// moment analysis was due," so a frame a hair early is accepted — the
+  /// long-run rate is protected by the ideal schedule, not by the boundary.
+  @Test("A frame a hair under the period is accepted: it is the nearest frame to the due time")
+  func slightlyEarlyFrameIsAccepted() {
     var decimator = AnalysisRateDecimator(targetHz: 5)  // 0.2s minimum interval
-    let first = CMTime(seconds: 0, preferredTimescale: 600)
-    let justUnder = CMTime(seconds: 0.199, preferredTimescale: 600)
-    let justOver = CMTime(seconds: 0.201, preferredTimescale: 600)
-    #expect(decimator.shouldAnalyze(at: first) == true)
-    #expect(decimator.shouldAnalyze(at: justUnder) == false)
-    // The reference point is still `first` (the rejected frame above did not
-    // move it), so `justOver` is compared against `first`, not `justUnder`.
-    #expect(decimator.shouldAnalyze(at: justOver) == true)
+    #expect(decimator.shouldAnalyze(at: CMTime(seconds: 0, preferredTimescale: 600)) == true)
+    #expect(decimator.shouldAnalyze(at: CMTime(seconds: 0.199, preferredTimescale: 600)) == true)
+  }
+
+  /// The regression that motivated the tolerance, in the exact shape it was
+  /// measured: 15.01fps capture, 5 Hz target. Must select every THIRD frame
+  /// (≈5.0 Hz), not every fourth (3.75 Hz).
+  @Test("A camera delivering 15.01fps against a 5Hz target still analyzes every third frame")
+  func slightlyFastCaptureStillHitsTargetRate() {
+    var decimator = AnalysisRateDecimator(targetHz: 5)
+    let frameInterval = 1.0 / 15.01
+    var analyzed = 0
+    let frameCount = 150  // ~10 seconds
+    for index in 0..<frameCount {
+      let timestamp = CMTime(seconds: Double(index) * frameInterval, preferredTimescale: 600)
+      if decimator.shouldAnalyze(at: timestamp) { analyzed += 1 }
+    }
+    // 150 frames at 15.01fps is 9.993s; at a true 5Hz that is 50 analyses.
+    // The old strict boundary produced 38.
+    #expect(analyzed >= 49 && analyzed <= 51, "analyzed \(analyzed) of \(frameCount)")
+  }
+
+  /// The guarantee the tolerance must NOT give away: over a long run the
+  /// achieved rate never exceeds the configured target. The ideal schedule
+  /// (advanced by exactly one period per analysis) is what preserves this,
+  /// which is why the tolerance can be generous without the rate drifting up.
+  @Test("Tolerance never lets the long-run rate exceed the target")
+  func longRunRateNeverExceedsTarget() {
+    var decimator = AnalysisRateDecimator(targetHz: 5)
+    let frameInterval = 1.0 / 30.0  // plenty of candidate frames
+    var analyzed = 0
+    let seconds = 20.0
+    let frameCount = Int(seconds * 30)
+    for index in 0..<frameCount {
+      let timestamp = CMTime(seconds: Double(index) * frameInterval, preferredTimescale: 600)
+      if decimator.shouldAnalyze(at: timestamp) { analyzed += 1 }
+    }
+    // 20s at 5Hz is 100 analyses; allow the single boundary frame either way.
+    #expect(analyzed <= 101, "analyzed \(analyzed) in \(seconds)s — faster than the 5Hz target")
+  }
+
+  /// A stalled camera must not produce a catch-up burst when frames resume —
+  /// several back-to-back analyses is exactly the CPU spike §5.2's decimation
+  /// exists to prevent.
+  @Test("A stall does not cause a catch-up burst when frames resume")
+  func stallDoesNotBurst() {
+    var decimator = AnalysisRateDecimator(targetHz: 5)
+    #expect(decimator.shouldAnalyze(at: CMTime(seconds: 0, preferredTimescale: 600)) == true)
+    // Ten seconds of nothing, then frames resume at 15fps.
+    var analyzedInFirstSecond = 0
+    for index in 0..<15 {
+      let timestamp = CMTime(seconds: 10.0 + Double(index) / 15.0, preferredTimescale: 600)
+      if decimator.shouldAnalyze(at: timestamp) { analyzedInFirstSecond += 1 }
+    }
+    #expect(analyzedInFirstSecond <= 6, "burst of \(analyzedInFirstSecond) analyses after a stall")
   }
 
   @Test("An accepted frame becomes the new reference point, not the original start")

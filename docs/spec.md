@@ -1153,6 +1153,28 @@ session is kept as a regression fixture in `AcceptanceRealSessionTests`.
 An instrument that reports a false negative on a passing run is exactly as
 useless as one reporting a false pass — neither verdict can be acted on.
 
+**Release-build measurements (2026-08-07).** §13 Phase 1's outstanding
+acceptance — "runs a live camera at 30Hz without dropping frames" — is met:
+**29.99 fps achieved against 30 requested, 0.3 frames dropped** over 30s at
+1280×720. The 19–24 fps seen previously was entirely a debug-build artifact.
+Monitor mode costs **15.65% average CPU** in release against a 0.02% idle
+baseline (50.9% in debug), thermal state nominal throughout, and the process
+returns cleanly to idle afterward.
+
+**A 25% analysis shortfall, found by comparing the two builds.** Monitor
+reported 3.75 Hz against its configured 5 Hz — and reported the SAME 3.76 Hz
+in release, which is what proved it arithmetic rather than Vision saturating.
+`AnalysisRateDecimator` required a full period between analyzed frames; a
+camera asked for 15fps delivering 15.01 leaves three intervals 0.13 ms short
+of 200 ms, so every fourth frame was taken instead of every third. It had held
+for three phases, through every tuning session and both Phase 4 acceptance
+runs, because nothing read the achieved rate back until this instrument
+existed. Fixed by asking "is this the frame nearest the due time" rather than
+"has a full period elapsed," with the schedule advanced by the ideal period so
+the long-run rate cannot drift upward. Verified on hardware: **5.00 Hz
+achieved against 5.00 requested**, at 18.16% CPU — the honest cost of the work
+that was configured all along.
+
 ### Phase 4.5 — Design coherence pass
 
 Added 2026-08-02, from maintainer field experience: by this point the app's
