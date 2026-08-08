@@ -100,18 +100,60 @@ notices instantly that they are half out of shot; a blind user has no such
 signal, and an hour spent half out of frame is a genuinely bad outcome that no
 amount of "you could have asked" excuses.
 
-Its design needs care:
+### 3.3.1 The status pulse replaces the heartbeat
 
-- Non-verbal, per the governing principle and the decision above.
-- A **long** dwell before it fires — this is "you have been like this for a
-  while," not "you moved."
-- It should **repeat on a slow cadence** while the condition holds, for a
-  reason specific to this design: outside the good zone the liveness heartbeat
-  is not running, so a single earcon followed by silence recreates exactly the
-  ambiguity §6.1 exists to prevent. A slow repeat is both the alert and the
-  proof of life.
+Maintainer proposal, 2026-08-07, and a better shape than layering a new alert
+on top: **the out-of-frame signal replaces the heartbeat rather than joining
+it.** One periodic pulse, always present while monitoring, whose CHARACTER
+carries the state.
+
+The pulse answers exactly one bit, continuously:
+
+> Is everything okay? If not — ask me.
+
+That is a clean division of labour with §3.4's query: the ambient channel
+carries one bit forever, the language channel carries the detail on demand. It
+adds no sound to a two-hour call, which matters enormously for a design whose
+premise is near-silence, and it removes the liveness hole that a one-shot alert
+would have opened — the pulse never stops, so silence always means something
+real (severe, hushed, or gone).
+
+**It also corrects an existing inversion.** Today the heartbeat is scheduled
+only inside a confirmed good zone, and leaving that zone clears its schedule
+(`tickGoodZone` sets `nextHeartbeatAt`; `onConfirmedStateChanged` clears it). So
+in Monitor at present, drifting out of frame makes the app go SILENT exactly
+when something is wrong — §6.1's ambiguity in miniature, and backwards. The
+pulse continues and changes character instead. This reads less like a new
+feature than like what the heartbeat should always have been.
+
+Design constraints:
+
+- **Exactly two states, and resist any pressure toward more.** One bit costs
+  nothing to learn. Three or four means decoding a sound vocabulary while
+  listening to a colleague, which is precisely the serial-channel cost §1 is
+  trying to avoid. Query exists for detail.
+- **Same cadence, different timbre** (proposed). These conditions are
+  non-severe by definition, so urgency is not the message; and timbre survives
+  laptop speakers and being talked over better than pitch relationships do.
+- **A long dwell and hysteresis before the bit flips**, so shifting in a chair
+  does not toggle it.
+- The pulse yields to §7.3's face-lost ladder, which has its own escalation,
+  and stops entirely at the rung-3 STOP — nobody is listening.
 - §7.4 already reserves `.partiallyOutOfFrame` as an unreachable stub with no
-  threshold in `Config`. This decision is what activates it.
+  threshold in `Config`. This is what activates it.
+
+**The risk, stated plainly:** a two-state pulse asks the user to reliably
+distinguish two quiet sounds, over speech, after an hour of habituation. If
+that distinction does not survive real conditions the bit is lost, and the user
+is worse off than with a distinct one-shot alert that at least commands
+attention. Not settleable by reasoning — prototype both timbres in `audition`
+before committing to this.
+
+**Open: what else flips the bit?** Being partially out of frame is the agreed
+case. Lighting collapsing, or someone appearing behind you, could flag at zero
+extra sound cost. The bar must stay high enough that "not fine" is rare and
+means it; a pulse that sits in "not fine" all afternoon is one the user stops
+hearing.
 
 ### 3.4 Asking becomes the primary interface
 
@@ -127,6 +169,43 @@ Two consequences worth noting:
   that will now barely occur.
 - The gaze and head-tilt advisories stop being announcements and exist only to
   answer queries.
+
+## 3.5 Positional and postural signals are different kinds
+
+Maintainer, 2026-08-07: there is currently **no reviewable tracking of tilt or
+gaze**. That gap is a symptom of a distinction the app has never drawn.
+
+- **Positional** — horizontal, vertical, distance. You correct it once and it
+  stays corrected until you move. The instantaneous reading is the whole truth,
+  and dwell-then-announce is the right machinery.
+- **Postural** — gaze direction, head tilt. Continuously varying, never
+  "fixed," and meaningful only as a PROPORTION over a window. Everyone looks
+  away sometimes; the instantaneous reading is nearly meaningless.
+
+The app currently handles both with machinery built for positional signals,
+which is very likely why gaze and tilt have felt awkward and kept being demoted
+to in-zone advisories. The only aggregation anywhere is §5.3's query burst
+(`burstFrameCount`, default 10 — about two seconds at Monitor's 5 Hz), and two
+seconds cannot say anything about posture.
+
+§3.3's near-silence widens the gap: gaze and tilt are never announced during a
+call, so an hour spent looking away goes unremarked unless the user happens to
+query at the right moment.
+
+What this implies, none of it yet decided:
+
+- **Track proportions over a rolling window**, not instants — "on camera 70% of
+  the last five minutes." That is the natural unit for a postural signal.
+- **Query should report the proportion**, not the instant: "looking away often"
+  says something actionable; "you are not looking at the camera" said at a
+  random moment says almost nothing.
+- **A sustained proportion could flip §3.3.1's pulse bit** — held posture is
+  exactly the kind of durable, non-severe problem the pulse exists for.
+- **Reviewable after the fact.** A local, private session summary ("looking
+  away 40% of the call") is the only way some of this is learnable at all. It
+  is also a MAINTAINER need: nothing today can show whether the learned gaze
+  baseline behaves over a long session, and the acceptance instrument already
+  has the recording machinery to carry aggregates.
 
 ## 4. Confidence: five notices are one idea
 
@@ -198,11 +277,13 @@ control must be self-describing without its section header.
 
 ## 8. Open questions
 
-- **Does the heartbeat survive unchanged** now that it is the only sound for
-  hours at a time? Maintainer decision 2026-08-07: keep as-is *for now*, and
-  revisit by ear. It was designed as one signal among many and is about to
-  carry the whole "still alive" burden alone, roughly a thousand times per
-  two-hour call.
+- **What do the two pulse timbres sound like**, and does the distinction
+  survive an hour of habituation over speech? §3.3.1's stated risk; an
+  `audition` question, not a reasoning one. The cadence itself stays as-is for
+  now (maintainer, 2026-08-07), to be revisited by ear once it is carrying the
+  whole ambient burden.
+- **What is the window** for a postural proportion (§3.5), and what proportion
+  counts as a problem? Both by-ear, both `Config` (§0).
 - **How long is "long enough"** for the partially-out-of-frame earcon, and how
   slow is its repeat? Both are by-ear questions, and both belong in `Config`
   (§0) rather than being chosen here.
@@ -215,6 +296,9 @@ control must be self-describing without its section header.
 Listed plainly so the work is visible, not to imply any of it is wrong today —
 most of it predates these decisions.
 
+0. **The heartbeat stops when it is most needed.** It is scheduled only inside
+   a confirmed good zone, so drifting out of frame in Monitor silences the app
+   exactly when something is wrong. §3.3.1 inverts this.
 1. **The beacon is not mode-gated.** `updateContinuousSonification` has no mode
    check (verified 2026-08-07 — the only mentions of mode in that file are
    comments). Drifting out of the dead zone during a call produces continuous
@@ -232,6 +316,10 @@ most of it predates these decisions.
 6. **Query answers only "how do I look."** §5 adds the second subject.
 7. **The debug panel ships.** §6 fences it out of the product.
 8. **The rate limiter** is sized for a chattier Monitor than §3.3 describes.
+9. **Nothing aggregates postural signals.** Gaze and tilt are measured
+   per-frame and voted over a ~2 s query burst; there is no rolling proportion,
+   no session record, and therefore no way for either the user or the
+   maintainer to review them (§3.5).
 
 None of these should be taken as an implementation plan. They are the distance
 between here and the design, for the maintainer to sequence.

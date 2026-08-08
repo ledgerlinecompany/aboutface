@@ -1210,8 +1210,15 @@ maintainer decisions that shape it: converging is the primary intent and
 monitoring second; during a call the app never speaks unprompted except for
 something severe; being partially out of frame for long enough earns an
 EARCON, never words; and the debug panel is developer-only and does not ship.
-It also lists the gaps between that design and the current build — the largest
-being that the positional beacon is not mode-gated, so it plays during a call.
+It also proposes replacing the liveness heartbeat with a two-state STATUS PULSE
+carrying one bit ("is everything okay — if not, ask me"), and draws a
+distinction the app has never made between POSITIONAL signals (framing: correct
+once, instantaneous reading is the truth) and POSTURAL ones (gaze, head tilt:
+meaningful only as a proportion over time, and currently not tracked at all).
+It lists the gaps between that design and the current build — the largest being
+that the positional beacon is not mode-gated, so it plays during a call, and
+that the heartbeat stops when the user drifts out of frame, silencing the app
+exactly when something is wrong.
 
 ### Phase 5 — Profiles, first-run, packaging
 
