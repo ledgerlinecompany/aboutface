@@ -296,10 +296,13 @@ control must be self-describing without its section header.
 Listed plainly so the work is visible, not to imply any of it is wrong today —
 most of it predates these decisions.
 
-0. **The heartbeat stops when it is most needed.** It is scheduled only inside
-   a confirmed good zone, so drifting out of frame in Monitor silences the app
-   exactly when something is wrong. §3.3.1 inverts this.
-1. **The beacon is not mode-gated.** `updateContinuousSonification` has no mode
+0. ~~**The heartbeat stops when it is most needed.**~~ **Closed 2026-08-07.**
+   The pulse now runs for as long as a face is tracked while monitoring
+   (`FeedbackRouter+Pulse.swift`), in or out of the zone. It still carries no
+   bit — that needs the second timbre and the geometry below.
+1. ~~**The beacon is not mode-gated.**~~ **Closed 2026-08-07.** The beacon is a
+   converging instrument; monitoring resolves it to `nil`.
+   Originally: `updateContinuousSonification` has no mode
    check (verified 2026-08-07 — the only mentions of mode in that file are
    comments). Drifting out of the dead zone during a call produces continuous
    unprompted sound, contrary to §3.3. Gaze trim *is* Setup-gated; the beacon

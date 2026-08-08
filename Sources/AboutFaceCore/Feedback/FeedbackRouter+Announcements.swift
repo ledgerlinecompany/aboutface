@@ -76,6 +76,14 @@ extension FeedbackRouter {
   /// every frame (not just on change) and fires whatever timer has come
   /// due. Three shapes, one per `DiscreteState` case:
   func tickAnnouncements(output: EngineOutput, at time: ContinuousClock.Instant) async {
+    // Phase 4.5's status pulse runs on EVERY frame while monitoring, whatever
+    // the confirmed state — that is the whole point of it (design doc §3.3.1:
+    // the heartbeat used to stop when the user drifted out of frame, silencing
+    // the app exactly when something was wrong). It therefore sits ahead of
+    // the `guard` below, which returns early before any state has been
+    // confirmed. See `FeedbackRouter+Pulse.swift`.
+    await tickMonitorPulse(output: output, at: time)
+
     guard let confirmedState, let confirmedStateStart else { return }
 
     switch confirmedState {
@@ -168,6 +176,10 @@ extension FeedbackRouter {
     await tickGoodZoneGaze(output: output, at: time)
     await tickGoodZoneRoll(output: output, at: time)
 
+    // Monitoring's pulse is owned by `tickMonitorPulse` and runs in or out of
+    // the good zone, so this good-zone-scoped scheduling is Setup's alone now.
+    // Leaving both live would double-fire the heartbeat while placed.
+    guard mode == .setup else { return }
     guard let nextHeartbeatAt, time >= nextHeartbeatAt else { return }
     self.nextHeartbeatAt = nextHeartbeatAt.advanced(
       by: .milliseconds(feedbackConfig.heartbeatIntervalMs))
