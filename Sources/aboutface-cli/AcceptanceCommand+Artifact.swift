@@ -83,6 +83,10 @@ extension Acceptance {
       rungs: report.rungs.map(AcceptanceSessionLog.RungRecord.init),
       unexplainedEvents: report.unexplainedEvents.map(AcceptanceSessionLog.EventRecord.init),
       heartbeatCount: report.heartbeats.count,
+      escalatedEpisodeCount: report.escalatedEpisodeCount,
+      nonEscalatingEpisodes: report.nonEscalatingEpisodes.map(
+        AcceptanceSessionLog.EpisodeRecord.init),
+      routineGoodZoneEntryCount: report.routineGoodZoneEntries.count,
       firstHeartbeatMs: report.heartbeats.first?.elapsedMs,
       lastHeartbeatMs: report.heartbeats.last?.elapsedMs,
       strayRendererActivityDuringStop: report.strayRendererActivityDuringStop.map(

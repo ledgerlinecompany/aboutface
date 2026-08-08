@@ -93,6 +93,28 @@ public struct AcceptanceReport: Sendable, Equatable {
   /// run with zero of them across a long placed stretch would be a finding.
   public let heartbeats: [AcceptanceEvent]
 
+  /// Face-lost episodes that never reached §7.3's rung-3 STOP. Expected in
+  /// any real session — the maintainer's 30-minute acceptance run contained
+  /// NINE (leaning out of frame, looking away, settling back into the chair)
+  /// alongside the one deliberate absence. Reported as their own category so
+  /// they are neither mistaken for the escalating episode nor buried in
+  /// `unexplainedEvents`; see `AcceptanceEpisodeSegmenter`.
+  public let nonEscalatingEpisodes: [AcceptanceEpisode]
+
+  /// How many episodes DID escalate. Exactly one is the expected shape.
+  /// Zero means the STOP never happened — a genuine acceptance failure, not
+  /// a missing rung to shrug at. More than one means the session contained
+  /// several long absences, and the report says which one it judged (the
+  /// first).
+  public let escalatedEpisodeCount: Int
+
+  /// `AudioEvent.enteredGoodZone` firings outside the escalated episode —
+  /// the ordinary arrival chime each time the user re-settles. Ten of them
+  /// in the real 30-minute run, all legitimate. Split out for the same
+  /// reason as `heartbeats`: they are expected, and leaving them in
+  /// `unexplainedEvents` makes the one list a human must read unreadable.
+  public let routineGoodZoneEntries: [AcceptanceEvent]
+
   /// The subset of `unexplainedEvents` that are audio/speech RENDERER
   /// activity (not `userLikelyAway` samples, which are silent bookkeeping,
   /// not sound) falling strictly between rung 3's observed time and
@@ -124,12 +146,18 @@ public struct AcceptanceReport: Sendable, Equatable {
   public init(
     rungs: [RungResult], unexplainedEvents: [AcceptanceEvent],
     heartbeats: [AcceptanceEvent] = [],
+    nonEscalatingEpisodes: [AcceptanceEpisode] = [],
+    escalatedEpisodeCount: Int = 0,
+    routineGoodZoneEntries: [AcceptanceEvent] = [],
     strayRendererActivityDuringStop: [AcceptanceEvent], referenceEpisodeStartMs: Int?,
     referenceEpisodeStartIsInferred: Bool
   ) {
     self.rungs = rungs
     self.unexplainedEvents = unexplainedEvents
     self.heartbeats = heartbeats
+    self.nonEscalatingEpisodes = nonEscalatingEpisodes
+    self.escalatedEpisodeCount = escalatedEpisodeCount
+    self.routineGoodZoneEntries = routineGoodZoneEntries
     self.strayRendererActivityDuringStop = strayRendererActivityDuringStop
     self.referenceEpisodeStartMs = referenceEpisodeStartMs
     self.referenceEpisodeStartIsInferred = referenceEpisodeStartIsInferred

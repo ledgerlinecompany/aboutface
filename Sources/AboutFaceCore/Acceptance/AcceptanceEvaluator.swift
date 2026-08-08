@@ -66,7 +66,15 @@ public enum AcceptanceEvaluator {
     var matcher = Matcher(events: input.events)
     let delays = LadderDelays(feedbackConfig: input.feedbackConfig, mode: input.mode)
 
-    let earcon = matcher.firstMatch(after: input.episodeStartMs, kind: .earcon)
+    // Judge the episode that ACTUALLY ESCALATED, not the first one that made
+    // a sound — see `AcceptanceEpisodeSegmenter` for the real 30-minute run
+    // this fixed. `- 1` because `firstMatch(after:)` is strictly after, and
+    // the anchor IS that episode's own earcon.
+    let episodes = AcceptanceEpisodeSegmenter.segment(input.events)
+    let escalatedEpisodes = episodes.filter(\.escalated)
+    let searchFloorMs = escalatedEpisodes.first.map { $0.startMs - 1 } ?? input.episodeStartMs
+
+    let earcon = matcher.firstMatch(after: searchFloorMs, kind: .earcon)
     let reference = Self.resolveReferenceStart(
       episodeStartMs: input.episodeStartMs, earcon: earcon, earconDelayMs: delays.earconDelayMs)
     let rung1 = timedRungResult(
@@ -75,7 +83,7 @@ public enum AcceptanceEvaluator {
       toleranceMs: input.episodeStartMs != nil ? input.tolerances.rungTimingToleranceMs : nil)
 
     let spokenNoFace = matcher.firstMatch(
-      after: earcon?.elapsedMs ?? input.episodeStartMs, kind: .spokenNoFace)
+      after: earcon?.elapsedMs ?? searchFloorMs, kind: .spokenNoFace)
     let rung2 = timedRungResult(
       rung: .spokenNoFace, match: spokenNoFace,
       expected: reference.startMs.map { $0 + delays.speechDelayMs },
@@ -85,7 +93,7 @@ public enum AcceptanceEvaluator {
     // doc comment), so its tolerance also absorbs the recorder's own poll
     // interval, on top of the ordinary rung slack.
     let stop = matcher.firstMatch(
-      after: spokenNoFace?.elapsedMs ?? earcon?.elapsedMs ?? input.episodeStartMs, kind: .stop)
+      after: spokenNoFace?.elapsedMs ?? earcon?.elapsedMs ?? searchFloorMs, kind: .stop)
     let rung3ToleranceMs: Int? =
       reference.startMs != nil
       ? input.tolerances.rungTimingToleranceMs + input.tolerances.awayPollIntervalMs : nil
@@ -95,52 +103,49 @@ public enum AcceptanceEvaluator {
 
     let recoveryCursor = stop?.elapsedMs ?? spokenNoFace?.elapsedMs ?? earcon?.elapsedMs
     let recovery = matcher.firstMatch(after: recoveryCursor, kind: .recovery)
-    // Non-consuming: a duplicate must still surface in `unexplainedEvents`
-    // (the recovery rung's own note points there), not be swallowed here.
-    let hasDuplicateRecovery =
-      recovery != nil && matcher.peekMatch(after: recovery!.elapsedMs, kind: .recovery) != nil
+    // A duplicate is a SECOND recovery with no new face-lost episode in
+    // between. A `faceReacquired` that follows a fresh `faceLost` belongs to
+    // a later episode and is not a duplicate at all — the maintainer's real
+    // run had two such blips after he returned, and the old check reported
+    // his single correct recovery as a duplicate because of them.
+    // Non-consuming either way: a genuine duplicate must still surface in
+    // `unexplainedEvents`, where the recovery rung's own note points.
+    let hasDuplicateRecovery = Self.hasDuplicateRecovery(
+      events: input.events, afterRecoveryMs: recovery?.elapsedMs)
     let rung4 = recoveryRungResult(match: recovery, duplicateFound: hasDuplicateRecovery)
 
-    let unconsumed = matcher.unconsumedEvents()
-    // §6.1's liveness heartbeat is separated out BEFORE `unexplainedEvents`
-    // is built, and this is a readability fix with teeth. The heartbeat
-    // fires every `heartbeatIntervalMs` (7s default) for the whole time the
-    // user is placed, so a 30-minute acceptance run with a 10-minute absence
-    // produces on the order of 170 of them. Leaving those in the "everything
-    // else that fired" list would bury the handful of entries that clause
-    // exists to expose under a wall of expected ones — and a list nobody can
-    // read is worth exactly as much as no list, which is the failure this
-    // whole instrument was built to prevent.
-    //
-    // Separating them costs nothing in rigor: heartbeats are still counted
-    // and still checked in the one place where a heartbeat is genuinely
-    // damning — `strayRendererActivityDuringStop` is computed from the FULL
-    // unconsumed set below, so a heartbeat during the STOP window (§7.3
-    // demands total silence there) is still flagged, and flagged as the
-    // safety-critical violation it is rather than as one more line in a long
-    // list.
-    // ...but ONLY heartbeats outside the face-lost episode -- see
-    // `isRoutineHeartbeat(_:episodeStartMs:episodeEndMs:)` for why position,
-    // not kind, is what decides.
-    let episodeStartMs = earcon?.elapsedMs ?? reference.startMs
-    let heartbeats = unconsumed.filter {
-      Self.isRoutineHeartbeat($0, episodeStartMs: episodeStartMs, episodeEndMs: recovery?.elapsedMs)
-    }
-    let unexplained = unconsumed.filter {
-      !Self.isRoutineHeartbeat(
-        $0, episodeStartMs: episodeStartMs, episodeEndMs: recovery?.elapsedMs)
-    }
-    let strayDuringStop = Self.strayRendererActivity(
-      unexplained: unconsumed, stopElapsedMs: stop?.elapsedMs,
-      recoveryElapsedMs: recovery?.elapsedMs)
+    return Self.assembleReport(
+      ReportInputs(
+        rungs: [rung1, rung2, rung3, rung4], unconsumed: matcher.unconsumedEvents(),
+        episodes: episodes, escalatedCount: escalatedEpisodes.count,
+        windowStartMs: earcon?.elapsedMs ?? reference.startMs, windowEndMs: recovery?.elapsedMs,
+        stopMs: stop?.elapsedMs, reference: reference))
+  }
 
-    return AcceptanceReport(
-      rungs: [rung1, rung2, rung3, rung4],
-      unexplainedEvents: unexplained,
-      heartbeats: heartbeats,
-      strayRendererActivityDuringStop: strayDuringStop,
-      referenceEpisodeStartMs: reference.startMs,
-      referenceEpisodeStartIsInferred: reference.isInferred)
+  // swift-format puts the brace of a wrapped signature on its own line;
+  // swiftlint's opening_brace rule disagrees. Format wins (house rule). This
+  // block sits ABOVE the doc comment deliberately: a `//` block between a
+  // `///` comment and its declaration triggers `orphaned_doc_comment`.
+  // swiftlint:disable opening_brace
+  /// Whether a second `faceReacquired` follows `afterRecoveryMs` with NO
+  /// intervening `faceLost` — the only shape that is genuinely a duplicate
+  /// recovery rather than the start of a new episode. See the call site.
+  private static func hasDuplicateRecovery(events: [AcceptanceEvent], afterRecoveryMs: Int?)
+    -> Bool
+  {
+    // swiftlint:enable opening_brace
+    guard let afterRecoveryMs else { return false }
+    for event in events where event.elapsedMs > afterRecoveryMs {
+      switch event.kind {
+      case .audioEvent(.faceLost):
+        return false
+      case .audioEvent(.faceReacquired):
+        return true
+      default:
+        continue
+      }
+    }
+    return false
   }
 
   /// Whether a heartbeat is routine (bucketed into
@@ -158,7 +163,7 @@ public enum AcceptanceEvaluator {
   /// A missing recovery is treated as "the episode never ended," so every
   /// heartbeat after its start stays evidence — the conservative reading, and
   /// the right one when the run is already anomalous.
-  private static func isRoutineHeartbeat(
+  static func isRoutineHeartbeat(
     _ event: AcceptanceEvent, episodeStartMs: Int?, episodeEndMs: Int?
   ) -> Bool {
     guard event.isLivenessHeartbeat else { return false }
@@ -185,7 +190,7 @@ public enum AcceptanceEvaluator {
     }
   }
 
-  private struct ReferenceStart {
+  struct ReferenceStart {
     let startMs: Int?
     let isInferred: Bool
   }
@@ -211,7 +216,7 @@ public enum AcceptanceEvaluator {
   /// was never found, the window stays open to the end of the log — an
   /// unattended session that never came back is exactly the case where any
   /// later noise matters most.
-  private static func strayRendererActivity(
+  static func strayRendererActivity(
     unexplained: [AcceptanceEvent], stopElapsedMs: Int?, recoveryElapsedMs: Int?
   ) -> [AcceptanceEvent] {
     guard let stopElapsedMs else { return [] }
