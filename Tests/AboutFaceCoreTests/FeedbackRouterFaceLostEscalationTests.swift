@@ -131,16 +131,26 @@ struct FeedbackRouterFaceLostEscalationTests {
     #expect(await audio.calls.contains(.play(.livenessHeartbeat)) == false)
   }
 
-  @Test("Monitor: rung 3 STOP cuts a beacon left playing by a stray pre-STOP frame")
+  /// Runs in SETUP because Phase 4.5 made the positional beacon a converging
+  /// instrument only (design doc §3.3, `FeedbackRouter+Continuous.swift`) —
+  /// in monitoring there is no longer any beacon for the STOP to cut. The
+  /// safety property this pins down is unchanged and still reachable: an
+  /// episode that escalates all the way to rung 3 while a beacon is playing
+  /// must actively CUT it, not merely stop sending updates. Converging is
+  /// simply where a beacon can now be playing when that happens.
+  @Test("Setup: rung 3 STOP cuts a beacon left playing by a stray pre-STOP frame")
   func rung3StopCutsBeaconLeftPlayingByStrayFrame() async {
     let audio = MockAudioRenderer()
     let speech = MockSpeechRenderer()
-    let router = FeedbackRouter(audio: audio, speech: speech, mode: .monitor)
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .setup)
     let clock = ContinuousClock()
     let t0 = clock.now
 
-    await ingestRepeated(router, faceLostOutput(), at: t0, count: 3)
-    await router.ingest(faceLostOutput(), at: t0.plus(ms: 1500))  // rung 1
+    // Setup's N-frame threshold is 5, not Monitor's 3, and its rung-1 delay
+    // is 500ms rather than 1500ms — see `FeedbackConfig.nFrameSetup` and
+    // `faceLostEarconDelaySetupMs`. Rungs 2 and 3 are mode-independent.
+    await ingestRepeated(router, faceLostOutput(), at: t0, count: 5)
+    await router.ingest(faceLostOutput(), at: t0.plus(ms: 600))  // rung 1
     await router.ingest(faceLostOutput(), at: t0.plus(ms: 5000))  // rung 2
 
     // A single stray frame with an `.ok` signal and in-dead-zone framing —

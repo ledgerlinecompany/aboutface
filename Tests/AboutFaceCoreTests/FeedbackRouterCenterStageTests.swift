@@ -20,13 +20,19 @@ struct FeedbackRouterCenterStageTests {
 
   // MARK: - Beacon suppression (continuous channel)
 
+  /// Setup, not Monitor: Phase 4.5 made the beacon a converging instrument
+  /// only (design doc §3.3), so monitoring has no beacon for Center Stage to
+  /// suppress. What this test pins down — that activation cuts a PLAYING
+  /// beacon exactly once, and that the cut goes out via the resolve-then-send
+  /// tail rather than an early return — is unchanged, and converging is where
+  /// it now applies.
   @Test(
     "activating mid-stream cuts a playing beacon exactly once, and it stays cut until deactivated"
   )
   func activatingMidStreamCutsBeaconOnceAndStaysCutUntilDeactivated() async {
     let audio = MockAudioRenderer()
     let speech = MockSpeechRenderer()
-    let router = FeedbackRouter(audio: audio, speech: speech, mode: .monitor)
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .setup)
     let clock = ContinuousClock()
     let t0 = clock.now
 

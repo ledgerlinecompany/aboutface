@@ -110,8 +110,19 @@ extension FeedbackRouter {
     // overshoots no longer blink the tone off. During the confirmation
     // window the error is ~0, so the user hears the pure center tone with
     // the click crescendo at peak — the arrival finishing, not ambiguity.
+    // Phase 4.5 (design doc §3.3): the positional beacon is a CONVERGING
+    // instrument. Monitoring is near-silent by decision, and a beacon that
+    // starts up mid-meeting because the user shifted in their chair is
+    // continuous unprompted sound — exactly what that decision rules out.
+    // Until now this method had no mode gate at all (gaze trim did; the beacon
+    // did not), so drifting out of the dead zone during a call played the
+    // tone. Resolved HERE rather than as an early return, for the same reason
+    // the `userLikelyAway` branch above is: a plain return would leave
+    // whatever target was last sent droning forever.
     let resolved: SonificationTarget?
-    if output.analysis.signalState == .ok, let framing = output.framing {
+    if mode == .monitor {
+      resolved = nil
+    } else if output.analysis.signalState == .ok, let framing = output.framing {
       let arrivalAnnounced = confirmedState == .goodZone && dwellFiredForCurrentEpisode
       // §12.5: under Center Stage, the positional beacon disables — "a
       // beacon guiding toward a target the camera is simultaneously
