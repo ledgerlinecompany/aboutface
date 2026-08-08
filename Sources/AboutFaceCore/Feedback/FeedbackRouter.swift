@@ -145,6 +145,15 @@ public actor FeedbackRouter {
   /// cycling gets generated.
   var faceLostEpisodeWasAudible = false
 
+  // MARK: - Phase 4.5 status pulse (FeedbackRouter+Pulse.swift)
+  //
+  // The one bit the ambient pulse carries while monitoring. Lazily built on
+  // first use so it always reflects the CURRENT `feedbackConfig` dwells, which
+  // the Debug panel can change live.
+  var pulseMachine: PulseStateMachine?
+  /// Origin for the pulse machine's monotonic seconds. Set on first use.
+  var pulseClockOrigin: ContinuousClock.Instant?
+
   /// §7.3's rung-3 "STOP": becomes `true` the instant `faceLostRung`
   /// reaches 3 and stays `true` until the face is reacquired. Cleared by
   /// `handleFaceLostReacquisition` (`FeedbackRouter+FaceLost.swift`, called

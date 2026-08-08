@@ -118,6 +118,31 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   /// and §6.1's no-ambiguous-silence requirement outranks uniform dwell.
   public var goodZoneChimeDelayMs: Int
 
+  /// Phase 4.5 (design doc §3.3): how close the face's bounding box may come
+  /// to a frame edge before it counts as CROPPED, normalized to the frame.
+  /// See `FrameEdgeCrop` for why proximity rather than size is the test.
+  /// `0` means "only when it actually reaches the boundary."
+  public var frameEdgeCropMargin: Double
+
+  /// Whether headroom cropping — the top of the head trimmed — counts.
+  /// Default `false`: it is common in ordinary laptop use, mostly benign, and
+  /// counting it would put many users permanently in the warned state, which
+  /// costs the ambient pulse's one bit its meaning. See `FrameEdgeCrop`.
+  public var frameEdgeCropFlagsTopEdge: Bool
+
+  /// How long the face must stay cropped before the status pulse changes
+  /// character, milliseconds. Deliberately LONG — design doc §3.3.1: "this is
+  /// 'you have been like this for a while,' not 'you moved.'"
+  public var outOfFrameEnterMs: Int
+
+  /// How long it must stay uncropped before the pulse returns to normal.
+  /// Shorter than `outOfFrameEnterMs` on purpose, which is §4's
+  /// hysteresis rule oriented the way it should be for a WARNING state: slow
+  /// to alarm, prompt to reassure. A user who has just corrected their
+  /// position should hear that it worked without waiting out the full entry
+  /// dwell again.
+  public var outOfFrameExitMs: Int
+
   /// §12.5: whether the good-zone ARRIVAL EARCON still sounds while Center
   /// Stage is active. Default `true` — the chime plays.
   ///
@@ -210,6 +235,10 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostRecoverySpeechEnabled: Bool = true,
     heartbeatIntervalMs: Int,
     goodZoneChimeDelayMs: Int = 0,
+    frameEdgeCropMargin: Double = 0.01,
+    frameEdgeCropFlagsTopEdge: Bool = false,
+    outOfFrameEnterMs: Int = 10000,
+    outOfFrameExitMs: Int = 3000,
     centerStageArrivalChimeEnabled: Bool = true,
     setup: ModeLimits,
     monitor: ModeLimits,
@@ -225,6 +254,10 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     self.faceLostRecoverySpeechEnabled = faceLostRecoverySpeechEnabled
     self.heartbeatIntervalMs = heartbeatIntervalMs
     self.goodZoneChimeDelayMs = goodZoneChimeDelayMs
+    self.frameEdgeCropMargin = frameEdgeCropMargin
+    self.frameEdgeCropFlagsTopEdge = frameEdgeCropFlagsTopEdge
+    self.outOfFrameEnterMs = outOfFrameEnterMs
+    self.outOfFrameExitMs = outOfFrameExitMs
     self.centerStageArrivalChimeEnabled = centerStageArrivalChimeEnabled
     self.setup = setup
     self.monitor = monitor
@@ -247,6 +280,10 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostRecoverySpeechEnabled: true,
     heartbeatIntervalMs: 7000,
     goodZoneChimeDelayMs: 0,
+    frameEdgeCropMargin: 0.01,
+    frameEdgeCropFlagsTopEdge: false,
+    outOfFrameEnterMs: 10000,
+    outOfFrameExitMs: 3000,
     centerStageArrivalChimeEnabled: true,
     setup: ModeLimits(minAnnouncementIntervalMs: nil, minSameConditionIntervalMs: nil),
     monitor: ModeLimits(minAnnouncementIntervalMs: 20000, minSameConditionIntervalMs: 180_000),

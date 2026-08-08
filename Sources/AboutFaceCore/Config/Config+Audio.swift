@@ -110,7 +110,13 @@ extension Config {
       heartbeat: AudioHeartbeat(
         gain: 0.20,
         freqHz: 880,
-        durationMs: 80
+        durationMs: 80,
+        attention: AudioAttentionPulse(
+          gain: 0.20,
+          freqHz: 660,
+          noteDurationMs: 55,
+          gapMs: 70
+        )
       ),
       earcons: .defaults,
       gazeTrim: AudioGazeTrim(
@@ -366,11 +372,18 @@ extension Config {
     public var gain: Double
     public var freqHz: Double
     public var durationMs: Double
+    /// Phase 4.5's other pulse character — see `AudioAttentionPulse`.
+    public var attention: AudioAttentionPulse
 
-    public init(gain: Double, freqHz: Double, durationMs: Double) {
+    public init(
+      gain: Double, freqHz: Double, durationMs: Double,
+      attention: AudioAttentionPulse = AudioAttentionPulse(
+        gain: 0.20, freqHz: 660, noteDurationMs: 55, gapMs: 70)
+    ) {
       self.gain = gain
       self.freqHz = freqHz
       self.durationMs = durationMs
+      self.attention = attention
     }
   }
 }

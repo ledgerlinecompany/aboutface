@@ -154,4 +154,68 @@ struct FeedbackRouterPulseTests {
     await router.ingest(framingErrorOutput(errorX: 0.5), at: t0.plus(ms: 7500))
     #expect(!(await audio.playedEvents().contains(.livenessHeartbeat)))
   }
+
+  // MARK: - The bit the pulse carries
+
+  /// End to end: a face held against the frame edge past the dwell changes the
+  /// pulse's character, in the same slot and on the same cadence — no extra
+  /// sound is added to the call.
+  @Test("A sustained edge crop changes the pulse from heartbeat to attention")
+  func sustainedCropChangesPulseCharacter() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .monitor)
+    let t0 = ContinuousClock().now
+    let cropped = croppedOutput()
+
+    await ingestRepeated(router, cropped, at: t0.plus(ms: 1), count: 3)
+    // Before the 10s dwell, the pulse is still the ordinary heartbeat.
+    await router.ingest(cropped, at: t0.plus(ms: 7200))
+    #expect(await audio.playedEvents().contains(.livenessHeartbeat))
+    #expect(!(await audio.playedEvents().contains(.attentionPulse)))
+
+    // Past it, the same slot sounds different.
+    await router.ingest(cropped, at: t0.plus(ms: 11_000))
+    await router.ingest(cropped, at: t0.plus(ms: 14_500))
+    #expect(await audio.playedEvents().contains(.attentionPulse))
+  }
+
+  /// The bit clears once the user corrects, and does so on the shorter exit
+  /// dwell — they should hear that it worked.
+  @Test("Correcting position returns the pulse to the heartbeat")
+  func correctingReturnsPulseToNormal() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .monitor)
+    let t0 = ContinuousClock().now
+
+    await ingestRepeated(router, croppedOutput(), at: t0.plus(ms: 1), count: 3)
+    await router.ingest(croppedOutput(), at: t0.plus(ms: 11_000))
+    await router.ingest(croppedOutput(), at: t0.plus(ms: 14_500))
+    #expect(await audio.playedEvents().contains(.attentionPulse))
+    let attentionCount = await audio.playedEvents().filter { $0 == .attentionPulse }.count
+
+    // Corrected, held past the 3s exit dwell.
+    await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 15_000), count: 3)
+    await router.ingest(goodZoneOutput(), at: t0.plus(ms: 21_600))
+    #expect(await audio.playedEvents().filter { $0 == .attentionPulse }.count == attentionCount)
+    #expect(await audio.playedEvents().last == .livenessHeartbeat)
+  }
+
+  /// A brief lean out of shot must never flip the bit — the dwell is "you have
+  /// been like this for a while," not "you moved."
+  @Test("A brief crop never reaches the attention pulse")
+  func briefCropNeverSounds() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .monitor)
+    let t0 = ContinuousClock().now
+
+    await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 1), count: 3)
+    await ingestRepeated(router, croppedOutput(), at: t0.plus(ms: 2000), count: 3)
+    await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 5000), count: 3)
+    await router.ingest(goodZoneOutput(), at: t0.plus(ms: 21_000))
+
+    #expect(!(await audio.playedEvents().contains(.attentionPulse)))
+  }
 }
