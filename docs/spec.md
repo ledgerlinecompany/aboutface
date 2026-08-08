@@ -1203,6 +1203,23 @@ Setup and basic settings and correctly explain what each control does from
 its label and hint alone; the glossary exists and the repo's strings match
 it.
 
+**Design proposal (2026-08-07):**
+[`design/phase-4.5-app-design.md`](design/phase-4.5-app-design.md) reasons
+this phase out from the job rather than from what is built, and records four
+maintainer decisions that shape it: converging is the primary intent and
+monitoring second; during a call the app never speaks unprompted except for
+something severe; being partially out of frame for long enough earns an
+EARCON, never words; and the debug panel is developer-only and does not ship.
+It also proposes replacing the liveness heartbeat with a two-state STATUS PULSE
+carrying one bit ("is everything okay — if not, ask me"), and draws a
+distinction the app has never made between POSITIONAL signals (framing: correct
+once, instantaneous reading is the truth) and POSTURAL ones (gaze, head tilt:
+meaningful only as a proportion over time, and currently not tracked at all).
+It lists the gaps between that design and the current build — the largest being
+that the positional beacon is not mode-gated, so it plays during a call, and
+that the heartbeat stops when the user drifts out of frame, silencing the app
+exactly when something is wrong.
+
 ### Phase 5 — Profiles, first-run, packaging
 
 Profile system, guided first-run calibration, MAS packaging and submission.
