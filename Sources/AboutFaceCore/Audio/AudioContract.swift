@@ -57,6 +57,12 @@ public enum AudioEvent: Sendable, Equatable {
   case enteredGoodZone
   /// Quiet tick while holding good zone.
   case livenessHeartbeat
+  /// Phase 4.5's ATTENTION pulse (`docs/design/phase-4.5-app-design.md`
+  /// §3.3.1): the status pulse's other character, fired on the same cadence
+  /// as `livenessHeartbeat` and in its place, when something durable and
+  /// non-severe is wrong. Not an extra sound — the same slot, sounding
+  /// different, so a near-silent monitoring session gains no sound at all.
+  case attentionPulse
   /// Different IN KIND from positional tones.
   case faceLost
   /// Audibly distinct from faceLost AND noSignal.
