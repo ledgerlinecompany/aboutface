@@ -218,4 +218,87 @@ struct FeedbackRouterPulseTests {
 
     #expect(!(await audio.playedEvents().contains(.attentionPulse)))
   }
+
+  // MARK: - Near-silence: only severe conditions sound while monitoring
+
+  /// "Too dark" is explicitly non-severe (design doc §3.3): recoverable, not
+  /// urgent, and askable. In monitoring it becomes an answer rather than an
+  /// announcement.
+  @Test("lowConfidence makes no sound while monitoring")
+  func lowConfidenceIsSilentWhileMonitoring() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .monitor)
+    let t0 = ContinuousClock().now
+    let dark = makeOutput(signalState: .lowConfidence)
+
+    await ingestRepeated(router, dark, at: t0.plus(ms: 1), count: 3)
+    await router.ingest(dark, at: t0.plus(ms: 900))  // past the 800ms dwell
+
+    #expect(!(await audio.playedEvents().contains(.lowConfidence)))
+    #expect(await speech.calls.isEmpty)
+  }
+
+  /// The same condition while CONVERGING still sounds and still speaks — the
+  /// user is actively working on their position and wants everything.
+  @Test("lowConfidence still sounds and speaks while converging")
+  func lowConfidenceStillSoundsWhileConverging() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .setup)
+    let t0 = ContinuousClock().now
+    let dark = makeOutput(signalState: .lowConfidence)
+
+    await ingestRepeated(router, dark, at: t0.plus(ms: 1), count: 5)
+    await router.ingest(dark, at: t0.plus(ms: 900))
+
+    #expect(await audio.playedEvents().contains(.lowConfidence))
+    #expect(await speech.calls.contains(.speak(Lexicon.Instruction.tooDark)))
+  }
+
+  /// A dead feed IS severe — the app cannot do its job — so it still sounds in
+  /// monitoring. This is the line the whole near-silence decision rests on.
+  @Test("noSignal still sounds while monitoring, because it is severe")
+  func noSignalStillSoundsWhileMonitoring() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .monitor)
+    let t0 = ContinuousClock().now
+
+    await ingestRepeated(router, noSignalOutput(), at: t0.plus(ms: 1), count: 3)
+    await router.ingest(noSignalOutput(), at: t0.plus(ms: 900))
+
+    #expect(await audio.playedEvents().contains(.noSignal))
+  }
+
+  /// The arrival chime belongs to converging, where it concludes something the
+  /// user was working toward. Drifting back into the zone mid-call is not that.
+  @Test("No arrival chime while monitoring, but still one while converging")
+  func arrivalChimeIsConvergingOnly() async {
+    let monitorAudio = MockAudioRenderer()
+    let monitorRouter = FeedbackRouter(
+      audio: monitorAudio, speech: MockSpeechRenderer(), mode: .monitor)
+    let t0 = ContinuousClock().now
+    await ingestRepeated(monitorRouter, goodZoneOutput(), at: t0.plus(ms: 1), count: 3)
+    #expect(!(await monitorAudio.playedEvents().contains(.enteredGoodZone)))
+
+    let setupAudio = MockAudioRenderer()
+    let setupRouter = FeedbackRouter(
+      audio: setupAudio, speech: MockSpeechRenderer(), mode: .setup)
+    await ingestRepeated(setupRouter, goodZoneOutput(), at: t0.plus(ms: 1), count: 5)
+    #expect(await setupAudio.playedEvents().contains(.enteredGoodZone))
+  }
+
+  /// Severity is the whole basis for near-silence, so it is pinned directly.
+  @Test("Only a dead feed and a lost face count as severe")
+  func severityIsNarrow() {
+    #expect(FeedbackCondition.noSignal.isSevere)
+    #expect(FeedbackCondition.faceLost.isSevere)
+    for condition in [
+      FeedbackCondition.lowConfidence, .framingError, .partiallyOutOfFrame, .lightingCritical,
+      .gazeOff, .headTilt,
+    ] {  // swiftlint:disable:previous trailing_comma
+      #expect(!condition.isSevere, "\(condition) must not be severe")
+    }
+  }
 }

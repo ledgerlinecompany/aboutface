@@ -174,7 +174,9 @@ struct FeedbackRouterGoodZoneRollTests {
     // — see `FeedbackRouterRateLimitTests`' own comment to this effect).
     await ingestRepeated(router, goodZoneOutput(), at: t0, count: 3)
     let entryFireTime = t0
-    #expect(await audio.playedEvents() == [.enteredGoodZone])
+    // Phase 4.5: no arrival chime in monitoring either — nothing was being
+    // worked toward there (design doc §3.3).
+    #expect(await audio.playedEvents().isEmpty)
     #expect(await speech.calls == [])  // Monitor: earcon-only entry, no `centered` speech.
 
     await ingestRepeated(router, tilted, at: entryFireTime.plus(ms: 100), count: 3)
@@ -189,7 +191,9 @@ struct FeedbackRouterGoodZoneRollTests {
     // contract either way is: nothing spoken, nothing played beyond the
     // entry earcon.
     #expect(await speech.calls == [])
-    #expect(await audio.playedEvents() == [.enteredGoodZone])
+    // Phase 4.5: no arrival chime in monitoring either — nothing was being
+    // worked toward there (design doc §3.3).
+    #expect(await audio.playedEvents().isEmpty)
   }
 
   @Test("gaze-off and head-tilt are independent: whichever confirms first speaks first, both land")
