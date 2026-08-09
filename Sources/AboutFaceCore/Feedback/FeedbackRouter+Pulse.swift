@@ -101,6 +101,18 @@ extension FeedbackRouter {
         enterMs: feedbackConfig.outOfFrameEnterMs, exitMs: feedbackConfig.outOfFrameExitMs)
     }
 
+    // Two independent reasons to raise the bit, OR'd. DRIFT is the one that
+    // actually fires in practice; the edge crop is the rarer case drift cannot
+    // see — leaning in close enough to clip your own head while the
+    // face-position metrics still read as centered. See
+    // `FeedbackConfig.driftZoneMultiplier` for the field finding that made
+    // drift primary and demoted cropping to a secondary trigger.
+    let hasDrifted =
+      output.framing.map {
+        FramingDrift.hasDrifted(
+          framing: $0, deadZone: config.deadZone,
+          multiplier: feedbackConfig.driftZoneMultiplier)
+      } ?? false
     let isCropped =
       output.analysis.primary.map {
         FrameEdgeCrop.isCropped(
@@ -110,6 +122,7 @@ extension FeedbackRouter {
       } ?? false
 
     let seconds = Self.milliseconds(from: origin, to: time)
-    return pulseMachine?.update(isCropped: isCropped, now: Double(seconds) / 1000) ?? .normal
+    return pulseMachine?.update(
+      needsAttention: hasDrifted || isCropped, now: Double(seconds) / 1000) ?? .normal
   }
 }

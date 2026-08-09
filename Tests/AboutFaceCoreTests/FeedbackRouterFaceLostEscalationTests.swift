@@ -163,15 +163,19 @@ struct FeedbackRouterFaceLostEscalationTests {
     // regardless, and the beacon is now audibly playing.
     await router.ingest(goodZoneOutput(), at: t0.plus(ms: 29_500))
 
-    // The face-lost frame that crosses the 30000ms STOP boundary: rung 3
-    // fires (silently, inside `tickAnnouncements`, which `ingest` runs
-    // BEFORE the continuous channel) and sets `userLikelyAway`. The bug
-    // this test pins down: a guard that merely stops SENDING further
-    // updates leaves the target sent at 29_500ms "playing" forever as far
-    // as the audio renderer is concerned — rung 3's silence has to
-    // actively CUT whatever was last playing, not just go quiet from here
-    // on.
-    await router.ingest(faceLostOutput(), at: t0.plus(ms: 30_000))
+    // The stray frame above RESTARTS the ladder's clock: §7.3 now measures
+    // continuous absence rather than time since confirmation (see
+    // `FeedbackRouter.lastFaceSeenAt` — a flickering detection used to let
+    // rung 1 fire while the beacon was audibly playing). Having seen a face
+    // at 29_500ms, the app cannot honestly call the user away 500ms later, so
+    // the STOP is now due 30s after THAT frame rather than after the original
+    // loss. The property under test is unchanged.
+    //
+    // The bug this pins down: a guard that merely stops SENDING further
+    // updates leaves the target sent at 29_500ms "playing" forever as far as
+    // the audio renderer is concerned — rung 3's silence has to actively CUT
+    // whatever was last playing, not just go quiet from here on.
+    await router.ingest(faceLostOutput(), at: t0.plus(ms: 59_600))
     #expect(await router.isUserLikelyAway() == true)
 
     #expect(await audio.calls.last == .update(nil))
@@ -179,7 +183,7 @@ struct FeedbackRouterFaceLostEscalationTests {
     // The cut is a one-time transition, not a repeating "keep sending nil"
     // — no further calls of any kind on later frames.
     let audioCallCountAtStop = await audio.calls.count
-    await router.ingest(faceLostOutput(), at: t0.plus(ms: 40_000))
+    await router.ingest(faceLostOutput(), at: t0.plus(ms: 70_000))
     #expect(await audio.calls.count == audioCallCountAtStop)
   }
 

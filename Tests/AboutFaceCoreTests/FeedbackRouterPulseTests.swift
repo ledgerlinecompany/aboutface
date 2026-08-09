@@ -301,4 +301,48 @@ struct FeedbackRouterPulseTests {
       #expect(!condition.isSevere, "\(condition) must not be severe")
     }
   }
+
+  // MARK: - Drift raises the bit (field finding, 2026-08-08)
+
+  /// The signal that replaced edge-cropping as the primary trigger. Cropping
+  /// proved unreachable in a real session — Vision stops detecting a face well
+  /// before the box it reports gets clipped — so the user went from
+  /// comfortably framed straight to face-lost with nothing in between.
+  @Test("Sustained drift beyond the widened zone raises the attention pulse")
+  func sustainedDriftRaisesAttention() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .monitor)
+    let t0 = ContinuousClock().now
+    // Well beyond twice the dead zone, but a perfectly ordinary detected face.
+    let drifted = makeOutput(signalState: .ok, errorX: 0.35, inDeadZone: false)
+
+    await ingestRepeated(router, drifted, at: t0.plus(ms: 1), count: 3)
+    await router.ingest(drifted, at: t0.plus(ms: 7200))
+    #expect(!(await audio.playedEvents().contains(.attentionPulse)))
+
+    await router.ingest(drifted, at: t0.plus(ms: 11_000))
+    await router.ingest(drifted, at: t0.plus(ms: 14_500))
+    #expect(await audio.playedEvents().contains(.attentionPulse))
+  }
+
+  /// Ordinary small corrections happen constantly in the band between the dead
+  /// zone and the drift boundary. They must stay quiet, or the bit stops
+  /// meaning anything.
+  @Test("Drifting only slightly outside the dead zone stays on the normal pulse")
+  func slightDriftStaysQuiet() async {
+    let audio = MockAudioRenderer()
+    let speech = MockSpeechRenderer()
+    let router = FeedbackRouter(audio: audio, speech: speech, mode: .monitor)
+    let t0 = ContinuousClock().now
+    let slight = makeOutput(
+      signalState: .ok, errorX: Float(Config.defaults.deadZone.horizontal * 1.4),
+      inDeadZone: false)
+
+    await ingestRepeated(router, slight, at: t0.plus(ms: 1), count: 3)
+    await router.ingest(slight, at: t0.plus(ms: 14_500))
+    await router.ingest(slight, at: t0.plus(ms: 21_500))
+    #expect(!(await audio.playedEvents().contains(.attentionPulse)))
+    #expect(await audio.playedEvents().contains(.livenessHeartbeat))
+  }
 }
