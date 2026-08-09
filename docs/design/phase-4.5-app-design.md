@@ -272,6 +272,22 @@ should be roughly six things:
 - tones or speech
 - headphones or speakers
 - keyboard shortcuts
+- **how patient the app is before telling you that you are out of frame**
+  (maintainer, 2026-08-08). This is the one tuning value promoted out of the
+  developer panel, and it earns the promotion on this section's own test:
+  tolerance for being told genuinely varies by person and by meeting, so it
+  exists because a user has a goal rather than because we had a parameter.
+
+  It should be presented as an OUTCOME, not as `outOfFrameEnterMs`: a small set
+  of named choices ("sooner / normal / later") that map to `Config` values
+  behind the scenes. A millisecond field would fail §7's spoken-first test —
+  "ten thousand milliseconds" tells a listener nothing about what they will
+  experience — and would leak the mechanism the rest of this document is trying
+  to keep out of the user's model.
+
+  Only the ENTER dwell is a user choice. The exit dwell is a
+  responsiveness property rather than a preference: nobody wants to wait longer
+  to be told they have fixed the problem.
 
 Everything tuned by ear across Phase 3 and 4 becomes a baked default the user
 never meets. The test for admitting any control:
