@@ -339,9 +339,13 @@ most of it predates these decisions.
    comments). Drifting out of the dead zone during a call produces continuous
    unprompted sound, contrary to §3.3. Gaze trim *is* Setup-gated; the beacon
    is not. **This is the largest single gap.**
-2. **Monitor still speaks non-severe conditions** — framing instructions, the
-   gaze advisory, the head-tilt advisory — rate-limited but present. Under §3.3
-   these become query-only.
+2. ~~**Monitor still speaks non-severe conditions.**~~ **Closed 2026-08-08.**
+   The audit found speech was ALREADY Setup-gated everywhere — the gaze and
+   tilt advisories resolve to `fire(event: nil, phrase: nil)` in monitoring and
+   no-op. What actually still sounded was two earcons: the arrival chime and
+   `.lowConfidence`. Both are now converging-only, gated by
+   `FeedbackCondition.isSevere`. `.noSignal` still sounds, because a dead feed
+   IS the app failing to do its job.
 3. **`.partiallyOutOfFrame` is an unreachable stub** with no `Config`
    threshold. §3.3 activates it.
 4. **Monitor is entered by an explicit toggle and never ends by itself.** §3.2

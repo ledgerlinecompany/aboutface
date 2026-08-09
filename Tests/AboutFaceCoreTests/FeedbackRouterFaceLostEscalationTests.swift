@@ -211,7 +211,7 @@ struct FeedbackRouterFaceLostEscalationTests {
     // `framingInstruction(for:)`) — format wins.
     // swiftlint:disable trailing_comma
     #expect(await router.isUserLikelyAway() == false)
-    #expect(await audio.playedEvents() == [.faceLost, .faceReacquired, .enteredGoodZone])
+    #expect(await audio.playedEvents() == [.faceLost, .faceReacquired])
     #expect(
       await speech.calls == [
         .speak(Lexicon.Instruction.noFace),
@@ -220,7 +220,7 @@ struct FeedbackRouterFaceLostEscalationTests {
 
     // Holding the recovered state must not refire anything.
     await router.ingest(goodZoneOutput(), at: t0.plus(ms: 30_200))
-    #expect(await audio.playedEvents() == [.faceLost, .faceReacquired, .enteredGoodZone])
+    #expect(await audio.playedEvents() == [.faceLost, .faceReacquired])
     #expect(
       await speech.calls == [
         .speak(Lexicon.Instruction.noFace),
@@ -293,7 +293,7 @@ struct FeedbackRouterFaceLostEscalationTests {
     await ingestRepeated(router, goodZoneOutput(), at: t0.plus(ms: 30_100), count: 3)
 
     #expect(await router.isUserLikelyAway() == false)
-    #expect(await audio.playedEvents() == [.faceLost, .faceReacquired, .enteredGoodZone])
+    #expect(await audio.playedEvents() == [.faceLost, .faceReacquired])
     #expect(await speech.calls == [.speak(Lexicon.Instruction.noFace)])
   }
 

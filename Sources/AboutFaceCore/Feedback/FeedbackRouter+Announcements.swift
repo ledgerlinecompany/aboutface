@@ -165,7 +165,16 @@ extension FeedbackRouter {
       // frame is already suppressed upstream by
       // `updateContinuousSonification`'s own `centerStageActive` branch, so
       // there is no cut/chime pairing left to keep atomic here either way.
-      let suppressChime = centerStageActive && !feedbackConfig.centerStageArrivalChimeEnabled
+      // Phase 4.5 (design doc §3.2, §3.3): the arrival chime belongs to
+      // CONVERGING, where it concludes something the user was working toward —
+      // the beacon cuts and the chime lands together, and that pairing is the
+      // sentence "you are placed." In monitoring there is no beacon and no
+      // convergence, so a chime for drifting back into the zone marks an event
+      // the user was not pursuing. Bookkeeping below still runs: the episode
+      // state it sets is what the (silent) advisories read.
+      let suppressChime =
+        mode == .monitor
+        || (centerStageActive && !feedbackConfig.centerStageArrivalChimeEnabled)
       let event: AudioEvent? = suppressChime ? nil : .enteredGoodZone
       let phrase: Lexicon.Phrase? =
         centerStageActive ? nil : (mode == .setup ? Lexicon.Instruction.centered : nil)
@@ -207,8 +216,13 @@ extension FeedbackRouter {
     guard elapsedMs >= config.dwellMs else { return }
     dwellFiredForCurrentEpisode = true
 
-    let (event, instruction) = Self.announcementPayload(
+    let (payloadEvent, instruction) = Self.announcementPayload(
       for: condition, output: output, centerStageActive: centerStageActive)
+    // Phase 4.5 (design doc §3.3): monitoring is near-silent, so only SEVERE
+    // conditions may make a sound there. `.lowConfidence` ("too dark") is the
+    // one this actually silences today — every other non-severe condition
+    // already resolved to no event. The phrase was already Setup-only.
+    let event: AudioEvent? = (mode == .monitor && !condition.isSevere) ? nil : payloadEvent
     let phrase: Lexicon.Phrase? = mode == .setup ? instruction : nil
     await fire(event: event, phrase: phrase, key: .condition(condition), at: time)
   }

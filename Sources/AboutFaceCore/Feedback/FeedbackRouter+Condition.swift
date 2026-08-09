@@ -117,6 +117,39 @@ enum DiscreteState: Sendable, Equatable {
   case indeterminate
 }
 
+extension FeedbackCondition {
+  /// Whether this condition is SEVERE in the sense Phase 4.5's design gives
+  /// the word (`docs/design/phase-4.5-app-design.md` §3.3): *the app cannot
+  /// see you, or cannot do its job.*
+  ///
+  /// That definition is deliberately narrow, and it is the whole basis for
+  /// monitoring being near-silent. Everything else — framing, distance, gaze,
+  /// head tilt, lighting, other people in shot — is recoverable, not urgent,
+  /// and askable, so in monitoring those are ANSWERS rather than
+  /// announcements. The one non-severe thing that still makes a sound is being
+  /// cropped by a frame edge, and it does so by changing the status pulse's
+  /// character rather than by adding an announcement (§3.3.1).
+  ///
+  /// Converging is unaffected: there the user is actively working on their
+  /// position and wants everything.
+  var isSevere: Bool {
+    switch self {
+    case .noSignal, .faceLost:
+      // The feed is dead, or there is no face to analyze. Both mean the app
+      // cannot do the thing it exists to do, and silence about that would be
+      // §6.1's ambiguity at its worst.
+      return true
+    case .lowConfidence, .framingError, .partiallyOutOfFrame, .lightingCritical, .gazeOff,
+      .headTilt:
+      // All recoverable and all askable. `.lowConfidence` is §6.1's "often =
+      // too dark" case and is the closest call here: bad enough lighting
+      // eventually becomes `.faceLost`, which IS severe and has its own
+      // ladder, so nothing is lost by staying quiet until then.
+      return false
+    }
+  }
+}
+
 extension FeedbackRouter {
   /// §7.4 gate predicates, one per `FeedbackCondition` case, in the same
   /// order as the enum so the two stay easy to eyeball against each other.
