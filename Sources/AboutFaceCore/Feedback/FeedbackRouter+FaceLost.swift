@@ -67,7 +67,12 @@ extension FeedbackRouter {
   func tickFaceLostLadder(
     from start: ContinuousClock.Instant, at time: ContinuousClock.Instant
   ) async {
-    let elapsedMs = Self.milliseconds(from: start, to: time)
+    // Measured from whichever is LATER: the confirmed episode start, or the
+    // last frame on which a face was actually found. See
+    // `FeedbackRouter.lastFaceSeenAt` for the field finding — a flickering
+    // detection used to let this fire while the beacon was audibly playing.
+    let ladderStart = [start, lastFaceSeenAt].compactMap { $0 }.max() ?? start
+    let elapsedMs = Self.milliseconds(from: ladderStart, to: time)
 
     if faceLostRung < 1 {
       guard elapsedMs >= faceLostEarconDelayMs else { return }

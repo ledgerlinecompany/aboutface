@@ -165,6 +165,21 @@ is worse off than with a distinct one-shot alert that at least commands
 attention. Not settleable by reasoning — prototype both timbres in `audition`
 before committing to this.
 
+**Field finding, 2026-08-08: cropping was the wrong primary metric.** In a
+live session the cropped state proved essentially unreachable — *"I couldn't
+actually get myself cropped; every adjustment was normal heartbeat until the
+face lost earcon."* Vision detects a FACE, not a head, and stops detecting well
+before the box it reports is clipped, so the user passes straight from
+comfortably framed to no-face with no intermediate state for the bit to
+describe. The signal wanted was the one named in the same breath — *"I did
+wonder if I had moved too much without any kind of indicator"* — which is
+DRIFT, and is continuously reachable. `FramingDrift` now drives the bit,
+defined as a multiple of §4's already-tuned dead zone (default 2×) so there is
+only one canonical definition of "well placed" to keep in sync. `FrameEdgeCrop`
+remains as a secondary trigger for the case drift cannot see: leaning in close
+enough to clip your own head while the face-position metrics still read
+centered.
+
 **Open: what else flips the bit?** Being partially out of frame is the agreed
 case. Lighting collapsing, or someone appearing behind you, could flag at zero
 extra sound cost. The bar must stay high enough that "not fine" is rare and

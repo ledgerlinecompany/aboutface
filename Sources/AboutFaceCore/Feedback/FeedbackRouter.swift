@@ -145,6 +145,27 @@ public actor FeedbackRouter {
   /// cycling gets generated.
   var faceLostEpisodeWasAudible = false
 
+  /// The last frame on which a face was actually found, whatever the
+  /// N-frame-confirmed state believed at the time.
+  ///
+  /// §7.3's ladder used to measure from `confirmedStateStart` — the moment
+  /// face-lost was CONFIRMED — which made it disagree with the beacon.
+  /// Maintainer field finding, 2026-08-08: during convergence the face-lost
+  /// earcon "can fire even though you've already been found and the tone is
+  /// resumed." The continuous channel is deliberately not N-frame gated (§6.2
+  /// keeps the correction loop real-time), so a flickering detection resumes
+  /// the beacon on every good frame, while the confirmed state stays
+  /// `.faceLost` — no run of good frames is long enough to re-confirm — and
+  /// its timer keeps counting from the original confirmation. The user hears
+  /// "I can see you" and "I have lost you" at the same moment.
+  ///
+  /// The ladder now measures CONTINUOUS absence: elapsed time is taken from
+  /// whichever is later, the confirmed start or the last frame with a face. A
+  /// rung fires only after that many milliseconds during which the app truly
+  /// saw nothing, which is also the plain-language meaning a user would assume
+  /// ("I haven't been seen for half a second").
+  var lastFaceSeenAt: ContinuousClock.Instant?
+
   // MARK: - Phase 4.5 status pulse (FeedbackRouter+Pulse.swift)
   //
   // The one bit the ambient pulse carries while monitoring. Lazily built on
@@ -298,6 +319,14 @@ public actor FeedbackRouter {
   /// run every call.
   public func ingest(_ output: EngineOutput, at time: ContinuousClock.Instant) async {
     recordForQuery(output)
+
+    // Recorded BEFORE any state machine runs, so §7.3's ladder can measure
+    // continuous absence rather than time since confirmation — see
+    // `lastFaceSeenAt`. `.lowConfidence` counts as seen: a face WAS found,
+    // just poorly, and the ladder is about presence, not quality.
+    if output.analysis.signalState == .ok || output.analysis.signalState == .lowConfidence {
+      lastFaceSeenAt = time
+    }
 
     let discrete = Self.discreteState(for: output)
 

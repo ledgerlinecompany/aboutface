@@ -100,31 +100,31 @@ struct PulseStateMachineTests {
   func startsNormal() {
     var machine = Self.machine()
     #expect(machine.current == .normal)
-    #expect(machine.update(isCropped: false, now: 0) == .normal)
-    #expect(machine.update(isCropped: false, now: 60) == .normal)
+    #expect(machine.update(needsAttention: false, now: 0) == .normal)
+    #expect(machine.update(needsAttention: false, now: 60) == .normal)
   }
 
   /// Slow to alarm: "you have been like this for a while," not "you moved."
   @Test("Entering attention requires the full 10s dwell")
   func entryRequiresLongDwell() {
     var machine = Self.machine()
-    #expect(machine.update(isCropped: true, now: 0) == .normal)
-    #expect(machine.update(isCropped: true, now: 9.5) == .normal)
-    #expect(machine.update(isCropped: true, now: 10.0) == .attention)
+    #expect(machine.update(needsAttention: true, now: 0) == .normal)
+    #expect(machine.update(needsAttention: true, now: 9.5) == .normal)
+    #expect(machine.update(needsAttention: true, now: 10.0) == .attention)
   }
 
   /// A person leaning aside to pick something up must never trip it.
   @Test("A brief crop well under the dwell never flips the bit")
   func briefCropIsIgnored() {
     var machine = Self.machine()
-    #expect(machine.update(isCropped: true, now: 0) == .normal)
-    #expect(machine.update(isCropped: true, now: 4) == .normal)
-    #expect(machine.update(isCropped: false, now: 5) == .normal)
+    #expect(machine.update(needsAttention: true, now: 0) == .normal)
+    #expect(machine.update(needsAttention: true, now: 4) == .normal)
+    #expect(machine.update(needsAttention: false, now: 5) == .normal)
     // And the part-served dwell is abandoned, not banked: a second brief crop
     // starting later must serve the full 10s of its own.
-    #expect(machine.update(isCropped: true, now: 6) == .normal)
-    #expect(machine.update(isCropped: true, now: 14) == .normal)
-    #expect(machine.update(isCropped: true, now: 16.5) == .attention)
+    #expect(machine.update(needsAttention: true, now: 6) == .normal)
+    #expect(machine.update(needsAttention: true, now: 14) == .normal)
+    #expect(machine.update(needsAttention: true, now: 16.5) == .attention)
   }
 
   /// Prompt to reassure: a user who has just corrected should hear that it
@@ -132,13 +132,13 @@ struct PulseStateMachineTests {
   @Test("Leaving attention takes the shorter 3s dwell")
   func exitIsQuickerThanEntry() {
     var machine = Self.machine()
-    _ = machine.update(isCropped: true, now: 0)
-    #expect(machine.update(isCropped: true, now: 10) == .attention)
+    _ = machine.update(needsAttention: true, now: 0)
+    #expect(machine.update(needsAttention: true, now: 10) == .attention)
     // The exit dwell is measured from when the condition CHANGED (t=12), not
     // from when attention was entered — so it clears three seconds later.
-    #expect(machine.update(isCropped: false, now: 12) == .attention)
-    #expect(machine.update(isCropped: false, now: 14) == .attention)
-    #expect(machine.update(isCropped: false, now: 15) == .normal)
+    #expect(machine.update(needsAttention: false, now: 12) == .attention)
+    #expect(machine.update(needsAttention: false, now: 14) == .attention)
+    #expect(machine.update(needsAttention: false, now: 15) == .normal)
   }
 
   @Test("Flapping faster than either dwell never settles into a transition")
@@ -146,9 +146,9 @@ struct PulseStateMachineTests {
     var machine = Self.machine()
     var now = 0.0
     for _ in 0..<40 {
-      #expect(machine.update(isCropped: true, now: now) == .normal)
+      #expect(machine.update(needsAttention: true, now: now) == .normal)
       now += 2
-      #expect(machine.update(isCropped: false, now: now) == .normal)
+      #expect(machine.update(needsAttention: false, now: now) == .normal)
       now += 2
     }
   }
@@ -158,12 +158,12 @@ struct PulseStateMachineTests {
   @Test("reset() returns to normal and abandons any part-served dwell")
   func resetClearsEverything() {
     var machine = Self.machine()
-    _ = machine.update(isCropped: true, now: 0)
-    #expect(machine.update(isCropped: true, now: 10) == .attention)
+    _ = machine.update(needsAttention: true, now: 0)
+    #expect(machine.update(needsAttention: true, now: 10) == .attention)
     machine.reset()
     #expect(machine.current == .normal)
-    #expect(machine.update(isCropped: true, now: 11) == .normal)
-    #expect(machine.update(isCropped: true, now: 20.5) == .normal)
-    #expect(machine.update(isCropped: true, now: 21.5) == .attention)
+    #expect(machine.update(needsAttention: true, now: 11) == .normal)
+    #expect(machine.update(needsAttention: true, now: 20.5) == .normal)
+    #expect(machine.update(needsAttention: true, now: 21.5) == .attention)
   }
 }

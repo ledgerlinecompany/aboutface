@@ -33,8 +33,9 @@ public struct PulseStateMachine: Sendable, Equatable {
   public enum State: Sendable, Equatable {
     /// Everything the pulse knows about is fine. The ordinary heartbeat.
     case normal
-    /// Something durable and non-severe is wrong — currently only "the face
-    /// is cropped by the frame edge." Same cadence, different character.
+    /// Something durable and non-severe is wrong — drifted well outside the
+    /// dead zone, or cropped by a frame edge. Same cadence, different
+    /// character.
     case attention
   }
 
@@ -54,12 +55,13 @@ public struct PulseStateMachine: Sendable, Equatable {
   /// Feeds one observation and returns the state the pulse should use now.
   ///
   /// - Parameters:
-  ///   - isCropped: whether the face is currently cropped by a frame edge
-  ///     (see `FrameEdgeCrop`).
+  ///   - needsAttention: whether something durable and non-severe is wrong
+  ///     right now — drifted well outside the dead zone (`FramingDrift`), or
+  ///     cropped by a frame edge (`FrameEdgeCrop`).
   ///   - now: caller-supplied monotonic seconds.
   @discardableResult
-  public mutating func update(isCropped: Bool, now: Double) -> State {
-    let candidate: State = isCropped ? .attention : .normal
+  public mutating func update(needsAttention: Bool, now: Double) -> State {
+    let candidate: State = needsAttention ? .attention : .normal
 
     guard candidate != state else {
       // Agrees with where we are: any part-served dwell is abandoned, which is

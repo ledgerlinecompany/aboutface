@@ -118,8 +118,35 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
   /// and §6.1's no-ambiguous-silence requirement outranks uniform dwell.
   public var goodZoneChimeDelayMs: Int
 
-  /// Phase 4.5 (design doc §3.3): how close the face's bounding box may come
-  /// to a frame edge before it counts as CROPPED, normalized to the frame.
+  /// Phase 4.5: how far outside the §4 dead zone the user must drift before
+  /// the status pulse changes character, as a MULTIPLE of the dead zone's own
+  /// thresholds. `2.0` means "twice the dead zone."
+  ///
+  /// **Maintainer field finding, 2026-08-08, and the reason this exists at
+  /// all:** the pulse's bit was originally driven only by
+  /// `FrameEdgeCrop` — the face's bounding box touching a frame edge. In a
+  /// real session that state proved essentially unreachable: *"I couldn't
+  /// actually get myself cropped; every adjustment was normal heartbeat until
+  /// the face lost earcon."* Vision detects a FACE, not a head, and it stops
+  /// detecting well before the box it reports gets clipped — so the user
+  /// passes straight from "comfortably framed" to "no face," with no
+  /// intermediate state for the bit to describe.
+  ///
+  /// The signal a user actually wants is the one he named: *"I did wonder if I
+  /// had moved too much without any kind of indicator."* That is drift, not
+  /// cropping. Scaling the existing, already-tuned dead zone keeps the two
+  /// definitions of "well placed" in one place rather than inventing a second
+  /// set of thresholds to keep in sync (§0).
+  public var driftZoneMultiplier: Double
+
+  /// How close the face's bounding box may come to a frame edge before it
+  /// counts as CROPPED, normalized to the frame.
+  ///
+  /// Retained as a SECONDARY trigger alongside `driftZoneMultiplier`, not as
+  /// the primary one. It is rarely reachable (see above) but correct when it
+  /// happens — leaning in close enough to fill the shot really does clip your
+  /// own head while the face-position metrics still read as centered, which is
+  /// a case pure drift cannot catch.
   /// See `FrameEdgeCrop` for why proximity rather than size is the test.
   /// `0` means "only when it actually reaches the boundary."
   public var frameEdgeCropMargin: Double
@@ -235,6 +262,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostRecoverySpeechEnabled: Bool = true,
     heartbeatIntervalMs: Int,
     goodZoneChimeDelayMs: Int = 0,
+    driftZoneMultiplier: Double = 2.0,
     frameEdgeCropMargin: Double = 0.01,
     frameEdgeCropFlagsTopEdge: Bool = false,
     outOfFrameEnterMs: Int = 10000,
@@ -254,6 +282,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     self.faceLostRecoverySpeechEnabled = faceLostRecoverySpeechEnabled
     self.heartbeatIntervalMs = heartbeatIntervalMs
     self.goodZoneChimeDelayMs = goodZoneChimeDelayMs
+    self.driftZoneMultiplier = driftZoneMultiplier
     self.frameEdgeCropMargin = frameEdgeCropMargin
     self.frameEdgeCropFlagsTopEdge = frameEdgeCropFlagsTopEdge
     self.outOfFrameEnterMs = outOfFrameEnterMs
@@ -280,6 +309,7 @@ public struct FeedbackConfig: Codable, Sendable, Equatable {
     faceLostRecoverySpeechEnabled: true,
     heartbeatIntervalMs: 7000,
     goodZoneChimeDelayMs: 0,
+    driftZoneMultiplier: 2.0,
     frameEdgeCropMargin: 0.01,
     frameEdgeCropFlagsTopEdge: false,
     outOfFrameEnterMs: 10000,
