@@ -132,9 +132,25 @@ Design constraints:
   nothing to learn. Three or four means decoding a sound vocabulary while
   listening to a colleague, which is precisely the serial-channel cost §1 is
   trying to avoid. Query exists for detail.
-- **Same cadence, different timbre** (proposed). These conditions are
-  non-severe by definition, so urgency is not the message; and timbre survives
-  laptop speakers and being talked over better than pitch relationships do.
+- **Same cadence, different character.** Holding cadence fixed means the ONLY
+  variable is character, which is what makes the change maximally readable —
+  two variables would be two things to interpret.
+- **The two states have different constraints, and conflating them misleads
+  tuning** (maintainer, 2026-08-07: "you won't hear the error one every 7
+  seconds, because it means something is wrong"). The normal pulse is heard a
+  thousand times per call, so fatigue is its constraint. The attention pulse
+  plays only while something is wrong — rare and brief if the design works —
+  so its constraint is being UNMISTAKABLE, not being unfatiguing. It should
+  still not be alarming (these conditions are non-severe, and a user who cannot
+  immediately correct would hear it on every cadence until they could), but
+  that is a far weaker requirement.
+- **Distinguish by onset, not by tone.** A listener counts ONSETS, so the
+  shared `sin(pi * t / duration)` earcon window — symmetric, fading a 55ms tap
+  in over ~27ms — cannot carry a double (maintainer, 2026-08-07: "it's a little
+  soft for an onset to tell it's a double"). A percussive attack plus harmonic
+  drive is what makes two taps read as two; an onset is audible in proportion
+  to its high-frequency content, so a pure sine's transient is nearly
+  inaudible however fast the attack.
 - **A long dwell and hysteresis before the bit flips**, so shifting in a chair
   does not toggle it.
 - The pulse yields to §7.3's face-lost ladder, which has its own escalation,
@@ -256,6 +272,22 @@ should be roughly six things:
 - tones or speech
 - headphones or speakers
 - keyboard shortcuts
+- **how patient the app is before telling you that you are out of frame**
+  (maintainer, 2026-08-08). This is the one tuning value promoted out of the
+  developer panel, and it earns the promotion on this section's own test:
+  tolerance for being told genuinely varies by person and by meeting, so it
+  exists because a user has a goal rather than because we had a parameter.
+
+  It should be presented as an OUTCOME, not as `outOfFrameEnterMs`: a small set
+  of named choices ("sooner / normal / later") that map to `Config` values
+  behind the scenes. A millisecond field would fail §7's spoken-first test —
+  "ten thousand milliseconds" tells a listener nothing about what they will
+  experience — and would leak the mechanism the rest of this document is trying
+  to keep out of the user's model.
+
+  Only the ENTER dwell is a user choice. The exit dwell is a
+  responsiveness property rather than a preference: nobody wants to wait longer
+  to be told they have fixed the problem.
 
 Everything tuned by ear across Phase 3 and 4 becomes a baked default the user
 never meets. The test for admitting any control:

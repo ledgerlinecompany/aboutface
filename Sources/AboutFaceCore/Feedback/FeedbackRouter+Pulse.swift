@@ -57,8 +57,14 @@ extension FeedbackRouter {
     // during an absence nobody was present for.
     guard output.analysis.signalState != .noFace, output.analysis.signalState != .noSignal else {
       nextHeartbeatAt = nil
+      // The cropped/not-cropped question is meaningless with no face to ask it
+      // about, and a user who walks back may be perfectly placed — greeting
+      // them with a stale warning would be a lie the pulse cannot explain.
+      pulseMachine?.reset()
       return
     }
+
+    let pulseState = advancePulseState(output: output, at: time)
 
     guard let due = nextHeartbeatAt else {
       // First tracked frame of this monitoring stretch: start the cadence.
@@ -76,6 +82,34 @@ extension FeedbackRouter {
     // the same reason it always has been — it is the mechanism that makes
     // "good" distinguishable from "the app crashed," not discretionary
     // chatter for that budget to ration.
-    await fire(event: .livenessHeartbeat, phrase: nil, key: nil, at: time, bypassRateLimit: true)
+    let event: AudioEvent = pulseState == .attention ? .attentionPulse : .livenessHeartbeat
+    await fire(event: event, phrase: nil, key: nil, at: time, bypassRateLimit: true)
+  }
+
+  /// Feeds this frame's cropped/not-cropped reading to the pulse's state
+  /// machine and returns the state to sound. Runs on EVERY tracked frame, not
+  /// only on the ones that fire a pulse: the machine's dwells are measured in
+  /// seconds of held condition, so it needs the whole stream, not the samples
+  /// that happen to land on the cadence.
+  private func advancePulseState(
+    output: EngineOutput, at time: ContinuousClock.Instant
+  ) -> PulseStateMachine.State {
+    let origin = pulseClockOrigin ?? time
+    if pulseClockOrigin == nil { pulseClockOrigin = origin }
+    if pulseMachine == nil {
+      pulseMachine = PulseStateMachine(
+        enterMs: feedbackConfig.outOfFrameEnterMs, exitMs: feedbackConfig.outOfFrameExitMs)
+    }
+
+    let isCropped =
+      output.analysis.primary.map {
+        FrameEdgeCrop.isCropped(
+          boundingBox: $0.boundingBox,
+          margin: feedbackConfig.frameEdgeCropMargin,
+          flagsTopEdge: feedbackConfig.frameEdgeCropFlagsTopEdge)
+      } ?? false
+
+    let seconds = Self.milliseconds(from: origin, to: time)
+    return pulseMachine?.update(isCropped: isCropped, now: Double(seconds) / 1000) ?? .normal
   }
 }

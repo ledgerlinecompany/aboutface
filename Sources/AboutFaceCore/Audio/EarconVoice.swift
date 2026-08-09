@@ -17,6 +17,7 @@ enum EarconKind: UInt8 {
   case lowConfidence = 3
   case noSignal = 4
   case faceReacquired = 5
+  case attentionPulse = 6
 
   init(_ event: AudioEvent) {
     switch event {
@@ -26,6 +27,7 @@ enum EarconKind: UInt8 {
     case .lowConfidence: self = .lowConfidence
     case .noSignal: self = .noSignal
     case .faceReacquired: self = .faceReacquired
+    case .attentionPulse: self = .attentionPulse
     }
   }
 }
@@ -61,6 +63,65 @@ enum EarconVoice {
   /// possibility of a click at a voice's activation or deactivation
   /// boundary regardless of what the carrier waveform is doing at that
   /// instant.
+  /// Phase 4.5's attention pulse: a DOUBLE TAP slightly below the heartbeat's
+  /// pitch. Two cues carry the same one bit — rhythm and pitch — because
+  /// redundant coding survives a laptop speaker and a talking colleague better
+  /// than either alone, and this sound has to stay distinguishable from the
+  /// heartbeat after an hour of habituation.
+  private static func attentionPulse(_ pulse: AudioAttentionPulse, t: Double) -> Float {
+    let noteSeconds = pulse.noteDurationMs / 1000
+    let gapSeconds = pulse.gapMs / 1000
+    if t < noteSeconds {
+      return tap(pulse: pulse, localT: t, noteSeconds: noteSeconds)
+    }
+    let secondStart = noteSeconds + gapSeconds
+    if t >= secondStart {
+      return tap(pulse: pulse, localT: t - secondStart, noteSeconds: noteSeconds)
+    }
+    return 0
+  }
+
+  /// One percussive tap: fast attack, exponential decay, harmonically driven.
+  ///
+  /// Deliberately does NOT use the shared `envelope(t:duration:)` window every
+  /// other earcon uses. That window is symmetric, so a 55ms tap fades in over
+  /// ~27ms — fine for a single sustained cue, fatal for a PAIR, because a
+  /// listener counts onsets rather than tones and a fade-in offers no onset to
+  /// count (maintainer, 2026-08-07: "it's a little soft for an onset to tell
+  /// it's a double").
+  ///
+  /// Drive is the second half of the same problem: an onset is audible in
+  /// proportion to its high-frequency content, so a pure sine's transient is
+  /// nearly inaudible however fast the attack. `tanh` waveshaping, gain-
+  /// normalized exactly as `RenderState+VerticalTimbre.overdriveComponent`
+  /// does it, puts energy where the ear locates attacks. `drive == 0` is an
+  /// exact identity pass, so the pure-sine version stays reachable by config.
+  private static func tap(
+    pulse: AudioAttentionPulse, localT: Double, noteSeconds: Double
+  ) -> Float {
+    guard localT >= 0, localT < noteSeconds, noteSeconds > 0 else { return 0 }
+    let attackSeconds = max(0, min(pulse.attackMs / 1000, noteSeconds))
+    let amplitude: Double
+    if attackSeconds > 0, localT < attackSeconds {
+      amplitude = localT / attackSeconds
+    } else {
+      let decaySpan = max(noteSeconds - attackSeconds, .leastNonzeroMagnitude)
+      let progress = (localT - attackSeconds) / decaySpan
+      amplitude = exp(-max(0, pulse.decayCurve) * progress)
+    }
+
+    let carrier = sin(2 * .pi * pulse.freqHz * localT)
+    let drive = max(0, min(1, pulse.drive))
+    let shaped: Double
+    if drive <= 0 {
+      shaped = carrier
+    } else {
+      let driveGain = 1 + drive * 6
+      shaped = carrier + drive * (tanh(driveGain * carrier) / tanh(driveGain) - carrier)
+    }
+    return Float(amplitude * shaped * pulse.gain)
+  }
+
   private static func envelope(t: Double, duration: Double) -> Double {
     guard duration > 0, t >= 0, t <= duration else { return 0 }
     return sin(.pi * t / duration)
@@ -107,6 +168,9 @@ enum EarconVoice {
       return 2 * c.noteDurationMs + c.gapMs
     case .livenessHeartbeat:
       return heartbeat.durationMs
+    case .attentionPulse:
+      let pulse = heartbeat.attention
+      return pulse.noteDurationMs * 2 + pulse.gapMs
     case .faceLost:
       return earcons.faceLost.durationMs
     case .lowConfidence:
@@ -149,6 +213,9 @@ enum EarconVoice {
     case .livenessHeartbeat:
       let env = envelope(t: t, duration: duration)
       return Float(env * sin(2 * .pi * heartbeat.freqHz * t)) * Float(heartbeat.gain)
+
+    case .attentionPulse:
+      return attentionPulse(heartbeat.attention, t: t)
 
     case .faceLost:
       let c = earcons.faceLost

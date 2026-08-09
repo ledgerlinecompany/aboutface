@@ -55,6 +55,7 @@ enum EarconName: String, ExpressibleByArgument, CaseIterable {
   case noSignal = "no-signal"
   case faceReacquired = "face-reacquired"
   case heartbeat = "heartbeat"
+  case attentionPulse = "attention-pulse"
 
   var event: AudioEvent {
     switch self {
@@ -64,6 +65,7 @@ enum EarconName: String, ExpressibleByArgument, CaseIterable {
     case .noSignal: return .noSignal
     case .faceReacquired: return .faceReacquired
     case .heartbeat: return .livenessHeartbeat
+    case .attentionPulse: return .attentionPulse
     }
   }
 
@@ -74,7 +76,8 @@ enum EarconName: String, ExpressibleByArgument, CaseIterable {
     case .lowConfidence: return "Low confidence"
     case .noSignal: return "No signal"
     case .faceReacquired: return "Face reacquired"
-    case .heartbeat: return "Heartbeat"
+    case .heartbeat: return "Heartbeat, the normal pulse"
+    case .attentionPulse: return "Attention pulse, the same slot when something is wrong"
     }
   }
 
@@ -99,6 +102,9 @@ enum EarconName: String, ExpressibleByArgument, CaseIterable {
       return config.earcons.faceReacquired.durationMs / 1000 + pause
     case .heartbeat:
       return config.heartbeat.durationMs / 1000 + pause
+    case .attentionPulse:
+      let pulse = config.heartbeat.attention
+      return (pulse.noteDurationMs * 2 + pulse.gapMs) / 1000 + pause
     }
   }
 }

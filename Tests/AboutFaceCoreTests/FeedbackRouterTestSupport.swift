@@ -1,3 +1,4 @@
+import CoreGraphics
 import CoreMedia
 import Testing
 
@@ -108,7 +109,8 @@ func makeOutput(
   gazeOnCamera: Bool = true,
   headLevel: Bool = true,
   yaw: Float = 0,
-  pitch: Float = 0
+  pitch: Float = 0,
+  boundingBox: CGRect = .zero
 ) -> EngineOutput {
   let framing: FramingState? =
     hasFace
@@ -123,13 +125,18 @@ func makeOutput(
   // test — only the tuning-round-5 gaze-trim tests
   // (`FeedbackRouterGazeTrimTests`) pass non-default values, to exercise
   // `FeedbackRouter.gazeTrimTarget(output:framing:)`'s
-  // `output.analysis.primary.yaw`/`.pitch` reads. Every other `FaceGeometry`
-  // field is a harmless placeholder — nothing else in `FeedbackRouter`
-  // reads `analysis.primary` at all.
+  // `output.analysis.primary.yaw`/`.pitch` reads.
+  //
+  // `boundingBox` joined them in Phase 4.5: the status pulse reads it through
+  // `FrameEdgeCrop` to decide whether the face is cropped by a frame edge. Its
+  // `.zero` default is EMPTY, which `FrameEdgeCrop` deliberately reports as
+  // not-cropped, so every test predating that feature keeps its old meaning
+  // untouched.
   let primary: FaceGeometry? =
     hasFace
     ? FaceGeometry(
-      boundingBox: .zero, eyeMidpoint: .zero, interocularDistance: 0, yaw: yaw, pitch: pitch,
+      boundingBox: boundingBox, eyeMidpoint: .zero, interocularDistance: 0, yaw: yaw,
+      pitch: pitch,
       roll: 0, captureQuality: nil, confidence: 1
     ) : nil
   let analysis = FrameAnalysis(
@@ -190,4 +197,19 @@ extension ContinuousClock.Instant {
   func plus(ms: Int) -> ContinuousClock.Instant {
     self.advanced(by: .milliseconds(ms))
   }
+}
+
+/// Convenience for a face pressed against the LEFT frame edge — cropped, per
+/// `FrameEdgeCrop`, and therefore what flips the status pulse's bit after its
+/// dwell.
+///
+/// Deliberately `inDeadZone: true` so the crop is the ONLY variable: it proves
+/// the pulse's bit is driven by the geometry rather than by the framing state,
+/// and it is a real situation besides — lean in close enough and you can be
+/// centered by the face-position metric while your ear is off the side of the
+/// shot.
+func croppedOutput() -> EngineOutput {
+  makeOutput(
+    signalState: .ok, inDeadZone: true, gazeOnCamera: true,
+    boundingBox: CGRect(x: 0, y: 0.4, width: 0.25, height: 0.3))
 }
